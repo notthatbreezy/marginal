@@ -18,7 +18,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node test/run.mjs 180000 test/command.unit.test.mjs test/command.web.test.mjs test/command.integration.test.mjs && node test/smoke.mjs",
-    "dev": "node tools/devserver.mjs --edits"
+    "test": "node test/run.mjs 180000 test/command.unit.test.mjs test/command.web.test.mjs test/command.integration.test.mjs test/release.test.mjs && node test/smoke.mjs",
+    "dev": "node tools/devserver.mjs --edits",
+    "release": "node scripts/release.mjs"
   }
 }

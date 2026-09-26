@@ -53,6 +53,8 @@ copilot plugin install marginal@marginal
 
 Then restart the Copilot app, or ask Copilot to reload extensions. The canvas registers as **Marginal** (canvas id `marginal`). Update with `copilot plugin update marginal`, remove with `copilot plugin uninstall marginal`.
 
+To stay on a tagged release instead of the latest `main`, add the marketplace at a tag, e.g. `copilot plugin marketplace add notthatbreezy/marginal#v0.1.0`. Releases and their notes are on the [releases page](https://github.com/notthatbreezy/marginal/releases); see [CHANGELOG.md](CHANGELOG.md).
+
 Your docs live in `~/.copilot/marginal/` (or `$COPILOT_HOME/marginal/`), outside the plugin, so updating or reinstalling keeps them.
 
 <details>
