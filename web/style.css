@@ -4217,3 +4217,77 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
         right: 20px;
     }
 }
+/* Command empty state: "Initialize command center" */
+.cc .cc-empty {
+    pointer-events: auto;
+}
+.cc .cc-init {
+    display: grid;
+    gap: 8px;
+    justify-items: center;
+    margin: 8px auto 6px;
+    width: min(460px, 100%);
+}
+.cc .cc-init-goal {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 44px;
+    max-height: 160px;
+    font: inherit;
+    font-size: 13px;
+    line-height: 18px;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+}
+.cc .cc-init-goal:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: -1px;
+}
+.cc .cc-init-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.cc .cc-init-btn {
+    padding: 5px 14px;
+    font-weight: 600;
+}
+.cc .cc-init-row .muted {
+    font-size: 12px;
+}
+.cc .cc-init-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    color: var(--blue);
+    background: var(--blue-muted);
+    font-size: 12.5px;
+}
+.cc .cc-init-pending .pulse {
+    width: 7px;
+    height: 7px;
+}
+.cc .cc-init-link {
+    border: none;
+    background: transparent;
+    color: var(--blue);
+    font-size: 12px;
+    cursor: pointer;
+}
+.cc .cc-init-link:hover {
+    text-decoration: underline;
+}
+.cc .cc-init-note {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12.5px;
+}
+.cc .cc-empty code {
+    white-space: nowrap;
+}

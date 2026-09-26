@@ -1,7 +1,7 @@
 // Command tab: the implementation mission wall.
 // M1 instrument strip + territory map; M2 fronts rail, checkpoint timeline + scrub replay, off-plan filter,
 // views & follow, auto-root, fisheye pins, monitors dock, hunk rows. Everything renders "as of" a time: live = now.
-import { api, bus, h, put, svc } from "../core.js";
+import { INSTANCE, api, bus, h, put, svc } from "../core.js";
 import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
 import { buckets, changesAt, velocity } from "./derive.js";
 import { renderFronts, renderTimeline } from "./fronts.js";
@@ -412,6 +412,7 @@ function render() {
     if (!st.plan) {
         renderMapHead(st, "");
         if (!empty) cc.host.querySelector(".stage").append(emptyState());
+        renderInit();
         cc.host.querySelector(".rail-fronts").hidden = true;
         cc.host.querySelector(".timeline").hidden = true;
         cc.host.querySelector(".dock").hidden = true;
@@ -520,15 +521,64 @@ function decorateHunks(el, n, c, w, hgt) {
 }
 
 function emptyState() {
-    const lease = cc.data.lease;
     return h(
         "div",
         { class: "cc-empty" },
         h("div", { class: "cc-empty-t" }, "No implementation plan yet"),
         h("p", {}, "When an orchestrating Copilot session starts on this whiteboard, the plan's territory lights up here as its fronts edit files."),
-        h("p", { class: "muted" }, "The orchestrator calls ", h("code", {}, 'command_plan {op:"set"}'), " to begin, then registers each worktree with ", h("code", {}, 'command_front {op:"register"}'), "."),
-        lease ? h("p", { class: "muted" }, `Lease: ${lease.sessionId}${leaseLive() ? "" : " (stale)"}`) : null,
+        h("div", { class: "cc-init" }),
+        h("p", { class: "muted" }, "Or ask for it in chat: the orchestrator calls ", h("code", {}, 'command_plan {op:"set"}'), " to begin, then registers each worktree with ", h("code", {}, 'command_front {op:"register"}'), "."),
     );
+}
+
+/**
+ * "Initialize command center": asks this panel's Copilot session to become the orchestrator and set the plan.
+ * Kept in place across renders so the goal text and focus survive the 4 Hz refresh.
+ */
+function renderInit() {
+    const host = cc.host.querySelector(".cc-init");
+    if (!host) return;
+    const l = cc.data.lease;
+    const otherOwner = l && leaseLive() && !cc.data.isOwnerHere ? l.sessionId : null;
+    const pending = cc.ui.initPending && Date.now() - cc.ui.initPending < 10 * 60_000;
+    const mode = otherOwner ? "other" : pending ? "pending" : "ready";
+    if (host.dataset.mode === mode) return;
+    host.dataset.mode = mode;
+    if (mode === "other") {
+        put(host, h("p", { class: "cc-init-note" }, `Session ${otherOwner.slice(0, 8)} is orchestrating this whiteboard. Open it in that session to set up the plan.`));
+        return;
+    }
+    if (mode === "pending") {
+        put(
+            host,
+            h("div", { class: "cc-init-pending", role: "status" }, h("span", { class: "pulse" }), "Copilot is drafting the plan… the map lights up as soon as it's set."),
+            h("button", { class: "cc-init-link", onclick: () => svc.addToCommandChat?.([]) }, "Open the conversation"),
+        );
+        return;
+    }
+    const goal = h("textarea", { class: "cc-init-goal", rows: "2", maxlength: "2000", placeholder: "What are we building? (optional; Copilot also reads this whiteboard and the branch)", "aria-label": "Goal for the implementation plan" });
+    const btn = h("button", { class: "primary cc-init-btn", onclick: () => initialize(goal.value, btn) }, "Initialize command center");
+    goal.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            initialize(goal.value, btn);
+        }
+    });
+    put(host, goal, h("div", { class: "cc-init-row" }, btn, h("span", { class: "muted" }, "This session becomes the orchestrator.")));
+}
+
+async function initialize(goal, btn) {
+    btn.disabled = true;
+    try {
+        const r = await api(`/command/init?${q()}&instance=${encodeURIComponent(INSTANCE)}`, { method: "POST", body: { goal: goal.trim() || undefined } });
+        cc.ui.initPending = Date.now();
+        svc.attachCommandThread?.(r.threadId, goal.trim() ? `Initialize the command center: ${goal.trim()}` : "Initialize the command center");
+    } catch (e) {
+        svc.toast?.(e.message);
+        btn.disabled = false;
+        return;
+    }
+    renderInit();
 }
 
 // ---------- instrument strip ----------
@@ -824,14 +874,16 @@ function rangeItem(w, r) {
 
 function chatBlockedReason() {
     if (!cc.data) return "Loading…";
-    if (cc.data.isOwnerHere && leaseLive()) return null;
     const l = cc.data.lease;
-    if (l && leaseLive()) return `The Command chat talks to the orchestrator (session ${l.sessionId.slice(0, 8)}). Open this whiteboard in that session to chat with it.`;
-    return "No orchestrator is running this plan right now. The Command chat opens in the session that sets the plan (command_plan).";
+    // Nobody orchestrating yet (or the owner went stale): this panel's session is the one to talk to — it becomes the
+    // orchestrator when it sets the plan. Only a live *other* owner blocks the chat.
+    if (l && leaseLive() && !cc.data.isOwnerHere) return `The Command chat talks to the orchestrator (session ${l.sessionId.slice(0, 8)}). Open this whiteboard in that session to chat with it.`;
+    return null;
 }
 /** Ownership can change under an open chat (lease taken over, or went stale). */
 function syncOwner() {
     const here = !!cc.data?.isOwnerHere && leaseLive();
+    if (cc.data?.state.plan && cc.ui.initPending) cc.ui.initPending = 0; // the plan arrived
     if (here === cc.ownerHere) return;
     cc.ownerHere = here;
     svc.refreshCommandChatBlocked?.();

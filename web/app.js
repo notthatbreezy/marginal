@@ -2107,6 +2107,14 @@ Object.assign(svc, {
     copyText,
     toast,
     syncChatFab: () => syncChatFab(),
+    /** Show a Command-chat thread the tab started itself (e.g. "Initialize command center") so its reply streams in. */
+    attachCommandThread: (threadId, message) => {
+        openChat({ mode: "command" });
+        if (chat.threadId && chat.threadId !== threadId) endThread();
+        chat.threadId = threadId;
+        chatLog.insertBefore(h("div", { class: "chat-msg me" }, message), chat.statusEl);
+        scrollChat();
+    },
     /** Command tab → chat: add focus items and/or a quote, opening the persistent Command chat. */
     addToCommandChat: (focus, extra = {}) => openChat({ mode: "command", focus, ...extra }),
     commandChatOpen: () => !$("#chat").hidden && chat.mode === "command",

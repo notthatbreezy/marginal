@@ -59,6 +59,20 @@ const call = async (name, input) => {
     return r;
 };
 
+if (args.has("--empty")) {
+    // No plan yet: the empty state with "Initialize command center". The stub chat records what would be sent.
+    const instances = new Map([["dev", { documentId: doc.documentId }]]);
+    instances.save = () => {};
+    const sent = [];
+    const chat = { subscribe: () => () => {}, send: async (m) => (sent.push(m), { threadId: "init-thread", messageId: "m1" }), end: () => {} };
+    const s = await startServer({ chat, instances, getSessionId: () => "orchestrator-dev" });
+    const { createServer } = await import("node:http");
+    const peek = createServer((q, r) => r.end(JSON.stringify(sent))).listen(0, "127.0.0.1");
+    await new Promise((r) => peek.once("listening", r));
+    process.stdout.write(JSON.stringify({ url: s.urlFor("dev"), instance: "dev", docId: doc.documentId, repo, sentUrl: `http://127.0.0.1:${peek.address().port}/` }) + "\n");
+    setTimeout(() => process.exit(0), seconds * 1000);
+    await new Promise(() => {});
+}
 await call("command_plan", {
     op: "set",
     plan: {
