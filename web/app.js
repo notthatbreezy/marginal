@@ -3,6 +3,8 @@ import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdo
 import { createStepper } from "./stepper.js";
 import { createSelection, flashBar, withModifier, multibar } from "./selection.js";
 
+const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
+
 // ---------------- state ----------------
 const state = {
     documentId: null,
@@ -907,7 +909,7 @@ function setHeader() {
     $("#tabs").hidden = !doc;
     for (const btn of document.querySelectorAll("#tabs button")) {
         const tab = btn.dataset.tab;
-        btn.hidden = !doc || (!doc.target && (tab === "diff" || tab === "commits"));
+        btn.hidden = !doc || (!doc.target && (tab === "diff" || tab === "commits" || tab === "command"));
         btn.classList.toggle("on", tab === state.tab);
     }
     const banner = $("#banner");
@@ -1095,7 +1097,9 @@ async function render() {
     if (!state.doc) return;
     setHeader();
     try {
+        if (state.tab !== "command") command.unmount();
         if (state.tab === "board") renderBoard();
+        else if (state.tab === "command") await command.mount();
         else if (state.tab === "diff") await renderDiff();
         else if (state.tab === "commits") await renderCommits();
         else if (state.tab === "history") await renderHistory();
@@ -1103,6 +1107,25 @@ async function render() {
         $("#main").replaceChildren(h("div", { class: "doc error" }, e.message));
     }
 }
+
+/** The Command tab lives in web/command/ and loads on first use. */
+const command = {
+    mod: null,
+    async mount() {
+        if (!state.doc?.target) {
+            state.tab = "board";
+            return render();
+        }
+        this.mod ??= await import("./command/tab.js");
+        if (this.mod.isMounted() && this.docId === state.documentId) return;
+        this.docId = state.documentId;
+        await this.mod.mountCommand($("#main"), { documentId: state.documentId });
+    },
+    unmount() {
+        this.mod?.unmountCommand();
+        this.docId = null;
+    },
+};
 
 async function loadDoc(lastEdit) {
     if (!state.documentId) return render();
@@ -1163,12 +1186,14 @@ function connect() {
         const ev = JSON.parse(msg.data);
         if (ev.type === "show") {
             if (ev.documentId !== state.documentId || !state.booted) {
+                const first = !state.booted;
                 state.booted = true;
                 clearPicks();
                 state.catalog = await api("/catalog").catch(() => state.catalog);
                 state.documentId = ev.documentId;
                 state.viewVersion = null;
-                state.tab = "board";
+                // ?tab= deep-links the first render (e.g. headless screenshots of the Command tab).
+                state.tab = first && ["command", "diff", "commits", "history"].includes(INITIAL_TAB) ? INITIAL_TAB : "board";
                 state.lastSeenVersion = null;
                 loadDoc();
             }
@@ -1182,6 +1207,7 @@ function connect() {
                 if (state.tab === "history") renderHistory();
             }
         } else if (ev.type === "chat") onChatEvent(ev);
+        else if (ev.type === "command") bus.emit("command", ev);
         else if (ev.type === "activity" && ev.documentId === state.documentId) setActivity(ev.activity);
         else if (ev.type === "deleted" && ev.documentId === state.documentId) {
             state.catalog = await api("/catalog");

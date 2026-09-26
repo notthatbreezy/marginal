@@ -16,7 +16,7 @@ export function h(tag, attrs = {}, ...children) {
         else if (k === "html") el.innerHTML = v;
         else el.setAttribute(k, v === true ? "" : v);
     }
-    for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) el.append(c instanceof Node ? c : String(c));
+    for (const c of children.flat(Infinity)) if (c !== null && c !== undefined && c !== false) el.append(c instanceof Node ? c : String(c));
     return el;
 }
 export function s(tag, attrs = {}, ...children) {
@@ -26,12 +26,12 @@ export function s(tag, attrs = {}, ...children) {
         if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
         else el.setAttribute(k, v);
     }
-    for (const c of children.flat()) if (c !== null && c !== undefined) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    for (const c of children.flat(Infinity)) if (c !== null && c !== undefined) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
     return el;
 }
 export const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 /** replaceChildren that skips null/false like h() does (the native one renders them as text). */
-export const put = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
+export const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
 
 export async function api(path, { method = "GET", body } = {}) {
     const res = await fetch(`/api${path}`, { method, headers: { "x-wb-token": TOKEN, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });

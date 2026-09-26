@@ -2287,3 +2287,1381 @@ svg .muted {
 .stack-tree li.active .fn {
     font-weight: 600;
 }
+
+/* ==========================================================================
+   Command tab. Scoped port of the approved mockup (command-center/mockups/cc.css) + integration rules.
+   Tokens only; every selector lives under .cc so nothing leaks into the whiteboard.
+   ========================================================================== */
+.cc {
+    --cc-grid: color-mix(in srgb, var(--fg) 5%, transparent);
+    --cc-hair: color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --cc-footprint: color-mix(in srgb, var(--fg) 38%, transparent);
+    --cc-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 264px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "strip strip"
+        "map   rail"
+        "time  time";
+}
+.cc .num {
+    font-variant-numeric: tabular-nums;
+}
+.cc .path {
+    font-family: var(--mono);
+    font-size: 11.5px;
+}
+.cc .add {
+    color: var(--green);
+}
+.cc .del {
+    color: var(--red);
+}
+.cc .f1 {
+    --fc: var(--blue);
+}
+.cc .f2 {
+    --fc: var(--purple);
+}
+.cc .f3 {
+    --fc: color-mix(in srgb, var(--blue) 50%, var(--green));
+}
+.cc .f4 {
+    --fc: color-mix(in srgb, var(--purple) 55%, var(--red));
+}
+.cc .f5 {
+    --fc: color-mix(in srgb, var(--red) 45%, var(--yellow));
+}
+.cc .f6 {
+    --fc: color-mix(in srgb, var(--fg) 55%, var(--bg));
+}
+.cc .fdot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fc);
+    flex: none;
+    display: inline-block;
+}
+.cc .strip {
+    grid-area: strip;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 22px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    min-height: 52px;
+}
+.cc .lamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 10px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cc .lamp .pulse {
+    width: 9px;
+    height: 9px;
+}
+.cc .lamp.working {
+    background: var(--purple-muted);
+    color: var(--purple);
+}
+.cc .lamp.waiting {
+    background: var(--yellow-muted);
+    color: var(--yellow);
+}
+.cc .lamp.waiting .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--yellow);
+}
+.cc .lamp.complete {
+    background: var(--green-muted);
+    color: var(--green);
+}
+.cc .lamp .sub {
+    font-weight: 400;
+    color: var(--fg);
+    opacity: 0.8;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .readout {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+}
+.cc .readout .v {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 24px;
+    letter-spacing: -0.01em;
+}
+.cc .readout .u {
+    color: var(--muted);
+    font-size: 12px;
+}
+.cc .readout .net {
+    font-size: 12px;
+    margin-left: 2px;
+}
+.cc .readout.minor .v {
+    font-size: 15px;
+    font-weight: 600;
+}
+.cc .sep {
+    width: 1px;
+    align-self: stretch;
+    margin: 4px 0;
+    background: var(--cc-hair);
+}
+.cc .sparks {
+    display: flex;
+    gap: 16px;
+    margin-left: auto;
+    align-items: center;
+}
+.cc .spark {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.cc .spark svg {
+    display: block;
+    overflow: visible;
+}
+.cc svg polyline {
+    fill: none;
+    stroke: var(--fc);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.cc svg polygon.area {
+    fill: color-mix(in srgb, var(--fc) 14%, transparent);
+    stroke: none;
+}
+.cc .window {
+    font-size: 11.5px;
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+.cc .offplan {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--yellow);
+    background: var(--yellow-muted);
+    border: none;
+    border-radius: 999px;
+    padding: 2px 10px;
+}
+.cc .offplan:hover {
+    background: color-mix(in srgb, var(--yellow) 24%, transparent);
+}
+.cc .hatch-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: repeating-linear-gradient(45deg, var(--yellow) 0 2px, transparent 2px 5px);
+}
+.cc .map {
+    grid-area: map;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+}
+.cc .map-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+.cc .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--muted);
+    min-width: 0;
+}
+.cc .crumbs .path {
+    color: var(--muted);
+}
+.cc .crumbs .path.here {
+    color: var(--fg);
+    font-weight: 600;
+}
+.cc .crumbs .auto {
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px dashed var(--border);
+    border-radius: 999px;
+    padding: 0 7px;
+    margin-left: 4px;
+}
+.cc .map-head .grow {
+    flex: 1;
+}
+.cc .viewpick {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 2px 10px;
+}
+.cc .viewpick .spark-ic {
+    color: var(--purple);
+}
+.cc .follow {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 6px;
+}
+.cc .follow:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+.cc .follow.on {
+    color: var(--blue);
+}
+.cc .return {
+    border: none;
+    background: transparent;
+    color: var(--blue);
+    font-size: 12px;
+    padding: 2px 4px;
+}
+.cc .legend {
+    display: flex;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 11.5px;
+}
+.cc .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.cc .lg {
+    width: 12px;
+    height: 9px;
+    border-radius: 2px;
+    display: inline-block;
+}
+.cc .lg.fp {
+    border: 1px dashed var(--cc-footprint);
+}
+.cc .lg.ph {
+    background: var(--blue-muted);
+    border: 1.5px solid var(--blue);
+}
+.cc .lg.op {
+    background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 40%, transparent) 0 2px, transparent 2px 4px);
+    border: 1px solid var(--yellow);
+}
+.cc .stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    margin: 0 12px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background-color: var(--bg);
+    background-image:
+        linear-gradient(var(--cc-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--cc-grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: -1px -1px;
+}
+.cc .tm {
+    position: absolute;
+    inset: 6px;
+}
+.cc .tn {
+    position: absolute;
+    border-radius: 4px;
+    overflow: hidden;
+    transition: opacity 0.2s, background-color 0.15s;
+}
+.cc .tn.dir {
+    background: color-mix(in srgb, var(--fg) 2.5%, var(--bg));
+    border: 1px solid var(--cc-hair);
+}
+.cc .tn.dir.depth-1 {
+    background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+}
+.cc .tn.dir > .th {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 18px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.cc .tn.dir > .th .nm {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .tn.dir > .th .ct {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    flex: none;
+}
+.cc .tn.dir > .th .pin {
+    color: var(--blue);
+    flex: none;
+}
+.cc .tn.file {
+    background: var(--surface);
+    border: 1px solid var(--cc-hair);
+    cursor: default;
+}
+.cc .tn.file .fl {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .tn.file .fc {
+    position: absolute;
+    left: 6px;
+    bottom: 4px;
+    font-size: 11px;
+    line-height: 14px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.cc .tn.file .bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    display: flex;
+}
+.cc .tn.file .bar i {
+    display: block;
+    height: 100%;
+}
+.cc .tn.file .bar .a {
+    background: var(--green);
+}
+.cc .tn.file .bar .d {
+    background: var(--red);
+}
+.cc .tn.untouched {
+    opacity: 0.62;
+}
+.cc .tn.untouched.dir {
+    opacity: 1;
+}
+.cc .tn.fp {
+    border: 1px dashed var(--cc-footprint);
+}
+.cc .tn.active {
+    background: color-mix(in srgb, var(--blue) 9%, var(--bg));
+    border: 1.5px solid var(--blue);
+}
+.cc .tn.dir.active > .th .nm {
+    color: var(--blue);
+}
+.cc .tn.changed {
+    background: color-mix(in srgb, var(--fc) var(--heat, 10%), var(--bg));
+}
+.cc .tn.changed .fl {
+    color: var(--fg);
+}
+.cc .tn.active.changed {
+    border-color: var(--blue);
+}
+.cc .tn.dir.active .tn.file.active {
+    border: 1px solid color-mix(in srgb, var(--blue) 40%, var(--bg));
+}
+.cc .tn.live {
+    box-shadow: 0 0 0 2px var(--fc), 0 3px 10px color-mix(in srgb, var(--fc) 30%, transparent);
+    z-index: 2;
+    overflow: visible;
+}
+.cc .tn.live::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 6px;
+    pointer-events: none;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc) 55%, transparent);
+    animation: cc-ping 2.8s var(--cc-ease) infinite;
+}
+@keyframes cc-ping {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc) 55%, transparent); }
+    35%, 100% { box-shadow: 0 0 0 10px transparent; }
+}
+.cc .tn.offplan {
+    background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 28%, transparent) 0 3px, transparent 3px 7px);
+    border: 1px solid var(--yellow);
+}
+.cc .tn.deleted {
+    background: var(--red-muted);
+    border: 1px dashed var(--red);
+}
+.cc .tn.deleted .fl {
+    text-decoration: line-through;
+}
+.cc .tn.newfile::before {
+    content: "+";
+    position: absolute;
+    right: 4px;
+    top: 2px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--green);
+}
+.cc .tn.file.collide {
+    border: 2px solid transparent;
+    background:
+    linear-gradient(color-mix(in srgb, var(--fc) var(--heat, 10%), var(--bg)), color-mix(in srgb, var(--fc) var(--heat, 10%), var(--bg))) padding-box,
+    linear-gradient(135deg, var(--c1) 50%, var(--c2) 50%) border-box;
+}
+.cc .tn.file.collide::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    width: 15px;
+    height: 8px;
+    background: radial-gradient(circle at 4px 4px, var(--c1) 3.2px, transparent 3.6px), radial-gradient(circle at 11px 4px, var(--c2) 3.2px, transparent 3.6px);
+}
+.cc .tn.dim {
+    opacity: 0.35;
+}
+.cc .tn.hover {
+    background-color: var(--surface-2);
+    z-index: 3;
+}
+.cc .tn.picked {
+    outline: 2px solid var(--blue);
+    outline-offset: 1px;
+    z-index: 3;
+}
+.cc .tn .badge-n {
+    position: absolute;
+    right: 4px;
+    top: 3px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: var(--color-white, #fff);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+}
+.cc .tn.stop-on {
+    box-shadow: 0 0 0 2px var(--blue), 0 0 0 6px var(--blue-muted);
+    z-index: 4;
+}
+.cc .hunks {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 22px;
+    bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow: hidden;
+}
+.cc .hk {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    font-size: 11px;
+    line-height: 15px;
+}
+.cc .hk .fn {
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+}
+.cc .hk .fn::before {
+    content: "@@ ";
+    color: var(--muted);
+}
+.cc .hk .ct {
+    font-variant-numeric: tabular-nums;
+}
+.cc .hk.hot {
+    box-shadow: inset 2px 0 0 var(--fc);
+}
+.cc .tip {
+    position: absolute;
+    z-index: 20;
+    width: 264px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+    font-size: 12px;
+    line-height: 17px;
+    pointer-events: none;
+}
+.cc .tip .p {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    word-break: break-all;
+}
+.cc .tip dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 10px;
+    margin: 0;
+}
+.cc .tip dt {
+    color: var(--muted);
+}
+.cc .tip dd {
+    margin: 0;
+}
+.cc .tip .warn {
+    margin-top: 8px;
+    padding-top: 7px;
+    border-top: 1px solid var(--border);
+    color: var(--yellow);
+}
+.cc .tip .hintk {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 11px;
+}
+.cc .addchat {
+    position: absolute;
+    z-index: 21;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+.cc .addchat:hover {
+    color: var(--fg);
+}
+.cc .dock {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    margin: 0 12px 10px;
+}
+.cc .mon {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+.cc .mon-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    background: var(--surface);
+}
+.cc .mon-h .path {
+    font-weight: 600;
+    color: var(--fg);
+}
+.cc .mon-h .grow {
+    flex: 1;
+}
+.cc .mon-h .modes {
+    display: flex;
+    gap: 1px;
+    background: var(--surface-2);
+    border-radius: 6px;
+    padding: 1px;
+}
+.cc .mon-h .modes button {
+    border: none;
+    background: transparent;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 5px;
+    color: var(--muted);
+}
+.cc .mon-h .modes button.on {
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.cc .mon-b {
+    overflow: auto;
+    min-height: 0;
+}
+.cc .feed {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.cc .feed li {
+    display: grid;
+    grid-template-columns: 44px 10px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 5px 10px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--cc-hair);
+}
+.cc .feed li:last-child {
+    border-bottom: none;
+}
+.cc .feed .t {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+}
+.cc .feed .path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cc .feed li.open {
+    background: var(--surface);
+}
+.cc .feed .peek {
+    grid-column: 1 / -1;
+    margin: 4px 0 2px;
+}
+.cc .rail-fronts {
+    grid-area: rail;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.cc .rail-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.cc .rail-h .n {
+    color: var(--muted);
+    font-weight: 400;
+}
+.cc .fronts {
+    list-style: none;
+    margin: 0;
+    padding: 0 6px 8px;
+    overflow: auto;
+}
+.cc .front {
+    position: relative;
+    padding: 9px 8px 10px;
+    border-radius: 8px;
+}
+.cc .front + .front {
+    border-top: 1px solid var(--cc-hair);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+.cc .front:hover {
+    background: var(--surface);
+}
+.cc .front .row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cc .front .lbl {
+    font-weight: 600;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cc .front .st {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0 8px;
+    line-height: 19px;
+    flex: none;
+}
+.cc .front .st .pulse {
+    width: 6px;
+    height: 6px;
+}
+.cc .st.active {
+    color: var(--purple);
+    background: var(--purple-muted);
+}
+.cc .st.blocked {
+    color: var(--red);
+    background: var(--red-muted);
+}
+.cc .st.done {
+    color: var(--green);
+    background: var(--green-muted);
+}
+.cc .front .where {
+    margin: 4px 0 0 16px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 17px;
+}
+.cc .front .where b {
+    color: var(--fg);
+    font-weight: 600;
+}
+.cc .front .note {
+    margin: 4px 0 0 16px;
+    font-size: 12px;
+    color: var(--red);
+}
+.cc .front .row3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0 0 16px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.cc .front .row3 .files {
+    color: var(--muted);
+}
+.cc .front .row3 svg {
+    margin-left: auto;
+}
+.cc .front .opc {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin: 6px 0 0 16px;
+    font-size: 11.5px;
+    color: var(--yellow);
+}
+.cc .front .addchat {
+    position: absolute;
+    right: 8px;
+    top: 34px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.cc .front:hover .addchat {
+    opacity: 1;
+}
+.cc .front.dimmed {
+    opacity: 0.5;
+}
+.cc .timeline {
+    grid-area: time;
+    border-top: 1px solid var(--border);
+    padding: 8px 14px 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 14px;
+    align-items: center;
+}
+.cc .track {
+    position: relative;
+    display: flex;
+    gap: 4px;
+    height: 26px;
+}
+.cc .seg {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    background: var(--surface);
+    color: var(--muted);
+    min-width: 0;
+}
+.cc .seg .gl {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    font-weight: 700;
+    border: 1.5px solid var(--border);
+    color: var(--muted);
+    background: var(--bg);
+}
+.cc .seg.done {
+    background: color-mix(in srgb, var(--green) 8%, var(--bg));
+    color: var(--fg);
+}
+.cc .seg.done .gl {
+    background: var(--green);
+    border-color: var(--green);
+    color: var(--color-white, #fff);
+}
+.cc .seg.active {
+    background: var(--blue-muted);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.cc .seg.active .gl {
+    border-color: var(--blue);
+    background: var(--blue);
+    box-shadow: 0 0 0 3px var(--blue-muted);
+}
+.cc .seg .ttl {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .seg .dur {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+.cc .hist {
+    position: relative;
+    height: 22px;
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+}
+.cc .hist i {
+    flex: 1;
+    display: flex;
+    flex-direction: column-reverse;
+    min-width: 0;
+}
+.cc .hist b {
+    display: block;
+    background: var(--fc);
+    opacity: 0.55;
+}
+.cc .playhead {
+    position: absolute;
+    top: -34px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--fg);
+    border-radius: 1px;
+    pointer-events: none;
+}
+.cc .playhead::before {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: -4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--fg);
+    box-shadow: 0 0 0 3px var(--bg);
+}
+.cc .tl-ctl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-row: 1 / span 2;
+    grid-column: 2;
+}
+.cc .live-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 2px 10px;
+}
+.cc .live-btn.is-live {
+    color: var(--red);
+    background: var(--red-muted);
+    border-color: transparent;
+}
+.cc .live-btn.is-live i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--red);
+}
+.cc .replay-badge {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--yellow);
+    background: var(--yellow-muted);
+    padding: 1px 8px;
+    border-radius: 999px;
+}
+.cc .feedlane {
+    margin: 0 10px 4px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 17px;
+}
+.cc .feedlane .fh {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--fg);
+    font-size: 11.5px;
+    margin-bottom: 3px;
+}
+.cc .feedlane .fh .grow {
+    flex: 1;
+}
+.cc .feedlane .fh button {
+    border: none;
+    background: transparent;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 0 4px;
+}
+.cc .feedlane div.l {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .feedlane .tm2 {
+    font-variant-numeric: tabular-nums;
+    margin-right: 6px;
+    opacity: 0.8;
+}
+.cc .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 8px 0;
+}
+.cc .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 4px 1px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 19px;
+}
+.cc .chip .x {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    color: var(--muted);
+}
+.cc .chip.pathc {
+    background: var(--blue-muted);
+}
+.cc .chip.pathc .path {
+    font-size: 11px;
+}
+.cc .chip.frontc {
+    background: color-mix(in srgb, var(--fc) 13%, transparent);
+    color: color-mix(in srgb, var(--fc) 80%, var(--fg));
+    font-weight: 600;
+}
+.cc .chip.stopc {
+    background: var(--purple-muted);
+    color: color-mix(in srgb, var(--purple) 80%, var(--fg));
+    font-weight: 600;
+}
+.cc .chip .k {
+    color: var(--muted);
+    font-weight: 400;
+}
+.cc .chat-msg.bot .ref {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface-2);
+    border-radius: 4px;
+    padding: 0 4px;
+}
+.cc .walk {
+    position: fixed;
+    top: 53px;
+    right: 10px;
+    bottom: 10px;
+    width: min(760px, 52vw);
+    min-width: 520px;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    z-index: 35;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.cc .walk-stage {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    padding: 16px 12px 20px 14px;
+    overflow: auto;
+}
+.cc .walk-title {
+    font-weight: 600;
+    font-size: 13.5px;
+    margin: 0 0 4px 2px;
+    text-wrap: balance;
+}
+.cc .walk-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 16px 2px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+.cc .walk-range .sha {
+    font-family: var(--mono);
+    font-size: 11px;
+}
+.cc .cat {
+    display: inline-block;
+    padding: 0 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+}
+.cc .cat.feature {
+    background: var(--blue-muted);
+    color: color-mix(in srgb, var(--blue) 80%, var(--fg));
+}
+.cc .cat.refactor {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+.cc .cat.test {
+    background: var(--green-muted);
+    color: color-mix(in srgb, var(--green) 80%, var(--fg));
+}
+.cc .cat.risk {
+    background: var(--yellow-muted);
+    color: color-mix(in srgb, var(--yellow) 85%, var(--fg));
+}
+.cc .walk-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+.cc .walk-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px 8px 22px;
+}
+.cc .walk-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 22px 24px;
+}
+.cc .walk-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: var(--muted);
+}
+.cc .walk-text {
+    max-width: 68ch;
+    margin: 0 0 16px;
+}
+.cc .walk-text p {
+    margin: 0 0 10px;
+}
+.cc .walk-text code {
+    background: var(--surface-2);
+    padding: 0 4px;
+    border-radius: 4px;
+}
+.cc .walk-body .frame + .frame {
+    margin-top: 12px;
+}
+.cc .updated {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+.cc .updated i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--blue);
+}
+.cc .revising {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--purple);
+    background: var(--purple-muted);
+    border-radius: 999px;
+    padding: 2px 10px;
+}
+.cc .revising .pulse {
+    width: 6px;
+    height: 6px;
+}
+.cc .rail li.inserted {
+    animation: flash 2.4s ease-out;
+}
+.cc .rail .lbl .cat {
+    margin-left: 0;
+    margin-top: 4px;
+}
+.cc .walk .tour-nav {
+    flex-wrap: wrap;
+    row-gap: 6px;
+}
+.cc .walk .tour-nav button,
+.cc .walk .tour-count {
+    white-space: nowrap;
+}
+@media (max-width: 1100px) {
+.cc .walk {
+    grid-template-columns: 176px minmax(0, 1fr);
+}
+.cc .walk .tour-nav .ghost {
+    padding: 4px 8px;
+}
+}
+@media (prefers-reduced-motion: reduce) {
+.cc .tn,
+.cc .tn.live::after,
+.cc .pulse {
+    transition: none;
+    animation: none;
+}
+}
+@media (max-width: 1180px) {
+.cc .sparks {
+    display: none;
+}
+}
+@media (max-width: 900px) {
+.cc {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "strip" "map" "time";
+}
+.cc .rail-fronts {
+    display: none;
+}
+.cc .sparks {
+    display: none;
+}
+}
+
+/* ---- Command: integration + decisions that differ from the mockup ---- */
+#main.cc-host {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+}
+.cc {
+    /* Front palette (spec §8.3), derived from theme tokens. Yellow = off-plan/awaiting; green/red = +/-. */
+    --front-0: var(--blue);
+    --front-1: var(--purple);
+    --front-2: color-mix(in srgb, var(--blue) 50%, var(--green));
+    --front-3: color-mix(in srgb, var(--purple) 55%, var(--red));
+    --front-4: color-mix(in srgb, var(--red) 45%, var(--yellow));
+    --front-5: color-mix(in srgb, var(--fg) 55%, var(--bg));
+}
+.cc .f1 { --fc: var(--front-0); }
+.cc .f2 { --fc: var(--front-1); }
+.cc .f3 { --fc: var(--front-2); }
+.cc .f4 { --fc: var(--front-3); }
+.cc .f5 { --fc: var(--front-4); }
+.cc .f6 { --fc: var(--front-5); }
+.cc:not(:has(.rail-fronts)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "strip" "map" "time";
+}
+.cc .strip-grow {
+    flex: 1;
+}
+.cc .lamp.idle,
+.cc .lamp.offline {
+    background: var(--surface-2);
+    color: var(--muted);
+}
+.cc .lamp .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.cc .lamp.idle .dot {
+    opacity: 0.5;
+}
+.cc .window {
+    padding: 0;
+    border: none;
+}
+.cc .window select {
+    font: inherit;
+    font-size: 11.5px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+.cc .crumb {
+    border: none;
+    background: transparent;
+    padding: 1px 3px;
+    border-radius: 4px;
+}
+.cc .crumb:hover {
+    background: var(--surface-2);
+}
+/* Live: a static ring for 20 s; the ping ring plays once per observed change (not per re-render). */
+.cc .tn.live::after {
+    content: none;
+    animation: none;
+}
+.cc .tn .ping {
+    position: absolute;
+    inset: -2px;
+    border-radius: 6px;
+    pointer-events: none;
+    animation: cc-ping 900ms var(--cc-ease) 1 both;
+}
+/* D6: collision = two-color dashed outline (plus the paired-dot glyph), not a conic border. */
+.cc .tn.file.collide {
+    background: color-mix(in srgb, var(--fc) var(--heat, 10%), var(--bg));
+    border: 1.5px dashed var(--c1);
+    outline: 1.5px dashed var(--c2);
+    outline-offset: -5px;
+}
+.cc .tipfront {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 8px;
+}
+.cc .cc-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 6px;
+    padding: 24px;
+    text-align: center;
+    color: var(--fg);
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.cc .cc-empty-t {
+    font-size: 15px;
+    font-weight: 600;
+}
+.cc .cc-empty p {
+    margin: 0;
+    max-width: 58ch;
+}
+.cc .cc-empty .muted {
+    color: var(--muted);
+    font-size: 12.5px;
+}
+.cc .cc-empty code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface-2);
+    padding: 0 4px;
+    border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .cc .tn .ping {
+        animation: none;
+        box-shadow: 0 0 0 2px var(--fc);
+    }
+}
