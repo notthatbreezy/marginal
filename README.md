@@ -2,7 +2,7 @@
 
 **Code-linked docs and a live Command center for GitHub Copilot.**
 
-Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions). Copilot draws structured, reviewable explanations of your code as RFC-style **docs**: prose with sequence and flow diagrams, call-stack diffs, schema lenses and verified code peeks. You can comment on any paragraph, diagram or line range in the margin, and the feedback goes straight back to the agent. When Copilot implements a multi-step plan across several worktrees, a doc's **Command** tab becomes a live mission wall: a territory map of the repository lights up as each worktree edits files.
+Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions). Copilot draws structured, reviewable explanations of your code as RFC-style **docs**: prose with sequence and flow diagrams, call-stack diffs, database schema views and verified code peeks. You can comment on any paragraph, diagram or line range in the margin, and the feedback goes straight back to the agent. When Copilot implements a multi-step plan across several worktrees, a doc's **Command** tab becomes a live mission wall: a territory map of the repository lights up as each worktree edits files.
 
 > **Status: alpha.** It depends on the Copilot SDK's canvas extension surface, which is marked **experimental** and may change between Copilot releases.
 
@@ -12,11 +12,11 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 
 ### Docs
 
-- **Blocks the agent can draw:** Markdown, sections, callouts, code, `code_peek` (verified slices of real files at pinned commits), sequence diagrams, flow diagrams, call-stack diffs, database lenses, trace quotes and images. Blocks are validated at write time, so every file reference resolves.
+- **Blocks the agent can draw:** Markdown, sections, callouts, code, `code_peek` (verified slices of real files at pinned commits), sequence diagrams, flow diagrams, call-stack diffs, database schema views ("data lenses": which code reads and writes which tables and fields), trace quotes and images. Blocks are validated at write time, so every file reference resolves.
 - **Code tours:** sequence and flow diagrams have a **Tour** mode that steps through the diagram beside the code. Call-stack diffs have a **Focus** view. A chat is docked under every tour and keeps one conversation for the whole walk. Ask "can you show an example of this interface?" and Copilot adds it to that step as **notes and examples**, which appear in place.
 - **Comment in the margin:** hover a paragraph, list item, diagram or code range to get margin controls for *Comment* and *Copy*. Ctrl/Cmd-click or Shift-click selects several at once. Code views support GitHub-style gutter line selection.
 - **Side chat:** a small, draggable chat whose replies stream from your Copilot session, scoped to what you pointed at.
-- **Diff, Commits and History tabs** for the change the doc explains, including agent-authored *file lenses* that group changed files.
+- **Diff, Commits and History tabs** for the change the doc explains. Copilot can organize the Diff tab into **file groups**, collapsible sections such as "Data model", "API" and "Tests & config" in reading order, so a large change reads by concern instead of alphabetically.
 - **Scratchpad:** an always-present doc for quick sketches that aren't tied to a branch.
 - **Open in your browser:** the globe in the header opens the current doc and tab in your default browser, with room to spread out. The window stays live while the Copilot session that opened it is running, and it follows your OS light/dark setting.
 
@@ -71,9 +71,9 @@ Ask Copilot things like:
 
 - "Explain my branch in Marginal."
 - "Sketch how checkout calls the payment service on the Marginal scratchpad."
-- "Group the changed files into lenses."
+- "Organize the Diff tab into file groups."
 
-The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses`, `command`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens`.
+The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses` for file groups, `command`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens` (file groups).
 
 **Command center.** Open a doc that has a repository target and switch to the **Command** tab.
 
