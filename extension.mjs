@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 
 import { createChat } from "./lib/chat.mjs";
+import { adoptLeases, commandActions } from "./lib/command/index.mjs";
 import { InputError } from "./lib/errors.mjs";
 import * as git from "./lib/git.mjs";
 import { getInstructions } from "./lib/instructions.mjs";
@@ -31,7 +32,7 @@ let session;
 let serverPromise;
 // The panel can open while the extension is still joining the session, so resolve it lazily.
 const chat = createChat(() => session);
-const server = () => (serverPromise ??= startServer({ chat, instances }));
+const server = () => (serverPromise ??= startServer({ chat, instances, getSessionId: () => session?.sessionId }));
 
 /** Run a handler, translating validation errors into CanvasErrors the agent can act on. */
 const wrap = (fn) => async (ctx) => {
@@ -290,6 +291,7 @@ const actions = [
         inputSchema: { type: "object", properties: { documentId: { type: "string" } }, required: ["documentId"] },
         handler: wrap((i) => store.remove(i.documentId)),
     },
+    ...commandActions({ resolveDoc: docIdFor, getSessionId: () => session?.sessionId }),
 ];
 
 session = await joinSession({
@@ -333,3 +335,10 @@ session.on((event) => {
         session.log(`whiteboard side-chat: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
     }
 });
+
+// Re-adopt Command leases this session held before a reload, so polling resumes without a new plan "set".
+try {
+    adoptLeases(session.sessionId);
+} catch (e) {
+    session.log(`whiteboard command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
+}
