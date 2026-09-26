@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Whiteboard</title>
+        <link rel="icon" href="data:," />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <header id="bar">
+            <button id="home" class="icon" title="All whiteboards">☰</button>
+            <div id="titles">
+                <div id="title">Whiteboard</div>
+                <div id="subtitle"></div>
+            </div>
+            <!-- One centered status slot, by priority: multi-selection bar, then the hover hint, then Copilot's activity. -->
+            <div id="center">
+                <div id="multibar" hidden>
+                    <span id="multi-count"></span>
+                    <button id="multi-comment" title="Comment on all selected">Comment</button>
+                    <button id="multi-copy" title="Copy all selected">Copy</button>
+                    <button id="multi-clear" class="x" title="Clear selection (Esc)" aria-label="Clear selection">
+                        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+                    </button>
+                </div>
+                <div id="hint" hidden><kbd>Ctrl</kbd>+click to select more · <kbd>Shift</kbd>+click for a range</div>
+                <div id="activity" hidden><span class="pulse"></span><span id="activity-text"></span></div>
+            </div>
+            <nav id="tabs" hidden>
+                <button data-tab="board" class="on">Whiteboard</button>
+                <button data-tab="diff">Diff</button>
+                <button data-tab="commits">Commits</button>
+                <button data-tab="history">History</button>
+            </nav>
+        </header>
+        <div id="banner" hidden></div>
+        <main id="main"></main>
+        <aside id="peek" hidden>
+            <div id="peek-head">
+                <div id="peek-title"></div>
+                <button id="peek-close" class="icon" title="Close">✕</button>
+            </div>
+            <div id="peek-body"></div>
+        </aside>
+        <button id="ask-float" hidden>Ask Copilot about this</button>
+        <div id="gutter" hidden>
+            <button id="g-comment" title="Comment on this paragraph" aria-label="Comment">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+            </button>
+            <button id="g-copy" title="Copy Markdown" aria-label="Copy">
+                <svg class="i-copy" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M10.5 3.5v-.5a1 1 0 0 0-1-1H4a1.5 1.5 0 0 0-1.5 1.5V10a1 1 0 0 0 1 1h.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+                <svg class="i-done" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <button id="g-pick" title="Add to selection" aria-label="Add to selection" hidden>
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path class="bar-h" d="M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path class="bar-v" d="M8 3.5v9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+            </button>
+        </div>
+        <button id="chat-fab" title="Chat about this whiteboard" aria-label="Chat with Copilot about this whiteboard" hidden>
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>
+        </button>
+        <div id="chat" hidden role="dialog" aria-label="Chat with Copilot">
+            <div id="chat-bar" title="Drag to move">
+                <span class="grip" aria-hidden="true"></span>
+                <button id="chat-close" class="chat-icon" title="Close (Esc)" aria-label="Close chat">
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                </button>
+            </div>
+            <div id="chat-log" aria-live="polite"></div>
+            <div class="chat-input" data-os-rail>
+                <textarea id="chat-text" rows="1" placeholder="Ask about this…" aria-label="Message Copilot"></textarea>
+                <button id="chat-send" class="chat-icon" title="Send (Shift+Enter)" aria-label="Send" disabled>
+                    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </button>
+            </div>
+            <div id="chat-resize" title="Drag to resize" aria-hidden="true"></div>
+        </div>
+        <div id="toast" hidden></div>
+        <script type="module" src="app.js"></script>
+        <script type="module" src="scrollbars.js"></script>
+    </body>
+</html>
