@@ -1,7 +1,8 @@
 {
   "name": "marginal",
   "owner": {
-    "name": "Marginal contributors"
+    "name": "Chris Brown",
+    "email": "chris-brown@notthatbreezy.io"
   },
   "metadata": {
     "description": "Marginal: code-linked docs and a live Command center for the GitHub Copilot app.",

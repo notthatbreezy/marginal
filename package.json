@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Code-linked docs and a live Command center for the GitHub Copilot app (canvas extension).",
+  "author": "Chris Brown <chris-brown@notthatbreezy.io> (https://github.com/notthatbreezy)",
+  "homepage": "https://github.com/notthatbreezy/marginal",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/notthatbreezy/marginal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/notthatbreezy/marginal/issues"
+  },
   "license": "MIT",
   "type": "module",
   "engines": {

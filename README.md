@@ -47,7 +47,7 @@ Requirements: the GitHub Copilot app with canvas extensions, and `git` on your `
 Install it as a Copilot plugin. This repository is its own plugin marketplace:
 
 ```sh
-copilot plugin marketplace add <owner>/marginal
+copilot plugin marketplace add notthatbreezy/marginal
 copilot plugin install marginal@marginal
 ```
 
@@ -58,8 +58,8 @@ Your docs live in `~/.copilot/marginal/` (or `$COPILOT_HOME/marginal/`), outside
 <details>
 <summary>Other ways to install</summary>
 
-- **One command, deprecated by the CLI:** `copilot plugin install <owner>/marginal`. Direct repository installs still work but print a deprecation warning.
-- **From a clone:** `git clone https://github.com/<owner>/marginal ~/.copilot/extensions/marginal` (Windows: `%USERPROFILE%\.copilot\extensions\marginal`), or into `.github/extensions/marginal/` in one repository. Use this when you want to hack on it. Don't combine it with the plugin install, or you'll get two Marginal canvases.
+- **One command, deprecated by the CLI:** `copilot plugin install notthatbreezy/marginal`. Direct repository installs still work but print a deprecation warning.
+- **From a clone:** `git clone https://github.com/notthatbreezy/marginal ~/.copilot/extensions/marginal` (Windows: `%USERPROFILE%\.copilot\extensions\marginal`), or into `.github/extensions/marginal/` in one repository. Use this when you want to hack on it. Don't combine it with the plugin install, or you'll get two Marginal canvases.
 
 </details>
 

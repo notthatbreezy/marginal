@@ -3,8 +3,12 @@
   "description": "Code-linked docs and a live Command center for the GitHub Copilot app: Copilot draws reviewable explanations of your code (diagrams, call-stack diffs, verified code peeks) that you comment on in the margin, and tracks multi-worktree implementations live.",
   "version": "0.1.0",
   "author": {
-    "name": "Marginal contributors"
+    "name": "Chris Brown",
+    "email": "chris-brown@notthatbreezy.io",
+    "url": "https://github.com/notthatbreezy"
   },
+  "homepage": "https://github.com/notthatbreezy/marginal",
+  "repository": "https://github.com/notthatbreezy/marginal",
   "license": "MIT",
   "keywords": ["canvas", "code-review", "diagrams", "documentation", "git", "worktrees", "walkthrough"],
   "extensions": "extensions"
