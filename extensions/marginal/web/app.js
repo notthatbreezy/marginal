@@ -307,7 +307,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         if (activeLineSel) activeLineSel.clear();
         else if (picks.size) clearPicks();
-        else if (!$("#chat").hidden && !chat.docked) closeChat();
+        else if (!$("#chat").hidden && !chat.docked && !chat.min) closeChat();
         else if (tour.root) closeTour();
         else $("#peek").hidden = true;
     }
@@ -1313,6 +1313,7 @@ function renderChips() {
 
 function openChat(ctx) {
     $("#ask-float").hidden = true;
+    if (chat.min) setChatMin(false);
     const mode = ctx.mode ?? (state.tab === "command" ? "command" : "board");
     switchChatMode(mode);
     if (mode === "command") {
@@ -1367,6 +1368,7 @@ const chatHome = { parent: $("#chat").parentNode, next: $("#chat").nextSibling }
 function dockChat(slot, ctx) {
     if (!slot) return;
     if (chat.docked) undockChat();
+    if (chat.min) setChatMin(false);
     const floating = { style: chatBox.getAttribute("style") };
     if (ctx.mode === "command") openChat({ mode: "command" });
     else {
@@ -1402,7 +1404,7 @@ function renderRef() {
     let el = $("#chat-ref");
     if (!el) {
         el = h("span", { id: "chat-ref" });
-        $("#chat-bar").insertBefore(el, $("#chat-close"));
+        $("#chat-bar").insertBefore(el, $("#chat-pip") ?? $("#chat-close"));
     }
     const text = chat.docked?.ref?.() ?? (chat.mode === "command" ? "Command chat · orchestrator" : (chat.ref ?? (state.doc ? "About this doc" : "")));
     const marked = !chat.docked && chat.mode !== "command" && !!(chat.askRows?.length || chat.askRange || chat.picks?.length || chat.blockId);
@@ -1442,7 +1444,36 @@ function refOf(t, selection, el) {
     return `${BLOCK_NOUN[b.type] ?? "Block"}${title ? ` · ${excerpt(title, 34)}` : ""}`;
 }
 
+/** Minimize: the popup shrinks to its bar (label + status) where it sits; thread, log, chips and highlights stay. */
+function setChatMin(on) {
+    if (chat.docked) on = false;
+    chat.min = !!on;
+    chatBox.classList.toggle("min", chat.min);
+    const btn = $("#chat-min");
+    btn.setAttribute("aria-expanded", String(!chat.min));
+    btn.title = chat.min ? "Expand" : "Minimize (keeps the conversation)";
+    btn.setAttribute("aria-label", chat.min ? "Expand chat" : "Minimize chat");
+    $("#chat-bar").title = chat.min ? "Click to expand · drag to move" : "Drag to move";
+    if (!chat.min) {
+        chat.unread = false;
+        setPip(null);
+        fitHeight();
+        scrollChat();
+        chatText.focus({ preventScroll: true });
+    } else {
+        setPip(chat.statusEl ? "working" : null);
+        fitHeight();
+    }
+}
+function setPip(kind) {
+    const pip = $("#chat-pip");
+    pip.hidden = !kind;
+    pip.className = kind ?? "";
+}
+$("#chat-min").onclick = () => setChatMin(!chat.min);
+
 function closeChat() {
+    if (chat.min) setChatMin(false);
     $("#chat").hidden = true;
     if (chat.mode === "command") {
         // Persistent: the thread, log and focus stay for the next open.
@@ -1504,6 +1535,10 @@ function applyBox({ right, bottom, width, height }) {
 /** Grow upward only as far as the viewport allows: the top edge (and its drag bar) must stay reachable. */
 function fitHeight() {
     if (chat.docked) return;
+    if (chat.min) {
+        chatBox.style.height = chatBox.style.minHeight = chatBox.style.maxHeight = "";
+        return;
+    }
     const bottom = parseFloat(chatBox.style.bottom || getComputedStyle(chatBox).bottom) || 0;
     const minH = minChatHeight();
     const room = Math.max(minH, innerHeight - bottom - TOP_GAP);
@@ -1520,14 +1555,20 @@ function fitHeight() {
 }
 function track(handle, onMove) {
     handle.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest("#chat-close")) return;
+        if (e.button !== 0 || e.target.closest("#chat-close, #chat-min")) return;
         e.preventDefault();
         handle.setPointerCapture(e.pointerId);
         const start = { x: e.clientX, y: e.clientY, ...anchor() };
+        let moved = false;
         chatBox.classList.add("dragging");
-        const move = (ev) => onMove(start, ev.clientX - start.x, ev.clientY - start.y);
+        const move = (ev) => {
+            if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 3) moved = true;
+            onMove(start, ev.clientX - start.x, ev.clientY - start.y);
+        };
         const up = () => {
             chatBox.classList.remove("dragging");
+            // A click (not a drag) on a minimized chat's bar expands it.
+            if (!moved && handle.id === "chat-bar" && chat.min) setChatMin(false);
             handle.removeEventListener("pointermove", move);
             handle.removeEventListener("pointerup", up);
             handle.removeEventListener("pointercancel", up);
@@ -1575,6 +1616,7 @@ function bubble(messageId) {
 function onChatEvent(ev) {
     if (!chat.threadId && chat.awaiting) chat.threadId = ev.threadId; // events can beat the HTTP response
     if (ev.threadId !== chat.threadId) return;
+    if (chat.min) setPip(ev.kind === "done" ? (chat.unread ? "unread" : null) : ev.kind === "status" ? "working" : ((chat.unread = true), "unread"));
     if (ev.kind === "status") setStatus(ev.text);
     else if (ev.kind === "delta") {
         const el = bubble(ev.messageId);

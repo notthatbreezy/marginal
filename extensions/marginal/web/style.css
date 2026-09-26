@@ -4764,3 +4764,79 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
 .walk .dock-stage #chat.docked .feedlane .fh button {
     padding: 0 2px;
 }
+/* Minimized chat: just its bar (what it's about + status) where it sat; click the bar or ⌃ to expand. */
+#chat-min {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    margin-right: 2px;
+}
+#chat-min .max,
+#chat.min #chat-min .min {
+    display: none;
+}
+#chat.min #chat-min .max {
+    display: inline;
+}
+#chat.docked #chat-min,
+#chat.docked #chat-pip {
+    display: none;
+}
+#chat.min {
+    width: auto !important;
+    min-width: 220px;
+    max-width: min(360px, calc(100vw - 40px));
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    border-radius: 999px;
+    animation: none;
+}
+#chat.min > :not(#chat-bar) {
+    display: none !important;
+}
+#chat.min #chat-bar {
+    position: relative;
+    height: 34px;
+    padding: 0 8px 0 14px;
+    cursor: pointer;
+}
+#chat.min #chat-bar .grip {
+    display: none;
+}
+#chat.min #chat-ref {
+    position: static;
+    flex: 1;
+    min-width: 0;
+    margin-right: 8px;
+    color: var(--fg);
+}
+#chat.min #chat-bar:hover #chat-ref .t {
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+}
+#chat-pip {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-right: 8px;
+    border-radius: 50%;
+}
+#chat-pip.unread {
+    background: var(--blue);
+    box-shadow: 0 0 0 3px var(--blue-muted);
+}
+#chat-pip.working {
+    background: var(--purple);
+    animation: pip-pulse 1.2s ease-in-out infinite;
+}
+@keyframes pip-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    #chat-pip.working {
+        animation: none;
+    }
+}
