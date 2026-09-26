@@ -20,7 +20,8 @@ let active = null; // only one stepper handles the keyboard at a time
  * @param {Node} [o.headerExtra]                  extra node in the top bar (e.g. revising chip)
  * @param {(stops:any[]) => number} [o.findStage] map a clicked [data-unit] to a stop index
  * @param {Array<{label:string,title?:string,onClick:(i:number,stop:any)=>void}>} [o.actions] extra footer buttons (per-stop actions)
- * @param {boolean} [o.dock] reserve a slot above the footer for a conversation that spans the whole walk (api.dock)
+ * @param {boolean|"stage"|"pane"} [o.dock] reserve a slot for a conversation that spans the whole walk (api.dock):
+ *        "stage" puts it under the left column (keeps the stop's content unobstructed), "pane"/true above the footer
  */
 export function createStepper(o) {
     let stops = o.stops;
@@ -31,13 +32,14 @@ export function createStepper(o) {
     const count = h("span", { class: "tour-count" });
     const prev = h("button", { class: "tour-prev", onclick: () => go(i - 1) }, h("kbd", {}, "←"), "Back");
     const next = h("button", { class: "tour-next primary", onclick: () => (i >= stops.length - 1 ? close() : go(i + 1)) });
-    const dock = o.dock ? h("div", { class: "tour-dock" }) : null;
+    const dock = o.dock ? h("div", { class: `tour-dock dock-${o.dock === "stage" ? "stage" : "pane"}` }) : null;
+    const inStage = o.dock === "stage";
     const pane = h(
         "div",
         { class: "tour-pane" },
         h("header", { class: "tour-top" }, progress, o.headerExtra ?? null, h("button", { class: "chat-icon tour-close", title: "Close (Esc)", "aria-label": "Close", onclick: () => close(), html: CLOSE_SVG })),
         body,
-        dock,
+        inStage ? null : dock,
         h(
             "footer",
             { class: "tour-nav" },
@@ -48,7 +50,7 @@ export function createStepper(o) {
             next,
         ),
     );
-    const root = h("div", { id: o.id, class: `stepper stepper-${o.id}`, role: "dialog", "aria-modal": o.modal === false ? "false" : "true", "aria-label": o.label }, stage, pane);
+    const root = h("div", { id: o.id, class: `stepper stepper-${o.id}`, role: "dialog", "aria-modal": o.modal === false ? "false" : "true", "aria-label": o.label }, inStage ? h("div", { class: "tour-left" }, stage, dock) : stage, pane);
     stage.addEventListener(
         "click",
         (e) => {

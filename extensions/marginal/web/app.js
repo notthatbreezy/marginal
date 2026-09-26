@@ -2215,7 +2215,7 @@ function openTour(blockId) {
         stops: tour.stops,
         renderStage: () => h("div", {}, h("div", { class: "tour-stage-title" }, tour.block.title), tourStage(tour.block)),
         renderStop: (st, i, stepper) => renderTourStop(tour.block, st, stepper),
-        dock: true,
+        dock: "stage", // the conversation lives under the diagram, so the stop's code and notes stay unobstructed
         onStop: () => chat.docked && renderRef(),
         onClose: () => {
             undockChat();

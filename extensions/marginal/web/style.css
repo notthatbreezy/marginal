@@ -4701,3 +4701,66 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
         animation: none;
     }
 }
+/* Tour: the chat docks under the diagram column; the diagram scrolls above it rather than shrinking. */
+.tour-left {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+}
+.tour-left > .tour-stage {
+    flex: 1;
+    min-height: 0;
+    border-right: none;
+}
+.tour-dock.dock-stage {
+    background: var(--surface);
+}
+.dock-stage #chat.docked #chat-bar {
+    padding-left: 22px;
+    padding-right: 20px;
+}
+.dock-stage #chat.docked #chat-ref {
+    left: 22px;
+    right: 20px;
+}
+.dock-stage #chat.docked #chat-log {
+    max-height: min(46vh, 440px);
+    padding: 0 20px 0 22px;
+}
+.dock-stage #chat.docked .chat-input,
+.dock-stage #chat.docked .chips,
+.dock-stage #chat.docked .chat-blocked {
+    margin-left: 22px;
+    margin-right: 20px;
+}
+.dock-stage #chat.docked .chat-input {
+    background: var(--bg);
+}
+/* Walkthrough: same placement, in its narrower rail column. */
+.cc .walk .tour-left > .tour-stage {
+    padding: 16px 12px 20px 14px;
+}
+.walk .dock-stage #chat.docked #chat-bar {
+    padding-left: 14px;
+    padding-right: 12px;
+}
+.walk .dock-stage #chat.docked #chat-ref {
+    left: 14px;
+    right: 12px;
+}
+.walk .dock-stage #chat.docked #chat-log {
+    padding: 0 12px 0 14px;
+}
+.walk .dock-stage #chat.docked .chat-input,
+.walk .dock-stage #chat.docked .chips,
+.walk .dock-stage #chat.docked .feedlane,
+.walk .dock-stage #chat.docked .chat-blocked {
+    margin-left: 14px;
+    margin-right: 12px;
+}
+.walk .dock-stage #chat.docked .feedlane .fh button {
+    padding: 0 2px;
+}

@@ -76,7 +76,7 @@ export function createWalkthrough(o) {
             label: `Walkthrough: ${w.title}`,
             stops: w.stops,
             headerExtra: chipHost,
-            dock: true,
+            dock: "stage", // under the stop rail, like tours: the stop's diff stays unobstructed
             renderStage,
             renderStop: (s, i) => renderStop(s, i),
             onStop: (i, s) => o.onStop?.(cur, s, i),

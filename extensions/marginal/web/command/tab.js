@@ -106,7 +106,7 @@ export async function mountCommand(host, { documentId }) {
             svc.dockChat?.(slot, {
                 mode: "command",
                 kind: "walkthrough",
-                placeholder: "Ask about this stop, or ask Copilot to expand it…",
+                placeholder: "Ask about this stop…",
                 ref: () => {
                     const w = cc.walk?.current;
                     const s = cc.walk?.stop;
