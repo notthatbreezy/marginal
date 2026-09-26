@@ -20,7 +20,8 @@ try {
     if (new Set(Object.values(v)).size !== 1) die(`manifest versions disagree: ${JSON.stringify(v)}`);
     const current = v.plugin;
     const tags = git("tag", "--list", "v*").split("\n").filter(Boolean);
-    const next = tags.length === 0 && /^\d+\.\d+\.\d+$/.test(which) ? which : bump(current, which);
+    // The very first release ships the version already in the manifests (a bump would skip it); later ones bump.
+    const next = /^\d+\.\d+\.\d+$/.test(which) ? which : tags.length === 0 ? current : bump(current, which);
     if (tags.includes(`v${next}`)) die(`tag v${next} already exists`);
     if (git("branch", "--show-current") !== "main") die("release from main");
     if (git("status", "--porcelain")) (dry ? console.warn : die)("the working tree has uncommitted changes");
