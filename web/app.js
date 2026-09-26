@@ -1377,12 +1377,27 @@ const excerpt = (t, n = 40) => {
     return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 };
 const BLOCK_NOUN = { code_peek: "Code peek", code: "Code", sequence: "Sequence", flow_diagram: "Flow", call_stack_diff: "Call stack", database_lens: "Data lens", trace_quote: "Quote", callout: "Callout", image: "Image", markdown: "Text", section: "Section" };
-/** Label for a comment target: a quoted excerpt for prose/selections, the block kind + title otherwise. */
-function refOf(t, selection) {
-    if (selection) return `“${excerpt(selection)}”`;
-    if (t.unit) return `“${excerpt(t.text)}”`;
+/** Where an element sits: the nearest heading above it in its text, else its section's title. */
+function sectionOf(el) {
+    const md = el?.closest(".md");
+    if (md) {
+        const heads = [...md.querySelectorAll("h1, h2, h3, h4")].filter((hd) => hd !== el && hd.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (heads.length) return excerpt(heads.at(-1).textContent, 30);
+    }
+    const sec = el?.closest(".block.b-section, .block.b-callout");
+    const b = sec && findBlock(state.doc?.content, sec.dataset.id);
+    return b?.title ? excerpt(b.title, 30) : null;
+}
+const UNIT_KIND = { P: "paragraph", LI: "list item", H1: "heading", H2: "heading", H3: "heading", H4: "heading", BLOCKQUOTE: "quote", TABLE: "table", PRE: "code", UL: "list", OL: "list" };
+/** Label for a comment target: where it is (section · kind of text), or the block kind + title for diagrams and code. */
+function refOf(t, selection, el) {
+    if (t.unit || (selection && el?.matches?.("[data-l]"))) {
+        const kind = UNIT_KIND[el?.tagName] ?? "text";
+        const where = sectionOf(el);
+        return `${where ? `${where} · ` : ""}${selection ? `selection in ${kind}` : kind}`;
+    }
     const b = t.blockId && findBlock(state.doc?.content, t.blockId);
-    if (!b) return t.text ? `“${excerpt(t.text)}”` : null;
+    if (!b) return selection ? `${sectionOf(el) ?? "Doc"} · selection` : null;
     const title = b.title ?? b.caption ?? b.source?.file?.split("/").pop();
     return `${BLOCK_NOUN[b.type] ?? "Block"}${title ? ` · ${excerpt(title, 34)}` : ""}`;
 }
@@ -1785,7 +1800,7 @@ gComment.onclick = (e) => {
     const t = currentTarget();
     const sel = getSelection();
     const range = gutterState.selection && sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    openChat({ blockId: t.blockId, unit: t.unit, quote: t.text, ref: refOf(t, gutterState.selection), range });
+    openChat({ blockId: t.blockId, unit: t.unit, quote: t.text, ref: refOf(t, gutterState.selection, gutterState.unit), range });
     sel?.removeAllRanges();
     hideGutter();
 };
@@ -1915,7 +1930,8 @@ function multiComment() {
     const parts = pickedParts();
     if (!parts.length) return;
     const quote = parts.map((p) => `[${p.label}]\n${p.text}`).join("\n\n");
-    openChat({ blockId: parts.length === 1 ? parts[0].key.split("|")[0] : null, picks: parts.map((p) => p.key), quote, ref: parts.length === 1 ? `“${excerpt(parts[0].text)}”` : `${parts.length} selections` });
+    const one = parts.length === 1 ? elOf(parts[0].key) : null;
+    openChat({ blockId: parts.length === 1 ? parts[0].key.split("|")[0] : null, picks: parts.map((p) => p.key), quote, ref: one ? refOf(unitSource(one), null, one) : `${parts.length} selections` });
     clearPicks();
     hideGutter();
 }
@@ -1953,7 +1969,8 @@ document.addEventListener("mouseup", (e) => {
         btn.hidden = false;
         const kept = range.cloneRange();
         btn.onclick = () => {
-            openChat({ blockId: blockEl?.dataset.id, quote: text, ref: `“${excerpt(text)}”`, range: kept });
+            const start = nodeElement(kept.startContainer);
+            openChat({ blockId: blockEl?.dataset.id, quote: text, ref: `${sectionOf(start) ?? "Doc"} · selection`, range: kept });
             getSelection()?.removeAllRanges();
         };
     }, 0);
