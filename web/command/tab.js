@@ -1,5 +1,5 @@
 // Command tab: the implementation mission wall.
-// M1 instrument strip + territory map; M2 fronts rail, checkpoint timeline + scrub replay, off-plan filter,
+// Instrument strip, territory map, fronts rail, checkpoint timeline + scrub replay, off-plan filter,
 // views & follow, auto-root, fisheye pins, monitors dock, hunk rows. Everything renders "as of" a time: live = now.
 import { INSTANCE, api, bus, h, put, svc } from "../core.js";
 import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
@@ -903,7 +903,7 @@ function keydown(e) {
     }
 }
 
-// ---------- conversation (M3): focus items, chat gating, activity lane ----------
+// ---------- conversation: focus items, chat gating, activity lane ----------
 function pathItem(path) {
     const isDir = !!findNode(cc.tree, path)?.dir;
     return { key: `path:${path}`, kindLabel: isDir ? "dir" : "file", label: `${path || cc.data.repository}${isDir ? "/" : ""}`, cls: "pathc", item: { kind: "path", path, isDir } };

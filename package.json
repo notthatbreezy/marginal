@@ -1,0 +1,15 @@
+{
+  "name": "marginal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Code-linked whiteboards and a live Command center for the GitHub Copilot app (canvas extension).",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node test/run.mjs 180000 test/command.unit.test.mjs test/command.web.test.mjs test/command.integration.test.mjs && node test/smoke.mjs",
+    "dev": "node tools/devserver.mjs --edits"
+  }
+}

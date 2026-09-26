@@ -1,4 +1,4 @@
-// Monitor panels (spec §7.5, D2: diff-feed + files modes only). A monitor watches one directory/file subtree.
+// Monitor panels (diff-feed and files modes). A monitor watches one directory/file subtree.
 import { api, h, put } from "../core.js";
 import { relTime } from "./derive.js";
 import { fmtCounts } from "./treemap.js";

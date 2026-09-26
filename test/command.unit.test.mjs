@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-process.env.COPILOT_HOME = mkdtempSync(join(tmpdir(), "wb-unit-"));
+process.env.WHITEBOARD_DATA_DIR = mkdtempSync(join(tmpdir(), "wb-unit-"));
 
 const { classifyPattern, compilePatterns, globToRegExp, normalizeRepoPath, offPlanMatcher, patternsTouchDir, planPatterns, matchingActivePhases } = await import("../lib/command/patterns.mjs");
 const { Issues, ISSUE_CODES, nearestPath, distance } = await import("../lib/command/issues.mjs");
@@ -209,7 +209,7 @@ test("every issue code is exercised somewhere", () => {
     assert.ok(ISSUE_CODES.includes("not_owner") && ISSUE_CODES.includes("duplicate_worktree"));
 });
 
-// ---------- M1 review fixes + M2 ----------
+// ---------- boundaries, zero-line changes, hunks, mission, views ----------
 test("globs share the path boundary: drive, control chars, empty segments; // collapses; ./ strips", () => {
     assert.deepEqual(pat("src//*.js"), { kind: "glob", glob: "src/*.js" });
     assert.deepEqual(pat("./src/**/*.js"), { kind: "glob", glob: "src/**/*.js" });
@@ -298,7 +298,7 @@ test("view spec validation for command_view", () => {
     assert.ok(codes.some((c) => c.startsWith("view.root:")), codes.join());
     assert.ok(codes.some((c) => c.startsWith("view.monitors[0].mode:")), codes.join());
 });
-// ---------- M2 review fixes ----------
+// ---------- persisted prefs, view paths, legacy states ----------
 test("prefs.json is parsed at the boundary: malformed layout parts are dropped, not trusted", async () => {
     const { parsePrefs, parseLayout } = await import("../lib/command/patterns.mjs");
     const p = parsePrefs({ follow: "yes", layout: { root: "../x", pins: ["src/a", 3, "src/**/*.ts"], monitors: { path: "src" }, filters: { minChurn: -1, hideTests: "y" } }, savedViews: [{ id: "Bad Id" }, { id: "ok", monitors: [{ path: "src", mode: "heat" }] }], junk: 1 });
@@ -323,7 +323,7 @@ test("a carried-forward done phase without a checkpoint is repaired on plan re-s
     const plan = parsePlan(new Issues(), { id: "retry", title: "R", phases: [{ id: "p1", title: "a" }, { id: "p2", title: "b" }] }, { base: "abc", previous: prev });
     assert.deepEqual(plan.phases.map((p) => p.state.status), ["active", "pending"]);
 });
-// ---------- M3 ----------
+// ---------- conversation: activity, focus, instructions ----------
 test("activity lane: root messages (first line) and tool starts; subagents, chat turns and chatter excluded", async () => {
     const { activityOf } = await import("../lib/command/mission.mjs");
     assert.deepEqual(activityOf({ type: "assistant.message", data: { content: "\n**P2** started\nmore" } }, { now: 0 }), { at: new Date(0).toISOString(), kind: "message", text: "P2 started" });

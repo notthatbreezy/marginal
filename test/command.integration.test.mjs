@@ -9,7 +9,7 @@ import { after, before, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const tmp = mkdtempSync(join(tmpdir(), "wb-int-"));
-process.env.COPILOT_HOME = join(tmp, "home");
+process.env.WHITEBOARD_DATA_DIR = join(tmp, "data");
 const ext = fileURLToPath(new URL("..", import.meta.url));
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
@@ -332,7 +332,7 @@ test("walkthrough: invalid show → all issues + revising event, nothing stored;
     off();
 });
 
-test("walkthrough (M3 review): no refs from rejected live shows, renamed base ranges, view normalization, monotonic seq, CAS", async () => {
+test("walkthrough: no refs from rejected live shows, renamed base ranges, view normalization, monotonic seq, CAS", async () => {
     const d = doc.documentId;
     const refs = () => git(repo, "for-each-ref", "--format=%(refname)", `refs/whiteboard/checkpoints/${d}/`).split("\n").filter((x) => x.includes("/walk-"));
     git(wt2, "mv", "tests/executor.test.ts", "tests/exec.test.ts");
@@ -406,7 +406,7 @@ test("pollers dedupe: once per front in-process, zero in a non-owner process", a
     poller.startPolling(d, readState(d).fronts[0]);
     assert.deepEqual(poller.pollingFronts(d), loops1, "second start is a no-op");
     const script = `
-        process.env.COPILOT_HOME = ${JSON.stringify(process.env.COPILOT_HOME)};
+        process.env.WHITEBOARD_DATA_DIR = ${JSON.stringify(process.env.WHITEBOARD_DATA_DIR)};
         const { adoptLeases } = await import(${JSON.stringify(pathToFileURL(join(ext, "lib/command/index.mjs")).href)});
         const { gitStats } = await import(${JSON.stringify(pathToFileURL(join(ext, "lib/command/gitx.mjs")).href)});
         const adopted = adoptLeases("session-B");

@@ -1283,7 +1283,7 @@ function switchChatMode(mode) {
     renderChips();
 }
 
-/** Focus chips (Command chat): items are {key, kind, label, cls?, item} where item is the spec §7.10 payload entry. */
+/** Focus chips (Command chat): items are {key, kind, label, cls?, item} where item is a Focus payload entry (docs/command-center.md). */
 function addFocus(items) {
     for (const it of items) if (!chat.focus.some((f) => f.key === it.key)) chat.focus.push(it);
     chat.focus = chat.focus.slice(-40);

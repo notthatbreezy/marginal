@@ -34,7 +34,7 @@ export function changesAt(events, at = Infinity) {
     return files;
 }
 
-/** Auto velocity window by session age (spec §7.2). Returns { bucketMs, spanMs, label }. */
+/** Auto velocity window by session age. Returns { bucketMs, spanMs, label }. */
 export function autoWindow(ageMs) {
     const m = 60_000;
     if (ageMs < 10 * m) return { bucketMs: m, spanMs: 10 * m, label: "1m" };

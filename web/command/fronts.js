@@ -1,4 +1,4 @@
-// Fronts rail (spec §7.7, D5: sparklines live here only) and the checkpoint timeline + scrub replay (§7.8, D3).
+// Fronts rail (per-front sparklines live here only) and the checkpoint timeline with scrub replay.
 import { h, put } from "../core.js";
 import { buckets } from "./derive.js";
 

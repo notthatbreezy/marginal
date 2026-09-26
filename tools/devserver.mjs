@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 const args = new Set(process.argv.slice(2));
 const seconds = Number([...args].find((a) => a.startsWith("--seconds="))?.split("=")[1] ?? 600);
 const tmp = mkdtempSync(join(tmpdir(), "wb-dev-"));
-process.env.COPILOT_HOME = join(tmp, "home");
+process.env.WHITEBOARD_DATA_DIR = join(tmp, "data");
 
 const store = await import("../lib/store.mjs");
 const gitm = await import("../lib/git.mjs");

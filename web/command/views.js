@@ -1,4 +1,4 @@
-// Views & follow (spec §7.6), auto-root (§7.3), fisheye pins (§7.4, D7 fixed 3×), hunk rows (lazy).
+// Views & follow, auto-root, fisheye pins (fixed 3×), hunk rows (lazy).
 import { api, h } from "../core.js";
 
 export const PIN_WEIGHT = 3;

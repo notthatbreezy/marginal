@@ -2289,7 +2289,7 @@ svg .muted {
 }
 
 /* ==========================================================================
-   Command tab. Scoped port of the approved mockup (command-center/mockups/cc.css) + integration rules.
+   Command tab. Design stylesheet scoped under .cc (tools/scope-css.mjs) + integration rules.
    Tokens only; every selector lives under .cc so nothing leaks into the whiteboard.
    ========================================================================== */
 .cc {
@@ -3540,14 +3540,14 @@ svg .muted {
 }
 }
 
-/* ---- Command: integration + decisions that differ from the mockup ---- */
+/* ---- Command: integration rules ---- */
 #main.cc-host {
     padding: 0;
     overflow: hidden;
     display: flex;
 }
 .cc {
-    /* Front palette (spec §8.3), derived from theme tokens. Yellow = off-plan/awaiting; green/red = +/-. */
+    /* Front palette, derived from theme tokens. Yellow = off-plan/awaiting; green/red = +/-. */
     --front-0: var(--blue);
     --front-1: var(--purple);
     --front-2: color-mix(in srgb, var(--blue) 50%, var(--green));
@@ -3616,7 +3616,7 @@ svg .muted {
     pointer-events: none;
     animation: cc-ping 900ms var(--cc-ease) 1 both;
 }
-/* D6: collision = two-color dashed outline (plus the paired-dot glyph), not a conic border. */
+/* Collision = two-color dashed outline (plus the paired-dot glyph), not a conic border. */
 .cc .tn.file.collide {
     background: color-mix(in srgb, var(--fc) var(--heat, 10%), var(--bg));
     border: 1.5px dashed var(--c1);
@@ -3665,7 +3665,7 @@ svg .muted {
         box-shadow: 0 0 0 2px var(--fc);
     }
 }
-/* ---- Command M2: fronts rail, timeline/replay, off-plan filter, views & follow, pins, monitors, phase menu ---- */
+/* ---- Command: fronts rail, timeline/replay, off-plan filter, views & follow, pins, monitors, phase menu ---- */
 .cc {
     position: relative;
 }
@@ -3950,7 +3950,7 @@ svg .muted {
 .cc .tn .hunks {
     pointer-events: none;
 }
-/* ---- Command M3: walkthrough pop-up, map linkage, tile add-to-chat, Command chat (chips, activity lane) ---- */
+/* ---- Command: walkthrough pop-up, map linkage, tile add-to-chat, Command chat (chips, activity lane) ---- */
 .cc .walk {
     top: var(--cc-top, 53px);
     grid-template-columns: minmax(180px, 34%) minmax(0, 1fr);

@@ -80,7 +80,7 @@ test("velocity: trailing bucket, initial/baseline excluded, auto window by age",
     assert.deepEqual([heatOf(5), heatOf(30), heatOf(100), heatOf(500)], [8, 14, 22, 30]);
 });
 
-// ---------- M2: views, follow, auto-root, zero-line changes ----------
+// ---------- views, follow, auto-root, zero-line changes ----------
 globalThis.location ??= { search: "" };
 const views = await import("../web/command/views.js");
 
@@ -110,7 +110,7 @@ test("follow: applies the active phase's suggestion once; a user edit holds it; 
     assert.equal(views.followDecision({ state, prefs: { follow: true } })?.id, "p2");
     assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p2" } }), null, "already applied");
     assert.equal(views.followDecision({ state, prefs: { follow: false } }), null, "paused");
-    assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p1", adjustedSince: "t", adjustedPhase: "p1" } })?.id, "p2", "an adjustment in P1 does not block P2 (M2 review)");
+    assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p1", adjustedSince: "t", adjustedPhase: "p1" } })?.id, "p2", "an adjustment in P1 does not block P2");
     assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p1", adjustedSince: null } })?.id, "p2", "next phase applies when not adjusted");
     assert.ok(views.quietSinceZoom(Date.now() - 6000) && !views.quietSinceZoom(Date.now() - 1000));
 });

@@ -1,4 +1,4 @@
-// Checkpoint walkthrough pop-up (spec §7.11): a non-modal, right-anchored stepper over the Command map.
+// Checkpoint walkthrough pop-up: a non-modal, right-anchored stepper over the Command map.
 // The agent owns the content (command_walkthrough show/edit); this module renders it, keeps the user on the same stop
 // across revisions, and reports stop changes so the map can zoom, badge and pulse the stop's files.
 import { h, markdown, svc } from "../core.js";
