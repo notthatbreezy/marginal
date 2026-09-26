@@ -19,13 +19,13 @@ const wt2 = join(tmp, "wt-tests");
 const other = join(tmp, "other");
 const wt3 = join(tmp, "wt-extra");
 
-const store = await import("../lib/store.mjs");
-const gitm = await import("../lib/git.mjs");
-const { ACTIONS, stats } = await import("../lib/command/actions.mjs");
-const poller = await import("../lib/command/poller.mjs");
-const { gitStats } = await import("../lib/command/gitx.mjs");
-const { commandDir, eventsSince, onCommand, readState, unwatchCommand } = await import("../lib/command/state.mjs");
-const { stopHeartbeat } = await import("../lib/command/owner.mjs");
+const store = await import("../extensions/marginal/lib/store.mjs");
+const gitm = await import("../extensions/marginal/lib/git.mjs");
+const { ACTIONS, stats } = await import("../extensions/marginal/lib/command/actions.mjs");
+const poller = await import("../extensions/marginal/lib/command/poller.mjs");
+const { gitStats } = await import("../extensions/marginal/lib/command/gitx.mjs");
+const { commandDir, eventsSince, onCommand, readState, unwatchCommand } = await import("../extensions/marginal/lib/command/state.mjs");
+const { stopHeartbeat } = await import("../extensions/marginal/lib/command/owner.mjs");
 
 poller.CADENCE.fast = 150;
 poller.CADENCE.slow = 400;
@@ -407,8 +407,8 @@ test("pollers dedupe: once per front in-process, zero in a non-owner process", a
     assert.deepEqual(poller.pollingFronts(d), loops1, "second start is a no-op");
     const script = `
         process.env.MARGINAL_DATA_DIR = ${JSON.stringify(process.env.MARGINAL_DATA_DIR)};
-        const { adoptLeases } = await import(${JSON.stringify(pathToFileURL(join(ext, "lib/command/index.mjs")).href)});
-        const { gitStats } = await import(${JSON.stringify(pathToFileURL(join(ext, "lib/command/gitx.mjs")).href)});
+        const { adoptLeases } = await import(${JSON.stringify(pathToFileURL(join(ext, "extensions/marginal/lib/command/index.mjs")).href)});
+        const { gitStats } = await import(${JSON.stringify(pathToFileURL(join(ext, "extensions/marginal/lib/command/gitx.mjs")).href)});
         const adopted = adoptLeases("session-B");
         await new Promise((r) => setTimeout(r, 1500));
         console.log(JSON.stringify({ adopted, diffs: gitStats.byKind.diff ?? 0 }));
@@ -427,7 +427,7 @@ test("pollers dedupe: once per front in-process, zero in a non-owner process", a
 });
 
 test("server: /api/command/state + tree, and SSE pushes command events", async () => {
-    const { startServer } = await import("../lib/server.mjs");
+    const { startServer } = await import("../extensions/marginal/lib/server.mjs");
     const instances = new Map([["panel-1", { documentId: doc.documentId }]]);
     instances.save = () => {};
     const chat = { subscribe: () => () => {} };
@@ -482,7 +482,7 @@ test("losing the lease stops this process's pollers; a stale takeover restarts t
 });
 
 test("deleting the doc stops its pollers first", async () => {
-    await import("../lib/command/index.mjs"); // registers the store hook
+    await import("../extensions/marginal/lib/command/index.mjs"); // registers the store hook
     assert.ok(poller.pollingFronts(doc.documentId).length > 0);
     assert.ok(git(repo, "for-each-ref", `refs/marginal/checkpoints/${doc.documentId}/`).length > 0);
     await store.remove(doc.documentId);

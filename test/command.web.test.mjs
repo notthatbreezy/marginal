@@ -2,8 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-const { buildTree, weigh, squarify, findNode } = await import("../web/command/squarify.js");
-const { changesAt, velocity, autoWindow, buckets, heatOf } = await import("../web/command/derive.js");
+const { buildTree, weigh, squarify, findNode } = await import("../extensions/marginal/web/command/squarify.js");
+const { changesAt, velocity, autoWindow, buckets, heatOf } = await import("../extensions/marginal/web/command/derive.js");
 
 test("squarify: areas proportional to value, inside the rect, no overlap", () => {
     const items = [6, 6, 4, 3, 2, 2, 1].map((v, i) => ({ id: i, value: v }));
@@ -82,7 +82,7 @@ test("velocity: trailing bucket, initial/baseline excluded, auto window by age",
 
 // ---------- views, follow, auto-root, zero-line changes ----------
 globalThis.location ??= { search: "" };
-const views = await import("../web/command/views.js");
+const views = await import("../extensions/marginal/web/command/views.js");
 
 test("changesAt keeps zero-line renames/new files and carries off-plan per front", () => {
     const t0 = Date.parse("2026-01-01T10:00:00Z");

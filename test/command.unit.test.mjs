@@ -7,12 +7,12 @@ import { test } from "node:test";
 
 process.env.MARGINAL_DATA_DIR = mkdtempSync(join(tmpdir(), "wb-unit-"));
 
-const { classifyPattern, compilePatterns, globToRegExp, normalizeRepoPath, offPlanMatcher, patternsTouchDir, planPatterns, matchingActivePhases } = await import("../lib/command/patterns.mjs");
-const { Issues, ISSUE_CODES, nearestPath, distance } = await import("../lib/command/issues.mjs");
-const { parsePlan, parseViewSpec, Reader, LIMITS } = await import("../lib/command/model.mjs");
-const { parseRawNumstat, computeEvents } = await import("../lib/command/poller.mjs");
-const { claim, readLease, isOwner, STALE_MS, stopHeartbeat } = await import("../lib/command/owner.mjs");
-const { appendEvents, compactLog, eventsSince, readBuckets } = await import("../lib/command/state.mjs");
+const { classifyPattern, compilePatterns, globToRegExp, normalizeRepoPath, offPlanMatcher, patternsTouchDir, planPatterns, matchingActivePhases } = await import("../extensions/marginal/lib/command/patterns.mjs");
+const { Issues, ISSUE_CODES, nearestPath, distance } = await import("../extensions/marginal/lib/command/issues.mjs");
+const { parsePlan, parseViewSpec, Reader, LIMITS } = await import("../extensions/marginal/lib/command/model.mjs");
+const { parseRawNumstat, computeEvents } = await import("../extensions/marginal/lib/command/poller.mjs");
+const { claim, readLease, isOwner, STALE_MS, stopHeartbeat } = await import("../extensions/marginal/lib/command/owner.mjs");
+const { appendEvents, compactLog, eventsSince, readBuckets } = await import("../extensions/marginal/lib/command/state.mjs");
 
 const pat = (s, isTree) => classifyPattern(s, isTree).pattern;
 const plan0 = (over = {}) => ({ id: "retry", title: "Retry", phases: [{ id: "p1", title: "Scaffold", expects: ["src/runner/"], steps: [{ id: "s1", title: "types", expects: ["src/runner/types.ts"] }] }], ...over });
@@ -221,8 +221,8 @@ test("globs share the path boundary: drive, control chars, empty segments; // co
 });
 
 test("presence: zero-line added/renamed/untracked/deleted stay; zero modified is a revert marker", async () => {
-    const { isPresentChange } = await import("../lib/command/patterns.mjs");
-    const web = await import("../web/command/derive.js");
+    const { isPresentChange } = await import("../extensions/marginal/lib/command/patterns.mjs");
+    const web = await import("../extensions/marginal/web/command/derive.js");
     const cases = [
         [{ totals: { add: 0, del: 0 }, kind: "renamed" }, true],
         [{ totals: { add: 0, del: 0 }, kind: "added" }, true],
@@ -256,7 +256,7 @@ test("computeEvents: pure rename + empty file are events; binary edits differ by
 });
 
 test("hunks: parse -U0 output, group adjacent hunks by function context", async () => {
-    const { parseHunks, groupHunks } = await import("../lib/command/hunks.mjs");
+    const { parseHunks, groupHunks } = await import("../extensions/marginal/lib/command/hunks.mjs");
     const text = ["diff --git a/x.ts b/x.ts", "--- a/x.ts", "+++ b/x.ts", "@@ -10,2 +10,3 @@ function run()", "-a", "-b", "+a", "+b", "+c", "@@ -20 +21 @@ function run()", "-x", "+y", "@@ -40,0 +42,2 @@", "+n", "+m"].join("\n");
     const hs = parseHunks(text);
     assert.deepEqual(hs.map((h) => [h.baseStart, h.baseLen, h.headStart, h.headLen, h.add, h.del]), [[10, 2, 10, 3, 3, 2], [20, 1, 21, 1, 1, 1], [40, 0, 42, 2, 2, 0]]);
@@ -267,7 +267,7 @@ test("hunks: parse -U0 output, group adjacent hunks by function context", async 
 });
 
 test("mission reducer: explicit events only; asks pend until answered; idle hold → awaiting", async () => {
-    const { reduceMission, tickMission, IDLE_HOLD_MS } = await import("../lib/command/mission.mjs");
+    const { reduceMission, tickMission, IDLE_HOLD_MS } = await import("../extensions/marginal/lib/command/mission.mjs");
     const now = Date.parse("2026-01-01T10:00:00Z");
     let m = reduceMission(null, { type: "assistant.turn_start" }, { now });
     assert.equal(m.status, "working");
@@ -300,7 +300,7 @@ test("view spec validation for command_view", () => {
 });
 // ---------- persisted prefs, view paths, legacy states ----------
 test("prefs.json is parsed at the boundary: malformed layout parts are dropped, not trusted", async () => {
-    const { parsePrefs, parseLayout } = await import("../lib/command/patterns.mjs");
+    const { parsePrefs, parseLayout } = await import("../extensions/marginal/lib/command/patterns.mjs");
     const p = parsePrefs({ follow: "yes", layout: { root: "../x", pins: ["src/a", 3, "src/**/*.ts"], monitors: { path: "src" }, filters: { minChurn: -1, hideTests: "y" } }, savedViews: [{ id: "Bad Id" }, { id: "ok", monitors: [{ path: "src", mode: "heat" }] }], junk: 1 });
     assert.equal(p.follow, true);
     assert.deepEqual(p.layout, { root: null, pins: ["src/a"], monitors: [], filters: {} });
@@ -325,7 +325,7 @@ test("a carried-forward done phase without a checkpoint is repaired on plan re-s
 });
 // ---------- conversation: activity, focus, instructions ----------
 test("activity lane: root messages (first line) and tool starts; subagents, chat turns and chatter excluded", async () => {
-    const { activityOf } = await import("../lib/command/mission.mjs");
+    const { activityOf } = await import("../extensions/marginal/lib/command/mission.mjs");
     assert.deepEqual(activityOf({ type: "assistant.message", data: { content: "\n**P2** started\nmore" } }, { now: 0 }), { at: new Date(0).toISOString(), kind: "message", text: "P2 started" });
     assert.equal(activityOf({ type: "tool.execution_start", data: { toolName: "create_session", arguments: { name: "tests" } } }).text, "create session · tests");
     assert.equal(activityOf({ type: "tool.execution_start", data: { toolName: "report_intent" } }), null);
@@ -334,14 +334,14 @@ test("activity lane: root messages (first line) and tool starts; subagents, chat
 });
 
 test("focus payload from the panel keeps only well-formed §7.10 items", async () => {
-    const { parseFocus } = await import("../lib/server.mjs");
+    const { parseFocus } = await import("../extensions/marginal/lib/server.mjs");
     const f = parseFocus({ items: [{ kind: "path", path: "src/a", isDir: 1 }, { kind: "front" }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }, { kind: "range", file: "a.ts", startLine: 0, endLine: 5, pins: { base: "b", head: "h" } }, { kind: "evil", path: "x" }], replayAt: "2026-01-01T00:00:00Z" });
     assert.deepEqual(f, { items: [{ kind: "path", path: "src/a", isDir: true }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }], replayAt: "2026-01-01T00:00:00Z" });
     assert.deepEqual(parseFocus(null), { items: [] });
 });
 
 test("instructions topic 'command' documents the protocol", async () => {
-    const { getInstructions } = await import("../lib/instructions.mjs");
+    const { getInstructions } = await import("../extensions/marginal/lib/instructions.mjs");
     const t = getInstructions("command");
     for (const s of ["command_plan", "command_front", "command_diff", "command_walkthrough", "baseRevision", "issues"]) assert.ok(t.includes(s), s);
 });
@@ -355,7 +355,7 @@ test("off-plan: files from checkpoints the front already finished stay in-plan",
     assert.deepEqual(["src/a/x.ts", "src/b/y.ts", "src/c/z.ts", "README.md"].map(off), [false, false, true, true]);
 });
 test("prefs keep the tour-seen flag (and only a literal true)", async () => {
-    const { parsePrefs } = await import("../lib/command/patterns.mjs");
+    const { parsePrefs } = await import("../extensions/marginal/lib/command/patterns.mjs");
     assert.equal(parsePrefs({ guideSeen: true }).guideSeen, true);
     assert.equal("guideSeen" in parsePrefs({ guideSeen: "yes" }), false);
 });

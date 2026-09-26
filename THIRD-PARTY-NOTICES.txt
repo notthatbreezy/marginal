@@ -3,16 +3,16 @@ THIRD-PARTY NOTICES
 Marginal adapts portions of devdotfast/whiteboard
 (https://github.com/devdotfast/whiteboard):
 
-- lib/blocks.mjs: the whiteboard block vocabulary (block types, field names,
+- extensions/marginal/lib/blocks.mjs: the whiteboard block vocabulary (block types, field names,
   enums, relationship checks and several validation messages), derived from
   packages/review/src/review-api/blocks/*.ts and packages/review/src/source.ts.
-- lib/instructions.mjs: agent guidance adapted from
+- extensions/marginal/lib/instructions.mjs: agent guidance adapted from
   packages/review/instructions/{authoring,scratchpad,file-lenses}.md.
-- lib/git.mjs: repository-relative path rules (checkSourcePath) and the
+- extensions/marginal/lib/git.mjs: repository-relative path rules (checkSourcePath) and the
   numbered-patch format, derived from packages/review/src/source.ts and
   packages/review/src/review-api/README.md.
 
-The renderer (web/), server, storage and canvas wiring are original to
+The renderer (extensions/marginal/web/), server, storage and canvas wiring are original to
 Marginal.
 
 --------------------------------------------------------------------------------

@@ -59,7 +59,7 @@ type Focus = {
 
 ## Storage
 
-Per doc, under `artifacts/docs/<id>/command/`:
+Per doc, under `~/.copilot/marginal/docs/<id>/command/`:
 
 | File | Contents |
 |---|---|
@@ -68,7 +68,7 @@ Per doc, under `artifacts/docs/<id>/command/`:
 | `events.jsonl` | The append-only change log. It is compacted once at 20 MB: events older than 6 h fold into per-file baselines plus minute buckets. |
 | `owner.json` | The lease. |
 
-The line-count cache lives in `artifacts/loc-cache/`. Checkpoint snapshots are git refs under `refs/marginal/checkpoints/<doc>/` in your repository, and they are deleted with the doc.
+The line-count cache lives in `~/.copilot/marginal/loc-cache/`. Checkpoint snapshots are git refs under `refs/marginal/checkpoints/<doc>/` in your repository, and they are deleted with the doc.
 
 ## Deliberate limits
 

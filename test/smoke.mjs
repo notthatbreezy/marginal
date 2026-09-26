@@ -1,4 +1,4 @@
-// Backend smoke test for lib/ (git, store, blocks, instructions) against a throwaway repo and data dir.
+// Backend smoke test for extensions/marginal/lib/ (git, store, blocks, instructions) against a throwaway repo and data dir.
 // Usage: node test/smoke.mjs [path-to-extension-dir]   (defaults to this checkout; touches nothing real)
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const extDir = process.argv[2] ?? fileURLToPath(new URL("..", import.meta.url));
+const extDir = process.argv[2] ?? fileURLToPath(new URL("../extensions/marginal", import.meta.url));
 const tmp = mkdtempSync(join(tmpdir(), "wb-smoke-"));
 process.env.MARGINAL_DATA_DIR = join(tmp, "data");
 

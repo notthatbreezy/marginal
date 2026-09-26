@@ -13,11 +13,11 @@ const seconds = Number([...args].find((a) => a.startsWith("--seconds="))?.split(
 const tmp = mkdtempSync(join(tmpdir(), "wb-dev-"));
 process.env.MARGINAL_DATA_DIR = join(tmp, "data");
 
-const store = await import("../lib/store.mjs");
-const gitm = await import("../lib/git.mjs");
-const { ACTIONS } = await import("../lib/command/actions.mjs");
-const poller = await import("../lib/command/poller.mjs");
-const { startServer } = await import("../lib/server.mjs");
+const store = await import("../extensions/marginal/lib/store.mjs");
+const gitm = await import("../extensions/marginal/lib/git.mjs");
+const { ACTIONS } = await import("../extensions/marginal/lib/command/actions.mjs");
+const poller = await import("../extensions/marginal/lib/command/poller.mjs");
+const { startServer } = await import("../extensions/marginal/lib/server.mjs");
 poller.CADENCE.fast = 500;
 poller.CADENCE.slow = 1500;
 
@@ -195,7 +195,7 @@ export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): 
         if (!r.ok) throw new Error(`walkthrough: ${JSON.stringify(r.issues)}`);
     }
 }
-const { activity } = await import("../lib/command/index.mjs");
+const { activity } = await import("../extensions/marginal/lib/command/index.mjs");
 const t0 = Date.now();
 activity.push(
     { at: new Date(t0 - 9 * 60_000).toISOString(), kind: "message", text: "P2 · Retry policy started (runner-retry, triggers-sched, tests)" },

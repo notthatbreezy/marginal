@@ -44,15 +44,24 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 
 Requirements: the GitHub Copilot app with canvas extensions, and `git` on your `PATH`. There is nothing to build and there are no npm dependencies; the Copilot runtime supplies `@github/copilot-sdk`.
 
-Install for yourself (all repositories):
+Install it as a Copilot plugin. This repository is its own plugin marketplace:
 
 ```sh
-git clone https://github.com/<owner>/marginal ~/.copilot/extensions/marginal
+copilot plugin marketplace add <owner>/marginal
+copilot plugin install marginal@marginal
 ```
 
-On Windows, the target is `%USERPROFILE%\.copilot\extensions\marginal`. You can also install it for one repository by cloning into `.github/extensions/marginal/` in that repository. Then reload extensions: restart the app, or ask Copilot to reload extensions.
+Then restart the Copilot app, or ask Copilot to reload extensions. The canvas registers as **Marginal** (canvas id `marginal`). Update with `copilot plugin update marginal`, remove with `copilot plugin uninstall marginal`.
 
-The canvas registers as **Marginal** (canvas id `marginal`).
+Your docs live in `~/.copilot/marginal/` (or `$COPILOT_HOME/marginal/`), outside the plugin, so updating or reinstalling keeps them.
+
+<details>
+<summary>Other ways to install</summary>
+
+- **One command, deprecated by the CLI:** `copilot plugin install <owner>/marginal`. Direct repository installs still work but print a deprecation warning.
+- **From a clone:** `git clone https://github.com/<owner>/marginal ~/.copilot/extensions/marginal` (Windows: `%USERPROFILE%\.copilot\extensions\marginal`), or into `.github/extensions/marginal/` in one repository. Use this when you want to hack on it. Don't combine it with the plugin install, or you'll get two Marginal canvases.
+
+</details>
 
 ## Use
 
@@ -73,12 +82,12 @@ The protocol is described in [docs/command-center.md](docs/command-center.md).
 
 ## How it works
 
-- `extension.mjs` joins the Copilot session with `joinSession()` and declares the canvas and its actions with `createCanvas()`. Each panel is served by a local HTTP server bound to `127.0.0.1`; every request needs a random per-panel token.
-- Docs, pins and the Command center's state and event log live in `artifacts/`, next to the extension. That folder is git-ignored and never leaves your machine. Set `MARGINAL_DATA_DIR` to store them elsewhere.
+- The plugin (`plugin.json`) ships one canvas extension, `extensions/marginal/`. Its `extension.mjs` joins the Copilot session with `joinSession()` and declares the canvas and its actions with `createCanvas()`. Each panel is served by a local HTTP server bound to `127.0.0.1`; every request needs a random per-panel token.
+- Docs, pins and the Command center's state and event log live in `~/.copilot/marginal/` and never leave your machine. Set `MARGINAL_DATA_DIR` to store them elsewhere.
 - Code is read from your local repositories with `git` at pinned commits. The Command center polls each registered worktree with `git diff` and `git ls-files`, running at most four git processes at once and passing `--no-optional-locks`.
 - **Checkpoint snapshots:** when a checkpoint finishes without a commit, the worktree's current contents are captured as a hidden commit under `refs/marginal/checkpoints/<doc>/…` in your repository. This uses a temporary index; your branch, HEAD, index and files are never touched. The refs are removed when the doc is deleted.
 - Only one Copilot session drives a doc's Command state at a time. That session holds a lease, claimed when it sets the plan. Other sessions can read the state but can't change it.
-- The browser UI is plain ES modules (`web/`) with no framework and no build step.
+- The browser UI is plain ES modules (`extensions/marginal/web/`) with no framework and no build step.
 
 ## Develop
 
