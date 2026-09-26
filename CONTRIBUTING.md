@@ -32,10 +32,12 @@ Thanks for helping. Marginal is small on purpose: no build step, no npm dependen
 - Keep colours to theme tokens (`--bg`, `--fg`, `--blue`, …) and `color-mix()` so light and dark themes both work.
 ## Releasing
 
-Versions are semver and live in three places that must agree: `plugin.json`, `.github/plugin/marketplace.json` (both `metadata.version` and the plugin entry) and `package.json`. The tests check this.
+Releases are cut by GitHub Actions, so nothing depends on a local setup. Versions are semver and live in three places that must agree: `plugin.json`, `.github/plugin/marketplace.json` (`metadata.version` and the plugin entry) and `package.json`. The tests check this.
 
-1. As changes land, describe them under **Unreleased** in `CHANGELOG.md`.
-2. From an up-to-date, clean `main`, run `npm run release -- patch` (or `minor`, `major`, or an explicit `X.Y.Z`). Add `--dry-run` to preview. The script runs the tests, bumps all three manifests, moves the Unreleased notes under the new version with today's date, commits `Release vX.Y.Z` and creates an annotated tag. It doesn't push.
-3. Publish with `git push origin main --follow-tags`. The tag triggers `.github/workflows/release.yml`, which checks that the tag matches the manifests, re-runs the tests and creates the GitHub release from that CHANGELOG section.
+1. As changes land, describe them under **Unreleased** in `CHANGELOG.md`. The release fails if that section is empty.
+2. Run the **release** workflow: Actions → release → Run workflow, pick `patch`, `minor` or `major` (or type an exact version), and run. Tick **Dry run** first to see the version and notes without changing anything. From a terminal: `gh workflow run release --repo notthatbreezy/marginal -f bump=minor`.
+3. The workflow runs the tests, bumps all three manifests, moves the Unreleased notes under the new version with today's date, commits `Release vX.Y.Z` to `main` as github-actions[bot], tags it, pushes, and publishes a GitHub release with those notes.
+
+You can also cut a release locally with `npm run release -- patch` (`--dry-run` previews) and `git push origin main --follow-tags`. The pushed tag triggers the same workflow, which publishes it.
 
 People on the marketplace follow `main`: `copilot plugin update marginal` picks up whatever is there. To stay on a release, pin the marketplace to a tag: `copilot plugin marketplace add notthatbreezy/marginal#v0.1.0`.

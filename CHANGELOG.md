@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Marginal. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Write entries under **Unreleased** as you go; `npm run release` turns that section into the next version.
+All notable changes to Marginal. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/). Write entries under **Unreleased** as you go; the **release** workflow (or `npm run release`) turns that section into the next version.
 
 ## [Unreleased]
 

@@ -1,29 +1,91 @@
 name: release
+# Two ways in:
+#   - Run workflow (Actions tab, or `gh workflow run release -f bump=patch`): cuts the release on main with
+#     scripts/release.mjs (tests, version bump, CHANGELOG, commit, tag), pushes it, then publishes it.
+#   - Pushing a vX.Y.Z tag made locally with `npm run release`: publishes it.
+# (A tag pushed by this workflow's own token doesn't trigger new workflow runs, so publishing happens in the same run.)
 on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Exact version instead (X.Y.Z, e.g. 0.1.0 for the first release)
+        required: false
+        default: ""
+      dry_run:
+        description: Dry run (show what would be released; change nothing)
+        type: boolean
+        default: false
   push:
     tags: ["v*.*.*"]
 permissions:
   contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
-  release:
+  cut:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.cut.outputs.tag }}
+    steps:
+      - name: Only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Run the release workflow from main (got ${GITHUB_REF})."
+          exit 1
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Commit as github-actions[bot]
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - id: cut
+        name: Cut the release (tests, bump, CHANGELOG, commit, tag)
+        run: node scripts/release.mjs "${INPUT_VERSION:-$INPUT_BUMP}" ${DRY_RUN:+--dry-run}
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+      - name: Push main and the tag
+        if: ${{ !inputs.dry_run }}
+        run: git push origin main --follow-tags
+
+  publish:
+    needs: cut
+    if: always() && (github.event_name == 'push' || (needs.cut.result == 'success' && !inputs.dry_run))
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.cut.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.cut.outputs.tag || github.ref }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: git config --global user.email ci@example.com && git config --global user.name ci
       - name: Tag matches the manifests
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${TAG#v}"
           for f in plugin.json package.json; do
             test "$(node -p "require('./$f').version")" = "$v" || { echo "$f is not $v"; exit 1; }
           done
           test "$(node -p "require('./.github/plugin/marketplace.json').metadata.version")" = "$v" || { echo "marketplace.json is not $v"; exit 1; }
       - run: npm test
       - name: Release notes from CHANGELOG.md
-        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > notes.md
+        run: node scripts/release-notes.mjs "$TAG" > notes.md
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "Marginal $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+        run: gh release create "$TAG" --title "Marginal $TAG" --notes-file notes.md --verify-tag

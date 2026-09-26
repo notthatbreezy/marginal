@@ -4,9 +4,10 @@
 //
 //   node scripts/release.mjs <patch|minor|major|X.Y.Z> [--dry-run]
 //
-// Pushing the tag runs .github/workflows/release.yml, which re-runs the tests and creates the GitHub release.
+// Usually run by the "release" GitHub Actions workflow (Actions → release → Run workflow), which also pushes and
+// publishes. Locally, pushing the tag runs the same workflow's publish job.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { MANIFESTS, bump, cutChangelog, die, readJson, versions, writeJson } from "./release-lib.mjs";
 
 const args = process.argv.slice(2);
@@ -51,6 +52,7 @@ try {
     git("add", MANIFESTS.plugin, MANIFESTS.marketplace, MANIFESTS.pkg, "CHANGELOG.md");
     git("commit", "-m", `Release v${next}`);
     git("tag", "-a", `v${next}`, "-m", `v${next}\n\n${notes}`);
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `tag=v${next}\n`); // the release workflow publishes it
     console.log(`\nTagged v${next}. Publish it with:\n\n  git push origin main --follow-tags\n`);
 } catch (e) {
     console.error(`release: ${e.message}`);
