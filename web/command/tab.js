@@ -818,7 +818,8 @@ function stopItem(w, stop, i) {
 }
 function rangeItem(w, r) {
     const name = r.file.slice(r.file.lastIndexOf("/") + 1);
-    return { key: `range:${r.file}:${r.startLine}-${r.endLine}:${w.pins.head}`, kindLabel: "lines", label: `${name}:${r.startLine}–${r.endLine}`, title: r.file, cls: "pathc", item: { kind: "range", file: r.file, startLine: r.startLine, endLine: r.endLine, pins: { base: w.pins.base, head: w.pins.head } } };
+    const file = r.sourceFile ?? r.file;
+    return { key: `range:${file}:${r.side}:${r.startLine}-${r.endLine}:${w.pins.head}`, kindLabel: r.side === "base" ? "before" : "lines", label: `${name}:${r.startLine}–${r.endLine}`, title: file, cls: "pathc", item: { kind: "range", file, startLine: r.startLine, endLine: r.endLine, pins: { base: w.pins.base, head: w.pins.head } } };
 }
 
 function chatBlockedReason() {

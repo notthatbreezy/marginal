@@ -63,7 +63,7 @@ export function createWalkthrough(o) {
                 fronts.map((f) => h("span", { class: `wf f${f.color + 1}` }, h("span", { class: "fdot" }), f.label)),
             ),
             h("div", { class: "walk-text md", html: markdown(stop.explanation) }),
-            stop.ranges.map((r) => svc.codeView({ file: r.file, side: r.side, startLine: r.startLine, endLine: r.endLine, pins: cur.pins }, { diff: true, context: 3 })),
+            stop.ranges.map((r) => svc.codeView({ file: r.sourceFile ?? r.file, side: r.side, startLine: r.startLine, endLine: r.endLine, pins: cur.pins }, { diff: true, context: 3 })),
         ];
     }
 
@@ -152,6 +152,6 @@ export function createWalkthrough(o) {
 
 /** Markdown for Copy. */
 export function stopMarkdown(w, stop, i) {
-    const refs = stop.ranges.map((r) => `- \`${r.file}\` ${r.side === "base" ? "(before) " : ""}L${r.startLine}–${r.endLine}`).join("\n");
+    const refs = stop.ranges.map((r) => `- \`${r.sourceFile ?? r.file}\` ${r.side === "base" ? "(before) " : ""}L${r.startLine}–${r.endLine}`).join("\n");
     return `### ${i + 1}. ${stop.title}${stop.category ? ` _(${stop.category})_` : ""}\n\n${stop.explanation}\n\n${refs}\n\n_${w.title}: ${w.labels.from} ${short(w.pins.base)} → ${w.labels.to} ${short(w.pins.head)}_`;
 }

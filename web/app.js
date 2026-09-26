@@ -1260,7 +1260,9 @@ function endThread() {
 }
 
 function switchChatMode(mode) {
-    if (chat.mode === mode) return;
+    // The Command chat belongs to one whiteboard: a different document starts a fresh thread, log and focus.
+    if (chat.mode === mode && (mode !== "command" || chat.docId === state.documentId)) return;
+    chat.docId = state.documentId;
     chatBoxes[chat.mode] = { right: chatBox.style.right, bottom: chatBox.style.bottom, width: chatBox.style.width, userHeight: chatBox.dataset.userHeight };
     endThread();
     chat.blockId = chat.unit = chat.picks = chat.quote = chat.quoteLabel = null;

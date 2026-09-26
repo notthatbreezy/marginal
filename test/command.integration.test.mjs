@@ -332,6 +332,52 @@ test("walkthrough: invalid show → all issues + revising event, nothing stored;
     off();
 });
 
+test("walkthrough (M3 review): no refs from rejected live shows, renamed base ranges, view normalization, monotonic seq, CAS", async () => {
+    const d = doc.documentId;
+    const refs = () => git(repo, "for-each-ref", "--format=%(refname)", `refs/whiteboard/checkpoints/${d}/`).split("\n").filter((x) => x.includes("/walk-"));
+    git(wt2, "mv", "tests/executor.test.ts", "tests/exec.test.ts");
+    const from = { phaseId: "p2" };
+    const to = { ref: "live", frontId: "tests" };
+    const bad = await call("command_walkthrough", { op: "show", walkthrough: { id: "ren", title: "Rename", from, to, stops: [{ id: "a", title: "A", explanation: "x", ranges: [{ file: "nope.ts", startLine: 1, endLine: 1 }] }] } });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(refs(), [], "a rejected show leaves no live-snapshot refs");
+    const stops = [
+        { id: "a", title: "Renamed", explanation: "x", ranges: [{ file: "tests/exec.test.ts", side: "base", startLine: 1, endLine: 2 }] },
+        { id: "b", title: "B", explanation: "y", ranges: [{ file: "tests/exec.test.ts", startLine: 1, endLine: 1 }] },
+        { id: "c", title: "C", explanation: "z", ranges: [{ file: "tests/exec.test.ts", startLine: 2, endLine: 2 }] },
+    ];
+    const ok = await call("command_walkthrough", { op: "show", walkthrough: { id: "ren", title: "Rename", from, to, stops } });
+    assert.ok(ok.ok, JSON.stringify(ok));
+    assert.deepEqual(refs().sort(), [`refs/whiteboard/checkpoints/${d}/walk-ren-to`]);
+    let st = readState(d);
+    let w = st.walkthroughs.find((x) => x.id === "ren");
+    assert.deepEqual(w.stops[0].ranges[0], { file: "tests/exec.test.ts", sourceFile: "tests/executor.test.ts", side: "base", startLine: 1, endLine: 2 });
+    const seq1 = st.walkthroughView.seq;
+    // Remove the viewed stop → the view moves to its next survivor.
+    assert.ok((await call("command_walkthrough", { op: "edit", id: "ren", baseRevision: 1, edits: [{ op: "focus_stop", stopId: "b" }] })).ok);
+    assert.ok((await call("command_walkthrough", { op: "edit", id: "ren", baseRevision: 2, edits: [{ op: "remove_stop", stopId: "b" }] })).ok);
+    st = readState(d);
+    assert.equal(st.walkthroughView.stopId, "c");
+    const focusRemoved = await call("command_walkthrough", { op: "edit", id: "ren", baseRevision: 3, edits: [{ op: "focus_stop", stopId: "a" }, { op: "remove_stop", stopId: "a" }] });
+    assert.equal(focusRemoved.ok, false);
+    // Concurrent edits from one base revision: exactly one commits.
+    const [e1, e2] = await Promise.all([
+        call("command_walkthrough", { op: "edit", id: "ren", baseRevision: 3, edits: [{ op: "update_stop", stopId: "a", stop: { title: "one" } }] }),
+        call("command_walkthrough", { op: "edit", id: "ren", baseRevision: 3, edits: [{ op: "update_stop", stopId: "a", stop: { title: "two" } }] }),
+    ]);
+    assert.deepEqual([e1.ok, e2.ok].sort(), [false, true]);
+    assert.equal([e1, e2].find((e) => !e.ok).issues[0].code, "stale_revision");
+    // Close then show again: a fresh (higher) seq, so an old dismissal can't swallow it.
+    const seen = [];
+    const off = onCommand((e) => e.documentId === d && e.kind === "revising" && seen.push(e.active));
+    assert.ok((await call("command_walkthrough", { op: "close", id: "ren" })).ok);
+    assert.equal(seen.at(-1), false, "close clears revising");
+    off();
+    assert.ok((await call("command_walkthrough", { op: "show", walkthrough: { id: "ren", title: "Rename", from, to, stops } })).ok);
+    assert.ok(readState(d).walkthroughView.seq > seq1 + 2);
+    git(wt2, "mv", "tests/exec.test.ts", "tests/executor.test.ts");
+});
+
 test("a new plan base re-baselines totals as initial observations, not edits", async () => {
     git(wt1, "add", "-A");
     git(wt1, "commit", "-qm", "wip");
