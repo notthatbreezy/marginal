@@ -345,3 +345,12 @@ test("instructions topic 'command' documents the protocol", async () => {
     const t = getInstructions("command");
     for (const s of ["command_plan", "command_front", "command_diff", "command_walkthrough", "baseRevision", "issues"]) assert.ok(t.includes(s), s);
 });
+test("off-plan: files from checkpoints the front already finished stay in-plan", () => {
+    const plan = { phases: [
+        { id: "p1", expects: [pat("src/a/")], steps: [], state: { status: "done", frontIds: ["f"], checkpoint: { sha: "x", frontId: "f" } } },
+        { id: "p2", expects: [pat("src/b/")], steps: [], state: { status: "active", frontIds: ["f"] } },
+        { id: "p3", expects: [pat("src/c/")], steps: [], state: { status: "pending" } },
+    ] };
+    const off = offPlanMatcher(plan, "f");
+    assert.deepEqual(["src/a/x.ts", "src/b/y.ts", "src/c/z.ts", "README.md"].map(off), [false, false, true, true]);
+});
