@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { assignIds, BLOCK_TYPES, checkBlock, CONTAINER_TYPES, flowEdgeSchema, locate, parseBlock, parseUnit, sourcesOf, stepSchema, flowNodeSchema, topBlockOf, UNIT_TYPES, walkBlocks } from "./blocks.mjs";
+import { assignIds, BLOCK_TYPES, checkBlock, CONTAINER_TYPES, flowEdgeSchema, frameSchema, locate, parseBlock, parseUnit, sourcesOf, stepSchema, flowNodeSchema, topBlockOf, UNIT_TYPES, walkBlocks } from "./blocks.mjs";
 import { InputError } from "./errors.mjs";
 import { describeCommit, diffFiles, getRepository, readFileAt } from "./git.mjs";
 import { atomicWriteJson, paths } from "./paths.mjs";
@@ -262,6 +262,7 @@ async function applyEditInner(doc, edit) {
         case "update": {
             const hit = locate(draft.content, edit.targetId ?? "");
             if (!hit) throw new InputError(`Unknown targetId: ${edit.targetId}`);
+            if (hit.kind === "frame" && edit.type !== "update") throw new InputError("Call-stack frames can only be updated in place (e.g. to add notes); update the call_stack_diff's base/head to restructure it.");
             const changes = edit.changes;
             if (!changes || typeof changes !== "object" || Array.isArray(changes)) throw new InputError("update needs a changes object.");
             for (const key of ["id", "type", "children", "steps", "nodes", "edges"])
@@ -272,7 +273,15 @@ async function applyEditInner(doc, edit) {
                 else merged[k] = v;
             }
             let parsed;
-            if (hit.kind === "unit") {
+            if (hit.kind === "frame") {
+                // Call-stack frames are updated in place (e.g. notes); the block's update/replace restructures the tree.
+                parsed = frameSchema(merged, edit.targetId);
+                parsed.id = hit.node.id;
+                hit.list[hit.index] = parsed;
+                checkBlock(hit.parent);
+                kind = "frame";
+                blockId = hit.parent.id;
+            } else if (hit.kind === "unit") {
                 const k = unitKind(hit.node, hit.parent);
                 parsed = (k === "step" ? stepSchema : k === "flow_node" ? flowNodeSchema : flowEdgeSchema)(merged, edit.targetId);
                 parsed.id = hit.node.id;
@@ -294,12 +303,13 @@ async function applyEditInner(doc, edit) {
             }
             targetId = parsed.id;
             fields = Object.keys(changes);
-            verifyTarget = parsed;
+            verifyTarget = hit.kind === "frame" ? { type: "call_stack_diff", base: [], head: [parsed] } : parsed;
             break;
         }
         case "replace": {
             const hit = locate(draft.content, edit.targetId ?? "");
             if (!hit) throw new InputError(`Unknown targetId: ${edit.targetId}`);
+            if (hit.kind === "frame" && edit.type !== "update") throw new InputError("Call-stack frames can only be updated in place (e.g. to add notes); update the call_stack_diff's base/head to restructure it.");
             if (hit.kind === "unit") {
                 const k = unitKind(hit.node, hit.parent);
                 const unit = parseUnit({ ...edit.content, type: edit.content?.type ?? k });
@@ -324,6 +334,7 @@ async function applyEditInner(doc, edit) {
         case "move": {
             const hit = locate(draft.content, edit.targetId ?? "");
             if (!hit) throw new InputError(`Unknown targetId: ${edit.targetId}`);
+            if (hit.kind === "frame" && edit.type !== "update") throw new InputError("Call-stack frames can only be updated in place (e.g. to add notes); update the call_stack_diff's base/head to restructure it.");
             if (hit.kind === "unit") {
                 if (edit.parentId && edit.parentId !== hit.parent.id) throw new InputError("Diagram units can only move within their own diagram.");
                 hit.list.splice(hit.index, 1);
@@ -347,6 +358,7 @@ async function applyEditInner(doc, edit) {
         case "remove": {
             const hit = locate(draft.content, edit.targetId ?? "");
             if (!hit) throw new InputError(`Unknown targetId: ${edit.targetId}`);
+            if (hit.kind === "frame" && edit.type !== "update") throw new InputError("Call-stack frames can only be updated in place (e.g. to add notes); update the call_stack_diff's base/head to restructure it.");
             hit.list.splice(hit.index, 1);
             if (hit.kind === "unit" && hit.parent.type === "flow_diagram" && hit.node.type === "flow_node") {
                 if (hit.parent.nodes.length === 0) throw new InputError("A flow diagram needs at least one node; remove the diagram instead.");

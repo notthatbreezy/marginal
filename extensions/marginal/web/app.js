@@ -307,7 +307,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         if (activeLineSel) activeLineSel.clear();
         else if (picks.size) clearPicks();
-        else if (!$("#chat").hidden) closeChat();
+        else if (!$("#chat").hidden && !chat.docked) closeChat();
         else if (tour.root) closeTour();
         else $("#peek").hidden = true;
     }
@@ -591,6 +591,7 @@ function renderSequence(b) {
                 if (st.explanation) sections.push({ text: st.explanation });
                 if (st.source) sections.push({ source: st.source, diff: hasBase(st.source) });
                 else if (st.code) sections.push({ code: st.code, heading: st.code.language });
+                sections.push(...noteSections(st.notes));
                 openPeek(title, sections);
             });
         g.append(s("title", {}, linked ? "Click to see details" : st.label));
@@ -781,6 +782,7 @@ function renderFlow(b) {
                 const sections = [];
                 if (n.description) sections.push({ text: n.description });
                 for (const att of n.attachments ?? []) for (const src of att.sources) sections.push({ source: src, heading: `${att.label} · ${srcLabel(src)}` });
+                sections.push(...noteSections(n.notes));
                 openPeek(n.label, sections);
             });
         if (linked) g.style.cursor = "pointer";
@@ -815,6 +817,7 @@ function renderStack(b) {
                         if (f.via) sections.push({ text: `**via ${f.via.kind}** — ${f.via.reason}` });
                         sections.push({ source: f.source, diff: hasBase(f.source), heading: `${side} · ${srcLabel(f.source)}` });
                         if (f.callSite) sections.push({ source: f.callSite, heading: `called from · ${srcLabel(f.callSite)}` });
+                        sections.push(...noteSections(f.notes));
                         openPeek(name, sections);
                     },
                 },
@@ -1147,6 +1150,7 @@ async function loadDoc(lastEdit) {
             state.lastSeenVersion = data.doc.version;
         }
         await render();
+        refreshTour();
     } catch (e) {
         state.doc = null;
         $("#main").replaceChildren(h("div", { class: "doc error" }, e.message));
@@ -1357,6 +1361,42 @@ function syncBlocked() {
     $("#chat-send").disabled = !!chat.blocked || !chatText.value.trim() || chat.awaiting;
 }
 
+// ---- docking: the same chat, embedded at the bottom of a stepper (tour, walkthrough) for the whole walk ----
+const chatHome = { parent: $("#chat").parentNode, next: $("#chat").nextSibling };
+/** ctx: { mode: "board"|"command", blockId?, kind?, placeholder?, ref(): string, context(): string } */
+function dockChat(slot, ctx) {
+    if (!slot) return;
+    if (chat.docked) undockChat();
+    const floating = { style: chatBox.getAttribute("style") };
+    if (ctx.mode === "command") openChat({ mode: "command" });
+    else {
+        switchChatMode("board");
+        endThread(); // a fresh conversation per walk
+        Object.assign(chat, { blockId: null, unit: null, picks: null, quote: null, ref: null, askRows: null, askRange: null });
+        openChat({ mode: "board", blockId: ctx.blockId });
+    }
+    chat.docked = { slot, kind: ctx.kind, ref: ctx.ref, context: ctx.context, floating, placeholder: chatText.placeholder };
+    if (ctx.placeholder) chatText.placeholder = ctx.placeholder;
+    chatBox.removeAttribute("style");
+    chatBox.classList.add("docked");
+    slot.append(chatBox);
+    chatBox.hidden = false;
+    markAsking();
+    syncChatFab();
+}
+function undockChat() {
+    const d = chat.docked;
+    if (!d) return;
+    chat.docked = null;
+    chatBox.classList.remove("docked");
+    chatHome.parent.insertBefore(chatBox, chatHome.next?.parentNode === chatHome.parent ? chatHome.next : null);
+    if (d.floating.style) chatBox.setAttribute("style", d.floating.style);
+    chatText.placeholder = d.placeholder;
+    if (chat.mode === "command") chatBox.hidden = true; // the Command chat persists; it just stops being docked
+    else closeChat(); // a tour's conversation ends with the tour
+    syncChatFab();
+}
+
 /** A quiet line in the chat's drag bar naming what the conversation is about (the popup never covers the header). */
 function renderRef() {
     let el = $("#chat-ref");
@@ -1364,8 +1404,8 @@ function renderRef() {
         el = h("span", { id: "chat-ref" });
         $("#chat-bar").insertBefore(el, $("#chat-close"));
     }
-    const text = chat.mode === "command" ? "Command chat · orchestrator" : (chat.ref ?? (state.doc ? "About this doc" : ""));
-    const marked = chat.mode !== "command" && !!(chat.askRows?.length || chat.askRange || chat.picks?.length || chat.blockId);
+    const text = chat.docked?.ref?.() ?? (chat.mode === "command" ? "Command chat · orchestrator" : (chat.ref ?? (state.doc ? "About this doc" : "")));
+    const marked = !chat.docked && chat.mode !== "command" && !!(chat.askRows?.length || chat.askRange || chat.picks?.length || chat.blockId);
     put(el, marked ? h("i", { class: "swatch", "aria-hidden": "true" }) : null, h("span", { class: "t" }, text));
     el.title = chat.quote ? chat.quote.slice(0, 600) : text;
     $("#chat").setAttribute("aria-description", text);
@@ -1451,6 +1491,7 @@ function anchor() {
 const MAX_H = 480;
 const TOP_GAP = 8; // keep the drag bar this far inside the top of the viewport
 function applyBox({ right, bottom, width, height }) {
+    if (chat.docked) return;
     width = Math.max(MIN_W, Math.min(width, innerWidth - 16));
     right = Math.max(0, Math.min(right, innerWidth - width));
     chatBox.style.width = `${width}px`;
@@ -1462,6 +1503,7 @@ function applyBox({ right, bottom, width, height }) {
 }
 /** Grow upward only as far as the viewport allows: the top edge (and its drag bar) must stay reachable. */
 function fitHeight() {
+    if (chat.docked) return;
     const bottom = parseFloat(chatBox.style.bottom || getComputedStyle(chatBox).bottom) || 0;
     const minH = minChatHeight();
     const room = Math.max(minH, innerHeight - bottom - TOP_GAP);
@@ -1562,11 +1604,12 @@ async function sendChat() {
     try {
         const first = !chat.threadId;
         const cmd = chat.mode === "command";
+        const docked = chat.docked;
         const res = await api(`/ask?instance=${encodeURIComponent(INSTANCE)}`, {
             method: "POST",
             body: cmd
-                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) } }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined },
+                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: docked?.context?.() }
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.(), kind: chat.docked?.kind },
         });
         chat.threadId = res.threadId;
         if (cmd && chat.quote) {
@@ -1984,13 +2027,13 @@ const tour = { root: null, block: null, stops: [], stepper: null };
 const ACTOR_HUES = ["--blue", "--purple", "--green", "--yellow", "--red"];
 
 function tourStops(b) {
-    if (b.type === "sequence") return b.steps.map((st) => ({ id: st.id, title: st.label, from: st.from, to: st.to, style: st.style, text: st.explanation, code: st.code, sources: st.source ? [{ src: st.source }] : [] }));
+    if (b.type === "sequence") return b.steps.map((st) => ({ id: st.id, title: st.label, from: st.from, to: st.to, style: st.style, text: st.explanation, code: st.code, sources: st.source ? [{ src: st.source }] : [], notes: st.notes ?? [] }));
     if (b.type === "flow_diagram") {
         const byKey = new Map(b.nodes.map((n) => [n.key, n]));
         return layoutFlow(b)
             .layers.flat()
             .map((k) => byKey.get(k))
-            .filter((n) => n.attachments?.length || n.description)
+            .filter((n) => n.attachments?.length || n.description || n.notes?.length)
             .map((n) => ({
                 id: n.id,
                 title: n.label,
@@ -1998,6 +2041,7 @@ function tourStops(b) {
                 text: n.description,
                 sources: n.attachments.flatMap((a) => a.sources.map((src) => ({ src, label: a.label }))),
                 next: b.edges.filter((e) => e.from === n.key && e.to !== n.key).map((e) => ({ label: e.label, node: byKey.get(e.to) })),
+                notes: n.notes ?? [],
             }));
     }
     if (b.type === "call_stack_diff") return stackStops(b);
@@ -2035,7 +2079,7 @@ function stackStops(b) {
             const sources = [{ src: f.source, label: status === "removed" ? "Before" : status === "new" ? "Added" : "Now" }];
             if (f.callSite) sources.push({ src: f.callSite, label: "Called from" });
             for (const c of f.contextSources ?? []) sources.push({ src: c, label: "Context" });
-            return { id: f.id, title: name, status, depth, via: f.via, text: f.via ? `Reached **via ${f.via.kind}**: ${f.via.reason}` : undefined, sources };
+            return { id: f.id, title: name, status, depth, via: f.via, text: f.via ? `Reached **via ${f.via.kind}**: ${f.via.reason}` : undefined, sources, notes: f.notes ?? [] };
     });
 }
 
@@ -2105,6 +2149,33 @@ function tourMeta(b, st) {
     return st.kind && st.kind !== "process" ? h("div", { class: "tour-meta" }, h("span", { class: "badge" }, st.kind)) : null;
 }
 
+/** Notes added to a stop (usually on request): prose, a real example (source) or an illustrative sketch (code). */
+function renderNotes(notes) {
+    if (!notes?.length) return null;
+    return h(
+        "section",
+        { class: "tour-notes", "aria-label": "Notes and examples" },
+        h("div", { class: "tour-notes-h" }, "Notes & examples"),
+        notes.map((n) =>
+            h(
+                "div",
+                { class: "tour-note" },
+                n.title ? h("h3", {}, n.title) : null,
+                n.text ? h("div", { class: "md tour-text", html: markdown(n.text) }) : null,
+                n.code ? illustrativeCode(n.code, n.title ? "Example" : undefined) : null,
+                n.source ? codeView(n.source, { diff: hasBase(n.source), context: 4, label: n.title ? undefined : "Example" }) : null,
+            ),
+        ),
+    );
+}
+/** The same notes as peek-drawer sections. */
+const noteSections = (notes) =>
+    (notes ?? []).flatMap((n) => [
+        ...(n.text ? [{ text: n.text, heading: n.title }] : []),
+        ...(n.code ? [{ code: n.code, heading: n.text ? "Example" : (n.title ?? "Example") }] : []),
+        ...(n.source ? [{ source: n.source, diff: hasBase(n.source), heading: n.text ? "Example" : (n.title ?? "Example") }] : []),
+    ]);
+
 /** Stop body shared by tours (and reused by walkthroughs): title, meta, narration, code. */
 function renderTourStop(b, st, stepper) {
     return [
@@ -2113,7 +2184,8 @@ function renderTourStop(b, st, stepper) {
         st.text ? h("div", { class: "md tour-text", html: markdown(st.text) }) : null,
         st.code ? illustrativeCode(st.code) : null,
         ...st.sources.map((s) => codeView(s.src, { diff: true, label: s.label, context: 10 })),
-        !st.text && !st.code && !st.sources.length ? h("p", { class: "tour-empty" }, "Nothing is attached to this step yet.") : null,
+        renderNotes(st.notes),
+        !st.text && !st.code && !st.sources.length && !st.notes?.length ? h("p", { class: "tour-empty" }, "Nothing is attached to this step yet. Ask below for an explanation or an example.") : null,
         st.next?.length
             ? h(
                   "div",
@@ -2141,17 +2213,67 @@ function openTour(blockId) {
         id: "tour",
         label: `${b.title} tour`,
         stops: tour.stops,
-        renderStage: () => h("div", {}, h("div", { class: "tour-stage-title" }, b.title), tourStage(b)),
-        renderStop: (st, i, stepper) => renderTourStop(b, st, stepper),
-        askLabel: "Ask about this step",
-        onAsk: (i, st) => askAboutStop(b, i, st),
+        renderStage: () => h("div", {}, h("div", { class: "tour-stage-title" }, tour.block.title), tourStage(tour.block)),
+        renderStop: (st, i, stepper) => renderTourStop(tour.block, st, stepper),
+        dock: true,
+        onStop: () => chat.docked && renderRef(),
         onClose: () => {
+            undockChat();
             Object.assign(tour, { root: null, block: null, stops: [], stepper: null });
             syncChatFab();
         },
     });
     tour.root = tour.stepper.root;
+    // One conversation for the whole tour: it follows you from step to step, and each message says where you are.
+    dockChat(tour.stepper.dock, {
+        mode: "board",
+        blockId: b.id,
+        kind: "tour",
+        placeholder: "Ask about this step, or ask for an example or more detail…",
+        ref: () => tourRef(),
+        context: () => tourContext(),
+    });
+    tour.stepper.root.querySelector(".tour-next")?.focus({ preventScroll: true }); // keep ←/→ on the tour
     syncChatFab();
+}
+
+function tourRef() {
+    const i = tour.stepper?.index ?? 0;
+    const st = tour.stops[i];
+    return st ? `Tour · step ${i + 1} of ${tour.stops.length} · ${excerpt(st.title, 36)}` : "Tour";
+}
+/** Sent with every tour-chat message: which diagram, which step (with ids the agent can edit), and its code. */
+function tourContext() {
+    const b = tour.block;
+    const i = tour.stepper?.index ?? 0;
+    const st = tour.stops[i];
+    if (!b || !st) return "";
+    const where = b.type === "sequence" ? `${b.actors[st.from] ?? st.from} -> ${b.actors[st.to] ?? st.to}: ` : "";
+    const unit = b.type === "sequence" ? "step" : b.type === "flow_diagram" ? "flow node" : "call-stack frame";
+    const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
+    return `Tour of "${b.title}" (block ${b.id}), viewing step ${i + 1} of ${tour.stops.length}: ${where}${st.title} (${unit} id ${st.id})${refs ? `. Code: ${refs}` : ""}${st.notes?.length ? `. It has ${st.notes.length} note(s).` : ""}`;
+}
+
+/** The doc changed (often: the agent answered in the tour chat): rebuild the stops in place, keeping the current one. */
+function refreshTour() {
+    if (!tour.stepper || !tour.block) return;
+    const b = findBlock(state.doc?.content, tour.block.id);
+    if (!b) return closeTour();
+    const next = tourStops(b);
+    tour.block = b;
+    if (JSON.stringify(next) === JSON.stringify(tour.stops)) return;
+    const cur = tour.stops[tour.stepper.index];
+    const before = cur?.notes?.length ?? 0;
+    tour.stops = next;
+    tour.stepper.update(next);
+    renderRef();
+    // New notes on the step you are reading (usually the answer to your question): bring them into view.
+    const now = next.find((s) => s.id === cur?.id);
+    if (now && (now.notes?.length ?? 0) > before) {
+        const fresh = [...tour.stepper.root.querySelectorAll(".tour-note")].slice(before);
+        fresh.forEach((el) => el.classList.add("fresh"));
+        fresh[0]?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
 }
 
 function closeTour() {
@@ -2202,7 +2324,12 @@ Object.assign(svc, {
     commandChatOpen: () => !$("#chat").hidden && chat.mode === "command",
     commandFocus: () => (chat.mode === "command" ? chat.focus : []),
     /** Leaving the Command tab hides its chat (kept for the next visit). */
+    dockChat: (slot, ctx) => dockChat(slot, ctx),
+    undockChat: () => undockChat(),
+    isChatDocked: () => !!chat.docked,
+    refreshChatRef: () => renderRef(),
     hideCommandChat: () => {
+        undockChat();
         if (chat.mode === "command" && !$("#chat").hidden) {
             $("#chat").hidden = true;
             syncChatFab();

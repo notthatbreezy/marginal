@@ -83,6 +83,16 @@ export const sourceSchema = refine(
 
 const codeFields = { language: dflt(text, "text"), text };
 
+/**
+ * Notes: extra material attached to a tour stop (sequence step, flow node, call-stack frame), usually added when the
+ * reader asks for more: prose (markdown), a real example from the codebase (source), or an illustrative sketch (code).
+ */
+export const noteSchema = refine(
+    object({ title: opt(label), text: opt(text), source: opt(sourceSchema), code: opt(object(codeFields)) }),
+    (n) => (!n.text?.trim() && !n.source && !n.code ? "a note needs text, source or code" : n.source && n.code ? "a note takes source or code, not both (text can accompany either)" : null),
+);
+const notes = opt(array(noteSchema, { max: 12 }));
+
 // ---------- block schemas ----------
 
 const block = lazy(() => blockValidator);
@@ -98,6 +108,7 @@ export const stepSchema = refine(
         source: opt(sourceSchema),
         explanation: opt(label),
         code: opt(object(codeFields)),
+        notes,
     }),
     (s) => (s.source && s.code ? "a step takes source or code, not both (explanation can accompany either)" : null),
 );
@@ -110,6 +121,7 @@ export const flowNodeSchema = object({
     description: opt(text),
     kind: opt(oneOf(["process", "decision", "terminal"])),
     attachments: dflt(array(object({ label, sources: array(sourceSchema, { min: 1 }) })), []),
+    notes,
 });
 
 export const flowEdgeSchema = object({
@@ -124,7 +136,7 @@ export const flowEdgeSchema = object({
 const flowLinkSchema = object({ from: opt(label), to: opt(label), label: opt(text), style: opt(oneOf(["solid", "dashed"])) });
 export const flowNodeInsertSchema = object({ ...flowNodeSchema.shape, link: opt(flowLinkSchema) });
 
-const frameSchema = object({
+export const frameSchema = object({
     id,
     key: opt(label),
     parentKey: nullable(label),
@@ -132,6 +144,7 @@ const frameSchema = object({
     source: sourceSchema,
     label: opt(label),
     via: opt(object({ kind: oneOf(["call", "queue", "callback", "rpc"]), reason: label })),
+    notes,
 });
 
 const fieldSchema = lazy(() => dbField);
@@ -373,12 +386,14 @@ export function* sourcesOf(b, inheritedPins) {
             break;
         case "step":
             if (b.source) yield { source: b.source, where: b.id };
+            for (const n of b.notes ?? []) if (n.source) yield { source: n.source, where: b.id };
             break;
         case "flow_diagram":
             for (const n of b.nodes) yield* sourcesOf(n);
             break;
         case "flow_node":
             for (const a of b.attachments ?? []) for (const s of a.sources) yield { source: s, where: b.id };
+            for (const n of b.notes ?? []) if (n.source) yield { source: n.source, where: b.id };
             break;
         case "call_stack_diff":
             for (const side of ["base", "head"])
@@ -386,6 +401,7 @@ export function* sourcesOf(b, inheritedPins) {
                     yield { source: f.source, where: f.id ?? f.key };
                     if (f.callSite) yield { source: f.callSite, where: f.id ?? f.key };
                     for (const s of f.contextSources ?? []) yield { source: s, where: f.id };
+                    for (const n of f.notes ?? []) if (n.source) yield { source: n.source, where: f.id ?? f.key };
                 }
             break;
         case "database_lens":
@@ -413,6 +429,11 @@ export function locate(content, targetId) {
                     if (j >= 0) return { kind: "unit", node: b[key][j], list: b[key], index: j, parent: b, block: b };
                 }
             }
+            if (b.type === "call_stack_diff")
+                for (const side of ["base", "head"]) {
+                    const j = b[side].findIndex((f) => f.id === targetId);
+                    if (j >= 0) return { kind: "frame", node: b[side][j], list: b[side], index: j, parent: b, block: b, side };
+                }
             if (b.children) {
                 const hit = visit(b.children, b);
                 if (hit) return hit;
@@ -431,6 +452,7 @@ export function topBlockOf(content, targetId) {
             if (b.id === targetId) return true;
             if (b.type === "sequence" && b.steps.some((s) => s.id === targetId)) return true;
             if (b.type === "flow_diagram" && [...b.nodes, ...b.edges].some((s) => s.id === targetId)) return true;
+            if (b.type === "call_stack_diff" && [...b.base, ...b.head].some((f) => f.id === targetId)) return true;
             if (b.children && visit(b.children)) return true;
             path.pop();
         }

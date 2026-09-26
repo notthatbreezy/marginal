@@ -97,8 +97,29 @@ export async function mountCommand(host, { documentId }) {
             const c = changesAt(cc.events).get(path);
             return c ? cc.data.state.fronts.find((f) => f.id === c.lead) ?? null : null;
         },
-        onStop: (w, stop) => linkStop(w, stop),
+        onStop: (w, stop) => {
+            linkStop(w, stop);
+            svc.refreshChatRef?.();
+        },
+        // The Command chat docks under the walkthrough while it is open: one conversation across its stops.
+        onOpen: (slot) =>
+            svc.dockChat?.(slot, {
+                mode: "command",
+                kind: "walkthrough",
+                placeholder: "Ask about this stop, or ask Copilot to expand it…",
+                ref: () => {
+                    const w = cc.walk?.current;
+                    const s = cc.walk?.stop;
+                    return w && s ? `Walkthrough · stop ${cc.walk.index + 1} of ${w.stops.length} · ${s.title}` : "Walkthrough";
+                },
+                context: () => {
+                    const w = cc.walk?.current;
+                    const s = cc.walk?.stop;
+                    return w && s ? `Walkthrough "${w.title}" (id ${w.id}, revision ${w.revision}), stop ${cc.walk.index + 1} of ${w.stops.length}: "${s.title}" (stop id ${s.id}). Ranges: ${s.ranges.map((r) => `${r.sourceFile ?? r.file}${r.side === "base" ? " (before)" : ""} L${r.startLine}-${r.endLine}`).join(", ")}. To expand it, use command_walkthrough {op:"edit"} (update_stop / insert_stop).` : "";
+                },
+            }),
         onClose: (w, { user }) => {
+            svc.undockChat?.();
             cc.walkLink = null;
             if (user && w) savePrefs({ walkthroughDismissed: { id: w.id, seq: cc.data.state.walkthroughView?.seq ?? 0 } });
             schedule(true);
@@ -115,7 +136,7 @@ export async function mountCommand(host, { documentId }) {
             // While a walkthrough is open, the chat sits to its left instead of over its stop actions.
             const walk = cc.host?.querySelector(".walk");
             const box = document.getElementById("chat");
-            if (!walk || !box) return;
+            if (!walk || !box || svc.isChatDocked?.()) return;
             const wr = walk.getBoundingClientRect();
             if (box.getBoundingClientRect().right > wr.left + 1) box.style.right = `${Math.max(0, innerWidth - wr.left + 12)}px`;
         },
@@ -136,6 +157,7 @@ export function unmountCommand() {
     flushPrefs();
     cc.tour?.close();
     cc.tour = null;
+    svc.undockChat?.(); // before the walkthrough (and the chat docked in it) leaves the DOM
     cc.walk?.destroy();
     cc.walk = null;
     cc.walkLink = null;

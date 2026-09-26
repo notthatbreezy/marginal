@@ -191,13 +191,14 @@ export async function startServer({ chat, instances, getSessionId }) {
     }
 
     /** Command chat: always to the orchestrator (this panel's session must hold the lease), with a structured focus block. */
-    async function askCommand({ doc, instanceId, quote, message, threadId, focus }) {
+    async function askCommand({ doc, instanceId, quote, message, threadId, focus, context }) {
         const lease = readLease(doc.id);
         if (lease?.live && lease.sessionId !== getSessionId?.()) throw new InputError(`Command chat talks to the orchestrator (session ${lease.sessionId}): open this doc in that session.`);
         const f = parseFocus(focus);
         writePrefs(doc.id, { focus: f });
         const lines = [`[Command center chat${threadId ? " follow-up" : ""} on "${doc.title}" (documentId: ${doc.id}), tab: command]`];
         if (typeof quote === "string" && quote.trim()) lines.push(quote.trim().slice(0, 4000).split("\n").map((l) => `> ${l}`).join("\n"));
+        if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
         lines.push(message.trim().slice(0, 8000));
         if (f.items.length || f.replayAt) lines.push("Focus (what the user is pointing at on the Command map):\n```json\n" + JSON.stringify(f, null, 1).slice(0, 6000) + "\n```");
         lines.push('(The user reads your reply in the Command chat popup: keep it short. For "walk me through…" use command_diff then command_walkthrough {op:"show"}; for questions about a stop prefer command_walkthrough {op:"edit"}. Views: command_view.)');
@@ -275,11 +276,11 @@ export async function startServer({ chat, instances, getSessionId }) {
         }
 
         if (parts[1] === "ask" && method === "POST") {
-            const { documentId, blockId, quote, message, threadId, tab, focus } = await readBody(req);
+            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind } = await readBody(req);
             if (typeof message !== "string" || !message.trim()) throw new InputError("message is required.");
             const instanceId = url.searchParams.get("instance") ?? "";
             const doc = documentId ? store.getDoc(documentId) : null;
-            if (tab === "command" && doc?.target) return send(res, 200, await askCommand({ doc, instanceId, quote, message, threadId, focus }));
+            if (tab === "command" && doc?.target) return send(res, 200, await askCommand({ doc, instanceId, quote, message, threadId, focus, context }));
             const lines = [];
             if (threadId) lines.push(`[Marginal side-chat follow-up${doc ? ` on "${doc.title}" (documentId: ${doc.id})` : ""}${blockId ? `, element ${blockId}` : ""}]`);
             else {
@@ -294,9 +295,15 @@ export async function startServer({ chat, instances, getSessionId }) {
                             .join("\n"),
                     );
             }
+            // Docked chats (tour, walkthrough) say where the reader is on every message, since they move between steps.
+            if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
             lines.push(message.trim().slice(0, 8000));
-            lines.push("(The user reads your reply in a small chat popup on the doc: keep it short and conversational. Make any changes with the Marginal canvas actions; they appear live.)");
-            const where = doc ? `On doc “${doc.title}”${blockId ? ` (${blockId})` : ""}` : "From the doc";
+            if (kind === "tour")
+                lines.push(
+                    "(The user is in the full-screen tour of that diagram, with this chat docked under the step. When they ask for more explanation, an example, or what something looks like, add it to that step as notes: edit {type:\"update\", targetId:<the step/node/frame id>, changes:{notes:[...existing, {title?, text?, source? | code?}]}}. Use source for a real example from the code (read it first) and code for an illustrative sketch. The tour updates in place. Reply briefly in the chat.)",
+                );
+            else lines.push("(The user reads your reply in a small chat popup on the doc: keep it short and conversational. Make any changes with the Marginal canvas actions; they appear live.)");
+            const where = doc ? `On doc “${doc.title}”${kind === "tour" ? " · tour" : blockId ? ` (${blockId})` : ""}` : "From the doc";
             const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}` });
             return send(res, 200, result);
         }

@@ -13,7 +13,7 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 ### Docs
 
 - **Blocks the agent can draw:** Markdown, sections, callouts, code, `code_peek` (verified slices of real files at pinned commits), sequence diagrams, flow diagrams, call-stack diffs, database lenses, trace quotes and images. Blocks are validated at write time, so every file reference resolves.
-- **Code tours:** sequence and flow diagrams have a **Tour** mode that steps through the diagram beside the code. Call-stack diffs have a **Focus** view.
+- **Code tours:** sequence and flow diagrams have a **Tour** mode that steps through the diagram beside the code. Call-stack diffs have a **Focus** view. A chat is docked under every tour and keeps one conversation for the whole walk. Ask "can you show an example of this interface?" and Copilot adds it to that step as **notes and examples**, which appear in place.
 - **Comment in the margin:** hover a paragraph, list item, diagram or code range to get margin controls for *Comment* and *Copy*. Ctrl/Cmd-click or Shift-click selects several at once. Code views support GitHub-style gutter line selection.
 - **Side chat:** a small, draggable chat whose replies stream from your Copilot session, scoped to what you pointed at.
 - **Diff, Commits and History tabs** for the change the doc explains, including agent-authored *file lenses* that group changed files.
@@ -32,7 +32,7 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 - **Fronts:** one per worktree, attributed by watching git, never by agent self-report. Each has its status, place in the plan, recent pace and off-plan count.
 - **Checkpoints and replay:** the plan's phases on a timeline. Scrub the histogram to see the map as it was at any moment.
 - **Views, follow, pins and monitors:** the agent can suggest a view per checkpoint, and it applies automatically while you follow. You can pin areas to draw them 3× larger, or open live diff-feed monitors on folders.
-- **Checkpoint walkthroughs:** ask "walk me through the last checkpoint" to get a stepper with one stop per idea, each with its diff. The map zooms and badges each stop's files, and Copilot revises stops in place when you ask about them.
+- **Checkpoint walkthroughs:** ask "walk me through the last checkpoint" to get a stepper with one stop per idea, each with its diff. The map zooms and badges each stop's files. The Command chat docks under the walkthrough, and Copilot revises or expands stops in place when you ask about them.
 - **Command chat:** a persistent chat with the orchestrating session. Point at tiles, fronts, checkpoints or walkthrough stops to attach them as focus chips.
 - **Guided tour:** press **?** (or click the **?** in the map header) for a one-minute tour of all of the above.
 

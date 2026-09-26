@@ -20,6 +20,7 @@ let active = null; // only one stepper handles the keyboard at a time
  * @param {Node} [o.headerExtra]                  extra node in the top bar (e.g. revising chip)
  * @param {(stops:any[]) => number} [o.findStage] map a clicked [data-unit] to a stop index
  * @param {Array<{label:string,title?:string,onClick:(i:number,stop:any)=>void}>} [o.actions] extra footer buttons (per-stop actions)
+ * @param {boolean} [o.dock] reserve a slot above the footer for a conversation that spans the whole walk (api.dock)
  */
 export function createStepper(o) {
     let stops = o.stops;
@@ -30,11 +31,13 @@ export function createStepper(o) {
     const count = h("span", { class: "tour-count" });
     const prev = h("button", { class: "tour-prev", onclick: () => go(i - 1) }, h("kbd", {}, "←"), "Back");
     const next = h("button", { class: "tour-next primary", onclick: () => (i >= stops.length - 1 ? close() : go(i + 1)) });
+    const dock = o.dock ? h("div", { class: "tour-dock" }) : null;
     const pane = h(
         "div",
         { class: "tour-pane" },
         h("header", { class: "tour-top" }, progress, o.headerExtra ?? null, h("button", { class: "chat-icon tour-close", title: "Close (Esc)", "aria-label": "Close", onclick: () => close(), html: CLOSE_SVG })),
         body,
+        dock,
         h(
             "footer",
             { class: "tour-nav" },
@@ -117,6 +120,7 @@ export function createStepper(o) {
 
     const api = {
         root,
+        dock,
         go,
         close,
         update,

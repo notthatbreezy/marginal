@@ -204,6 +204,25 @@ await test("call_stack_diff: base column defaults to base side; parentKey order 
     await rejects(() => store.applyEdit(doc.documentId, { type: "insert", content: { type: "call_stack_diff", title: "t", base: [], head: [{ parentKey: "later", source: { file: "src/api.ts", startLine: 1 } }] } }), /earlier frame/);
 });
 
+await test("tour notes: steps and frames take verified notes; frames update in place only", async () => {
+    const seq = store.getDoc(doc.documentId).content.find((b) => b.id === seqId);
+    const stepId = seq.steps[0].id;
+    await store.applyEdit(doc.documentId, { type: "update", targetId: stepId, changes: { notes: [{ title: "Example", text: "A cart looks like this.", source: { file: "src/api.ts", startLine: 1, endLine: 2 } }, { code: { language: "ts", text: "checkout({ total: 3 })" } }] } });
+    assert.equal(store.getDoc(doc.documentId).content.find((b) => b.id === seqId).steps[0].notes.length, 2);
+    await rejects(() => store.applyEdit(doc.documentId, { type: "update", targetId: stepId, changes: { notes: [{ title: "empty" }] } }), /needs text, source or code/);
+    await rejects(() => store.applyEdit(doc.documentId, { type: "update", targetId: stepId, changes: { notes: [{ source: { file: "src/api.ts", startLine: 1 }, code: { text: "x" } }] } }), /source or code, not both/);
+    await rejects(() => store.applyEdit(doc.documentId, { type: "update", targetId: stepId, changes: { notes: [{ source: { file: "src/api.ts", startLine: 900 } }] } }), /line|range|lines/i);
+    const stack = store.getDoc(doc.documentId).content.find((b) => b.type === "call_stack_diff");
+    const frameId = stack.head[1].id;
+    assert.ok(frameId, "frames have ids");
+    await store.applyEdit(doc.documentId, { type: "update", targetId: frameId, changes: { notes: [{ text: "Reserving first means a failed payment releases the hold." }] } });
+    const f = store.getDoc(doc.documentId).content.find((b) => b.id === stack.id).head[1];
+    assert.equal(f.notes[0].text, "Reserving first means a failed payment releases the hold.");
+    assert.equal(f.key, "reserve");
+    await rejects(() => store.applyEdit(doc.documentId, { type: "update", targetId: frameId, changes: { notes: [{ source: { file: "src/nope.ts", startLine: 1 } }] } }), /nope|not exist|does not/i);
+    await rejects(() => store.applyEdit(doc.documentId, { type: "remove", targetId: frameId }), /frames can only be updated/i);
+});
+
 await test("database_lens relationship checks", async () => {
     const lens = (field) => ({
         type: "database_lens",

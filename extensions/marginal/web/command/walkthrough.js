@@ -76,6 +76,7 @@ export function createWalkthrough(o) {
             label: `Walkthrough: ${w.title}`,
             stops: w.stops,
             headerExtra: chipHost,
+            dock: true,
             renderStage,
             renderStop: (s, i) => renderStop(s, i),
             onStop: (i, s) => o.onStop?.(cur, s, i),
@@ -96,6 +97,8 @@ export function createWalkthrough(o) {
         const k = w.stops.findIndex((s) => s.id === stopId);
         if (k > 0) stepper.go(k, { animate: false });
         paintStatus();
+        o.onOpen?.(stepper.dock);
+        stepper.root.querySelector(".tour-next")?.focus({ preventScroll: true });
     }
 
     return {
@@ -107,6 +110,9 @@ export function createWalkthrough(o) {
         },
         get stop() {
             return stepper ? stepper.stops[stepper.index] : null;
+        },
+        get index() {
+            return stepper ? stepper.index : -1;
         },
         /** Reconcile with server state: w = the walkthrough in view (or null), view = { id, stopId, seq }. */
         sync(w, view) {
