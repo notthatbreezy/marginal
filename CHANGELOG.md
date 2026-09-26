@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-26
+
 First public release.
 
 ### Docs
@@ -23,3 +25,4 @@ First public release.
 
 ### Install
 - Ships as a Copilot plugin with its own marketplace: `copilot plugin marketplace add notthatbreezy/marginal`, then `copilot plugin install marginal@marginal`.
+
