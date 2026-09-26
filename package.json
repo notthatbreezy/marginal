@@ -2,7 +2,7 @@
   "name": "marginal",
   "version": "0.1.0",
   "private": true,
-  "description": "Code-linked whiteboards and a live Command center for the GitHub Copilot app (canvas extension).",
+  "description": "Code-linked docs and a live Command center for the GitHub Copilot app (canvas extension).",
   "license": "MIT",
   "type": "module",
   "engines": {

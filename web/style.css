@@ -1728,7 +1728,7 @@ svg .muted {
 .cv-ln.ctx .cv-t {
     opacity: 0.5;
 }
-/* Cited lines: an author's highlighter (yellow). Selected lines: the app's pick blue, same as whiteboard picks. */
+/* Cited lines: an author's highlighter (yellow). Selected lines: the app's pick blue, same as doc picks. */
 .cv-ln.cite {
     background: color-mix(in srgb, var(--yellow) 9%, transparent);
 }
@@ -2290,7 +2290,7 @@ svg .muted {
 
 /* ==========================================================================
    Command tab. Design stylesheet scoped under .cc (tools/scope-css.mjs) + integration rules.
-   Tokens only; every selector lives under .cc so nothing leaks into the whiteboard.
+   Tokens only; every selector lives under .cc so nothing leaks into the doc.
    ========================================================================== */
 .cc {
     --cc-grid: color-mix(in srgb, var(--fg) 5%, transparent);

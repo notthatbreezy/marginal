@@ -1,5 +1,5 @@
 // Selection: Ctrl/Cmd+click toggles, Shift+click selects a contiguous range, on any surface.
-// Whiteboard paragraphs/blocks and Command map tiles each create one; the header #multibar shows whichever
+// Doc paragraphs/blocks and Command map tiles each create one; the header #multibar shows whichever
 // selection was changed most recently and routes its buttons to that selection's actions.
 import { $ } from "./core.js";
 

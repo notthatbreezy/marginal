@@ -1,12 +1,12 @@
 # Command center
 
-The Command tab of a whiteboard with a repository target tracks a multi-step implementation while it happens. The orchestrating Copilot session describes the plan. The extension observes the worktrees doing the work and draws where edits land. Agents never report individual edits.
+The Command tab of a doc with a repository target tracks a multi-step implementation while it happens. The orchestrating Copilot session describes the plan. The extension observes the worktrees doing the work and draws where edits land. Agents never report individual edits.
 
 ## Concepts
 
 | Term | Meaning |
 |---|---|
-| **Plan** | `{id, title, base, phases[]}`. `base` defaults to the whiteboard's base commit. |
+| **Plan** | `{id, title, base, phases[]}`. `base` defaults to the doc's base commit. |
 | **Phase** (checkpoint) | `{id, title, expects[], steps[], suggestedView?}` with state `pending` → `active` → `done`. A `done` phase always carries a checkpoint: a commit you name, or a hidden snapshot. |
 | **Step** | A smaller unit inside a phase, optionally attributed to one front. |
 | **Expects** | Repository-relative files, `dir/` prefixes or globs (`src/**/*.ts`). Together they form the plan's footprint. |
@@ -33,7 +33,7 @@ The `instructions` action's `command` topic gives the agent the same protocol in
 
 ## Ownership
 
-- `command_plan {op:"set"}` explicitly claims the whiteboard's Command lease for the calling session. Opening a panel never claims it.
+- `command_plan {op:"set"}` explicitly claims the doc's Command lease for the calling session. Opening a panel never claims it.
 - The owner process heartbeats every 10 s. The lease goes stale after 30 s without a heartbeat, and only then can another session take over. A live owner calling `set` again just renews the lease.
 - Mutations from any other session return `not_owner`, and the hint names the owner. Reads work from any session.
 - Only the owner process polls worktrees. A process that loses the lease stops its pollers immediately.
@@ -59,7 +59,7 @@ type Focus = {
 
 ## Storage
 
-Per whiteboard, under `artifacts/whiteboards/<id>/command/`:
+Per doc, under `artifacts/docs/<id>/command/`:
 
 | File | Contents |
 |---|---|
@@ -68,7 +68,7 @@ Per whiteboard, under `artifacts/whiteboards/<id>/command/`:
 | `events.jsonl` | The append-only change log. It is compacted once at 20 MB: events older than 6 h fold into per-file baselines plus minute buckets. |
 | `owner.json` | The lease. |
 
-The line-count cache lives in `artifacts/loc-cache/`. Checkpoint snapshots are git refs under `refs/whiteboard/checkpoints/<whiteboard>/` in your repository, and they are deleted with the whiteboard.
+The line-count cache lives in `artifacts/loc-cache/`. Checkpoint snapshots are git refs under `refs/marginal/checkpoints/<doc>/` in your repository, and they are deleted with the doc.
 
 ## Deliberate limits
 

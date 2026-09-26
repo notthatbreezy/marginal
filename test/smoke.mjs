@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const extDir = process.argv[2] ?? fileURLToPath(new URL("..", import.meta.url));
 const tmp = mkdtempSync(join(tmpdir(), "wb-smoke-"));
-process.env.WHITEBOARD_DATA_DIR = join(tmp, "data");
+process.env.MARGINAL_DATA_DIR = join(tmp, "data");
 
 // ---- fixture repo: base commit + head commit on a branch ----
 const repo = join(tmp, "repo");
@@ -105,7 +105,7 @@ await test("listTree and listCommits", async () => {
     assert.equal(commits[0].subject, "reserve inventory before paying");
 });
 
-await test("create whiteboard requires SHA pins", async () => {
+await test("create doc requires SHA pins", async () => {
     await rejects(() => store.create({ title: "x", target: { repositoryId: repoId, base: "main", head: "feature" } }), /full commit SHA/);
     doc = await store.create({ title: "Reserve inventory", target: pins });
     assert.match(doc.documentId, /^reserve-inventory-[0-9a-f]{4}$/);
@@ -279,7 +279,7 @@ await test("instructions topics", async () => {
     for (const t of ["authoring", "scratchpad", "blocks", "file-lenses"]) assert.ok(getInstructions(t).length > 200);
 });
 
-await test("delete whiteboard", async () => {
+await test("delete doc", async () => {
     await store.remove(doc.documentId);
     assert.equal(store.hasDoc(doc.documentId), false);
 });

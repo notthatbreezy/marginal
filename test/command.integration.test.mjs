@@ -9,7 +9,7 @@ import { after, before, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const tmp = mkdtempSync(join(tmpdir(), "wb-int-"));
-process.env.WHITEBOARD_DATA_DIR = join(tmp, "data");
+process.env.MARGINAL_DATA_DIR = join(tmp, "data");
 const ext = fileURLToPath(new URL("..", import.meta.url));
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
@@ -259,7 +259,7 @@ test("done without a commit snapshots into a hidden ref; HEAD, index and status 
     const cp = readState(doc.documentId).plan.phases[1].state.checkpoint;
     assert.equal(cp.source, "snapshot");
     assert.equal(cp.frontId, "tests");
-    assert.equal(cp.ref, `refs/whiteboard/checkpoints/${doc.documentId}/p2`);
+    assert.equal(cp.ref, `refs/marginal/checkpoints/${doc.documentId}/p2`);
     assert.equal(git(repo, "rev-parse", cp.ref), cp.sha);
     assert.match(git(repo, "show", `${cp.sha}:tests/executor.test.ts`), /retry/);
     assert.equal(git(wt2, "rev-parse", "HEAD"), head);
@@ -334,7 +334,7 @@ test("walkthrough: invalid show → all issues + revising event, nothing stored;
 
 test("walkthrough: no refs from rejected live shows, renamed base ranges, view normalization, monotonic seq, CAS", async () => {
     const d = doc.documentId;
-    const refs = () => git(repo, "for-each-ref", "--format=%(refname)", `refs/whiteboard/checkpoints/${d}/`).split("\n").filter((x) => x.includes("/walk-"));
+    const refs = () => git(repo, "for-each-ref", "--format=%(refname)", `refs/marginal/checkpoints/${d}/`).split("\n").filter((x) => x.includes("/walk-"));
     git(wt2, "mv", "tests/executor.test.ts", "tests/exec.test.ts");
     const from = { phaseId: "p2" };
     const to = { ref: "live", frontId: "tests" };
@@ -348,7 +348,7 @@ test("walkthrough: no refs from rejected live shows, renamed base ranges, view n
     ];
     const ok = await call("command_walkthrough", { op: "show", walkthrough: { id: "ren", title: "Rename", from, to, stops } });
     assert.ok(ok.ok, JSON.stringify(ok));
-    assert.deepEqual(refs().sort(), [`refs/whiteboard/checkpoints/${d}/walk-ren-to`]);
+    assert.deepEqual(refs().sort(), [`refs/marginal/checkpoints/${d}/walk-ren-to`]);
     let st = readState(d);
     let w = st.walkthroughs.find((x) => x.id === "ren");
     assert.deepEqual(w.stops[0].ranges[0], { file: "tests/exec.test.ts", sourceFile: "tests/executor.test.ts", side: "base", startLine: 1, endLine: 2 });
@@ -406,7 +406,7 @@ test("pollers dedupe: once per front in-process, zero in a non-owner process", a
     poller.startPolling(d, readState(d).fronts[0]);
     assert.deepEqual(poller.pollingFronts(d), loops1, "second start is a no-op");
     const script = `
-        process.env.WHITEBOARD_DATA_DIR = ${JSON.stringify(process.env.WHITEBOARD_DATA_DIR)};
+        process.env.MARGINAL_DATA_DIR = ${JSON.stringify(process.env.MARGINAL_DATA_DIR)};
         const { adoptLeases } = await import(${JSON.stringify(pathToFileURL(join(ext, "lib/command/index.mjs")).href)});
         const { gitStats } = await import(${JSON.stringify(pathToFileURL(join(ext, "lib/command/gitx.mjs")).href)});
         const adopted = adoptLeases("session-B");
@@ -472,11 +472,11 @@ test("losing the lease stops this process's pollers; a stale takeover restarts t
     assert.ok(poller.pollingFronts(d).length > 0);
 });
 
-test("deleting the whiteboard stops its pollers first", async () => {
+test("deleting the doc stops its pollers first", async () => {
     await import("../lib/command/index.mjs"); // registers the store hook
     assert.ok(poller.pollingFronts(doc.documentId).length > 0);
-    assert.ok(git(repo, "for-each-ref", `refs/whiteboard/checkpoints/${doc.documentId}/`).length > 0);
+    assert.ok(git(repo, "for-each-ref", `refs/marginal/checkpoints/${doc.documentId}/`).length > 0);
     await store.remove(doc.documentId);
     assert.deepEqual(poller.pollingFronts(doc.documentId), []);
-    assert.equal(git(repo, "for-each-ref", `refs/whiteboard/checkpoints/${doc.documentId}/`), "", "checkpoint refs dropped");
+    assert.equal(git(repo, "for-each-ref", `refs/marginal/checkpoints/${doc.documentId}/`), "", "checkpoint refs dropped");
 });

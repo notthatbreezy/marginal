@@ -20,7 +20,7 @@ export function startCommandTour(o = {}) {
                     p({ class: "guide-muted" }, "About a minute. Use ", kbd("→"), " and ", kbd("←"), " to move, ", kbd("Esc"), " to stop."),
                 ],
             },
-            { id: "init", when: () => !plan(), target: ".cc .cc-init", title: "Start here", body: () => p("Nothing is being tracked yet. ", h("b", {}, "Initialize command center"), " asks this panel's Copilot session to read the whiteboard and the branch, set the plan and register its worktrees. Add a goal to steer it.") },
+            { id: "init", when: () => !plan(), target: ".cc .cc-init", title: "Start here", body: () => p("Nothing is being tracked yet. ", h("b", {}, "Initialize command center"), " asks this panel's Copilot session to read the doc and the branch, set the plan and register its worktrees. Add a goal to steer it.") },
             {
                 id: "strip",
                 target: ".cc .strip",

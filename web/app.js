@@ -1,4 +1,4 @@
-// Whiteboard canvas renderer. Vanilla JS, no dependencies.
+// Marginal canvas renderer. Vanilla JS, no dependencies.
 import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
 import { createStepper } from "./stepper.js";
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
@@ -896,7 +896,7 @@ function renderDatabase(b) {
 // ---------------- views ----------------
 function setHeader() {
     const doc = state.doc;
-    $("#title").textContent = doc ? doc.title : "Whiteboard";
+    $("#title").textContent = doc ? doc.title : "Marginal";
     const sub = [];
     if (doc?.kind === "scratchpad") sub.push("Scratchpad — newest first");
     if (doc?.target) {
@@ -930,7 +930,7 @@ function setActivity(list) {
 
 /** The header's center slot shows one thing at a time: selection bar > hover hint > activity. */
 let hintOn = false;
-// Any selection (whiteboard units or Command map tiles) owns the bar while it has picks.
+// Any selection (doc units or Command map tiles) owns the bar while it has picks.
 multibar.onSync.push(() => updateCenter());
 function updateCenter() {
     const multi = (activeSelection()?.size ?? 0) > 0;
@@ -958,8 +958,8 @@ function renderHome() {
             "div",
             { class: "doc home" },
             pad ? [h("h2", {}, "Scratchpad"), card(pad)] : null,
-            h("h2", {}, "Whiteboards"),
-            others.length ? others.map(card) : h("div", { class: "empty" }, "No whiteboards yet. Ask Copilot to ", h("code", {}, "explain my branch on the whiteboard"), "."),
+            h("h2", {}, "Docs"),
+            others.length ? others.map(card) : h("div", { class: "empty" }, "No docs yet. Ask Copilot to ", h("code", {}, "explain my branch in Marginal"), "."),
         ),
     );
 }
@@ -973,7 +973,7 @@ function renderBoard() {
             h(
                 "div",
                 { class: "empty" },
-                doc.kind === "scratchpad" ? "The scratchpad is empty. Ask Copilot to sketch something here — a flow, a call path, a data shape." : "This whiteboard is empty. Copilot's drawing will appear here live.",
+                doc.kind === "scratchpad" ? "The scratchpad is empty. Ask Copilot to sketch something here — a flow, a call path, a data shape." : "This doc is empty. Copilot's drawing will appear here live.",
             ),
         );
     const prevScroll = main.scrollTop;
@@ -1226,7 +1226,7 @@ function connect() {
 
 // ---------------- side-chat with Copilot ----------------
 // The reply comes from the main session; this popup shows only the turns it started.
-// Two modes share the popup: "board" (side-chat about the whiteboard, ends on close) and "command" (the Command tab's
+// Two modes share the popup: "board" (side-chat about the doc, ends on close) and "command" (the Command tab's
 // persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
 const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), statusEl: null, mode: "board", focus: [], blocked: null };
 const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
@@ -1260,7 +1260,7 @@ function endThread() {
 }
 
 function switchChatMode(mode) {
-    // The Command chat belongs to one whiteboard: a different document starts a fresh thread, log and focus.
+    // The Command chat belongs to one doc: a different document starts a fresh thread, log and focus.
     if (chat.mode === mode && (mode !== "command" || chat.docId === state.documentId)) return;
     chat.docId = state.documentId;
     chatBoxes[chat.mode] = { right: chatBox.style.right, bottom: chatBox.style.bottom, width: chatBox.style.width, userHeight: chatBox.dataset.userHeight };
@@ -1357,11 +1357,11 @@ function closeChat() {
     syncChatFab();
 }
 
-/** The chat button is the way in when nothing is selected: shown on a whiteboard whenever the chat is closed. */
+/** The chat button is the way in when nothing is selected: shown on a doc whenever the chat is closed. */
 function syncChatFab() {
     const tabOk = state.tab === "board" || (state.tab === "command" && !!state.doc?.target);
     $("#chat-fab").hidden = !$("#chat").hidden || !state.documentId || !tabOk || !!tour.root;
-    $("#chat-fab").title = state.tab === "command" ? "Chat with the orchestrator" : "Chat about this whiteboard";
+    $("#chat-fab").title = state.tab === "command" ? "Chat with the orchestrator" : "Chat about this doc";
 }
 $("#chat-fab").onclick = () => openChat({});
 
@@ -1799,7 +1799,7 @@ function joinRuns() {
     }
 }
 
-// The whiteboard's selection over paragraphs and blocks (shared mechanics in selection.js).
+// The doc's selection over paragraphs and blocks (shared mechanics in selection.js).
 const picks = createSelection({
     keyOf,
     elOf,
@@ -2100,7 +2100,7 @@ function askAboutStop(b, i, st) {
 }
 // ---------------- services for feature modules (Command tab) ----------------
 Object.assign(svc, {
-    /** Unified hunks → the whiteboard's diff listing (same look as the Diff tab). */
+    /** Unified hunks → the doc's diff listing (same look as the Diff tab). */
     renderDiff: (hunks, file) => hunks.flatMap((hk) => [h("div", { class: "code" }, h("div", { class: "gap" }, hk.header)), diffListing(hk.lines, langOf(file))]),
     codeView,
     openChat: (ctx) => openChat(ctx),
@@ -2138,7 +2138,7 @@ Object.assign(svc, {
     try {
         state.catalog = await api("/catalog");
     } catch (e) {
-        $("#main").replaceChildren(h("div", { class: "doc error" }, `Can't reach the whiteboard extension: ${e.message}`));
+        $("#main").replaceChildren(h("div", { class: "doc error" }, `Can't reach the Marginal extension: ${e.message}`));
         return;
     }
     connect();

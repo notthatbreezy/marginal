@@ -1,4 +1,4 @@
-// Extension: whiteboard — a canvas where the agent draws structured explanations of code
+// Extension: Marginal — a canvas where the agent draws structured explanations of code
 // (sequence / flow diagrams, call-stack diffs, database lenses, verified code peeks).
 // Inspired by devdotfast/whiteboard (MIT).
 import { existsSync, readFileSync } from "node:fs";
@@ -47,7 +47,7 @@ const wrap = (fn) => async (ctx) => {
 
 function docIdFor(input, ctx) {
     const id = input.documentId ?? instances.get(ctx.instanceId)?.documentId;
-    if (!id) throw new InputError("No whiteboard is shown in this panel. Pass documentId, or create / show one first.");
+    if (!id) throw new InputError("No doc is shown in this panel. Pass documentId, or create / show one first.");
     return id;
 }
 
@@ -71,11 +71,11 @@ async function resolveTargetInput(target) {
 
 const pinsSchema = {
     type: "object",
-    description: "Repository and commits a source reads from (from resolve_pins). Required on scratchpad sources; optional elsewhere (defaults to the whiteboard target).",
+    description: "Repository and commits a source reads from (from resolve_pins). Required on scratchpad sources; optional elsewhere (defaults to the doc target).",
     properties: { repositoryId: { type: "string" }, head: { type: "string" }, base: { type: "string" } },
     required: ["repositoryId", "head"],
 };
-const docId = { type: "string", description: "Whiteboard id. Defaults to the whiteboard shown in this panel." };
+const docId = { type: "string", description: "Doc id. Defaults to the doc shown in this panel." };
 const targetSchema = { type: "object", properties: { repositoryId: { type: "string" }, base: { type: "string" }, head: { type: "string" }, mergeBase: { type: "boolean" } }, required: ["repositoryId"] };
 
 function findElement(content, targetId) {
@@ -96,18 +96,18 @@ async function pinsFor(i, ctx) {
 const actions = [
     {
         name: "instructions",
-        description: "Read how to author whiteboards. Call this first. Topics: authoring (explain a change/branch/PR), scratchpad (sketch an explanation), blocks (block reference), file-lenses, command (Command center protocol for multi-worktree implementation plans, checkpoint walkthroughs).",
+        description: "Read how to author docs. Call this first. Topics: authoring (explain a change/branch/PR), scratchpad (sketch an explanation), blocks (block reference), file-lenses, command (Command center protocol for multi-worktree implementation plans, checkpoint walkthroughs).",
         inputSchema: { type: "object", properties: { topic: { type: "string", enum: ["authoring", "scratchpad", "blocks", "file-lenses", "command"] } } },
         handler: wrap((i) => getInstructions(i.topic ?? "authoring")),
     },
     {
         name: "list",
-        description: "List whiteboards (the scratchpad is always first) and registered repositories.",
-        handler: wrap(() => ({ whiteboards: store.list(), repositories: git.listRepositories() })),
+        description: "List docs (the scratchpad is always first) and registered repositories.",
+        handler: wrap(() => ({ docs: store.list(), repositories: git.listRepositories() })),
     },
     {
         name: "show",
-        description: "Switch this panel to a whiteboard, or pass documentId null to show the home list.",
+        description: "Switch this panel to a doc, or pass documentId null to show the home list.",
         inputSchema: { type: "object", properties: { documentId: { type: ["string", "null"] } }, required: ["documentId"] },
         handler: wrap(async (i, ctx) => {
             await show(ctx, i.documentId);
@@ -116,7 +116,7 @@ const actions = [
     },
     {
         name: "register_repository",
-        description: "Register a local git checkout so whiteboards can cite its code. Returns repositoryId.",
+        description: "Register a local git checkout so docs can cite its code. Returns repositoryId.",
         inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
         handler: wrap((i) => git.registerRepository(i.path)),
     },
@@ -128,7 +128,7 @@ const actions = [
     },
     {
         name: "create",
-        description: "Create a whiteboard pinned to a comparison and show it in this panel. Pass target {repositoryId, base?, head?} (refs are resolved; base defaults to origin's default branch) or pullRequestUrl + repositoryId.",
+        description: "Create a doc pinned to a comparison and show it in this panel. Pass target {repositoryId, base?, head?} (refs are resolved; base defaults to origin's default branch) or pullRequestUrl + repositoryId.",
         inputSchema: {
             type: "object",
             properties: {
@@ -136,7 +136,7 @@ const actions = [
                 target: targetSchema,
                 pullRequestUrl: { type: "string" },
                 repositoryId: { type: "string" },
-                reuseExisting: { type: "boolean", description: "For pullRequestUrl: return the existing whiteboard for that PR (default true)." },
+                reuseExisting: { type: "boolean", description: "For pullRequestUrl: return the existing doc for that PR (default true)." },
                 show: { type: "boolean", description: "Show in this panel (default true)." },
             },
         },
@@ -145,7 +145,7 @@ const actions = [
             if (i.pullRequestUrl) {
                 const url = git.parsePullRequestUrl(i.pullRequestUrl).url;
                 const existing = i.reuseExisting !== false && store.findByPullRequest(url);
-                if (existing) result = { ...store.summary(existing), created: false, note: "Existing whiteboard for this PR; use set_target to repin." };
+                if (existing) result = { ...store.summary(existing), created: false, note: "Existing doc for this PR; use set_target to repin." };
                 else {
                     const repositoryId = i.repositoryId ?? i.target?.repositoryId;
                     if (!repositoryId) throw new InputError("repositoryId is required with pullRequestUrl.");
@@ -163,7 +163,7 @@ const actions = [
     },
     {
         name: "read",
-        description: "Read a whiteboard as an outline with element IDs. targetId returns one element in full; full:true returns the whole JSON; version reads history.",
+        description: "Read a doc as an outline with element IDs. targetId returns one element in full; full:true returns the whole JSON; version reads history.",
         inputSchema: { type: "object", properties: { documentId: docId, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" } } },
         handler: wrap((i, ctx) => {
             const id = docIdFor(i, ctx);
@@ -199,17 +199,17 @@ const actions = [
     },
     {
         name: "activity",
-        description: "Show that you are working on the whiteboard: begin/renew with a short focus ('Drawing the checkout flow'), end when done. Expires after 2 minutes idle.",
+        description: "Show that you are working on the doc: begin/renew with a short focus ('Drawing the checkout flow'), end when done. Expires after 2 minutes idle.",
         inputSchema: { type: "object", properties: { documentId: docId, action: { type: "string", enum: ["begin", "renew", "end"] }, scope: { type: "string", enum: ["document", "lenses"] }, focus: { type: "string" } }, required: ["action"] },
         handler: wrap((i, ctx) => store.setActivity(docIdFor(i, ctx), i)),
     },
     {
         name: "diff",
-        description: "Read the whiteboard's change like git diff. format 'files' (default) lists changed files; 'patch' returns patches where every line carries base and head line numbers. paths is a pathspec.",
+        description: "Read the doc's change like git diff. format 'files' (default) lists changed files; 'patch' returns patches where every line carries base and head line numbers. paths is a pathspec.",
         inputSchema: { type: "object", properties: { documentId: docId, format: { type: "string", enum: ["files", "patch"] }, paths: { type: "array", items: { type: "string" } }, context: { type: "integer" }, maxBytes: { type: "integer" } } },
         handler: wrap(async (i, ctx) => {
             const doc = store.getDoc(docIdFor(i, ctx));
-            if (!doc.target) throw new InputError("This whiteboard has no target to diff.");
+            if (!doc.target) throw new InputError("This doc has no target to diff.");
             const t = doc.target;
             if (i.format === "patch") return git.numberPatch(await git.diffPatch(t.repositoryId, t.base, t.head, i.paths, { context: i.context ?? 3 }), i.maxBytes ?? 40000);
             return git.diffFiles(t.repositoryId, t.base, t.head, i.paths);
@@ -217,7 +217,7 @@ const actions = [
     },
     {
         name: "read_file",
-        description: "Read a file (or line range) at a pinned commit, with line numbers. Uses the whiteboard's target unless pins are given.",
+        description: "Read a file (or line range) at a pinned commit, with line numbers. Uses the doc's target unless pins are given.",
         inputSchema: { type: "object", properties: { documentId: docId, pins: pinsSchema, file: { type: "string" }, side: { type: "string", enum: ["head", "base"] }, startLine: { type: "integer" }, endLine: { type: "integer" } }, required: ["file"] },
         handler: wrap(async (i, ctx) => {
             const pins = await pinsFor(i, ctx);
@@ -244,7 +244,7 @@ const actions = [
     },
     {
         name: "commits",
-        description: "List the commits between the whiteboard's base and head.",
+        description: "List the commits between the doc's base and head.",
         inputSchema: { type: "object", properties: { documentId: docId } },
         handler: wrap(async (i, ctx) => {
             const t = store.getDoc(docIdFor(i, ctx)).target;
@@ -259,7 +259,7 @@ const actions = [
     },
     {
         name: "set_target",
-        description: "Repin a whiteboard to new commits (e.g. after new pushes). Content is kept; the result lists sources that no longer resolve so you can repair them.",
+        description: "Repin a doc to new commits (e.g. after new pushes). Content is kept; the result lists sources that no longer resolve so you can repair them.",
         inputSchema: { type: "object", properties: { documentId: docId, target: targetSchema, pullRequestUrl: { type: "string" } }, required: ["target"] },
         handler: wrap(async (i, ctx) => {
             const id = docIdFor(i, ctx);
@@ -269,25 +269,25 @@ const actions = [
     },
     {
         name: "rename",
-        description: "Rename a whiteboard.",
+        description: "Rename a doc.",
         inputSchema: { type: "object", properties: { documentId: docId, title: { type: "string" } }, required: ["title"] },
         handler: wrap((i, ctx) => store.rename(docIdFor(i, ctx), i.title)),
     },
     {
         name: "history",
-        description: "List saved versions of a whiteboard.",
+        description: "List saved versions of a doc.",
         inputSchema: { type: "object", properties: { documentId: docId } },
         handler: wrap((i, ctx) => store.history(docIdFor(i, ctx))),
     },
     {
         name: "restore",
-        description: "Restore a whiteboard's content to an earlier version (saved as a new version).",
+        description: "Restore a doc's content to an earlier version (saved as a new version).",
         inputSchema: { type: "object", properties: { documentId: docId, version: { type: "integer" } }, required: ["version"] },
         handler: wrap((i, ctx) => store.restore(docIdFor(i, ctx), i.version)),
     },
     {
         name: "delete",
-        description: "Permanently delete a whiteboard. Only when the user asks.",
+        description: "Permanently delete a doc. Only when the user asks.",
         inputSchema: { type: "object", properties: { documentId: { type: "string" } }, required: ["documentId"] },
         handler: wrap((i) => store.remove(i.documentId)),
     },
@@ -297,10 +297,10 @@ const actions = [
 session = await joinSession({
     canvases: [
         createCanvas({
-            id: "whiteboard",
-            displayName: "Whiteboard",
+            id: "marginal",
+            displayName: "Marginal",
             description: "Draw structured, code-linked explanations (sequence/flow diagrams, call-stack diffs, schema lenses, verified code peeks) of branches, PRs and ideas; call the 'instructions' action first.",
-            inputSchema: { type: "object", properties: { documentId: { type: "string", description: "Whiteboard to show; 'scratchpad' for the sketch pad. Omit for the home list." } } },
+            inputSchema: { type: "object", properties: { documentId: { type: "string", description: "Doc to show; 'scratchpad' for the sketch pad. Omit for the home list." } } },
             actions,
             open: async (ctx) => {
                 try {
@@ -315,7 +315,7 @@ session = await joinSession({
                     instances.save();
                     s.notifyShow(ctx.instanceId);
                     const title = entry.documentId ? store.getDoc(entry.documentId).title : "Home";
-                    return { url: s.urlFor(ctx.instanceId), title: `Whiteboard — ${title}` };
+                    return { url: s.urlFor(ctx.instanceId), title: `Marginal — ${title}` };
                 } catch (e) {
                     if (e instanceof InputError) throw new CanvasError("invalid_input", e.message);
                     throw e;
@@ -332,7 +332,7 @@ session.on((event) => {
     try {
         chat.onEvent(event);
     } catch (e) {
-        session.log(`whiteboard side-chat: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
+        session.log(`marginal side-chat: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
     }
 });
 
@@ -341,5 +341,5 @@ try {
     adoptLeases(session.sessionId);
     attachMission(session, { isChatTurn: () => !!chat.activeThread() });
 } catch (e) {
-    session.log(`whiteboard command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
+    session.log(`marginal command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
 }

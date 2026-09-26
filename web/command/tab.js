@@ -529,7 +529,7 @@ function emptyState() {
         "div",
         { class: "cc-empty" },
         h("div", { class: "cc-empty-t" }, "No implementation plan yet"),
-        h("p", {}, "When an orchestrating Copilot session starts on this whiteboard, the plan's territory lights up here as its fronts edit files."),
+        h("p", {}, "When an orchestrating Copilot session starts on this doc, the plan's territory lights up here as its fronts edit files."),
         h("div", { class: "cc-init" }),
         h("p", { class: "muted" }, "Or ask for it in chat: the orchestrator calls ", h("code", {}, 'command_plan {op:"set"}'), " to begin, then registers each worktree with ", h("code", {}, 'command_front {op:"register"}'), "."),
     );
@@ -549,7 +549,7 @@ function renderInit() {
     if (host.dataset.mode === mode) return;
     host.dataset.mode = mode;
     if (mode === "other") {
-        put(host, h("p", { class: "cc-init-note" }, `Session ${otherOwner.slice(0, 8)} is orchestrating this whiteboard. Open it in that session to set up the plan.`));
+        put(host, h("p", { class: "cc-init-note" }, `Session ${otherOwner.slice(0, 8)} is orchestrating this doc. Open it in that session to set up the plan.`));
         return;
     }
     if (mode === "pending") {
@@ -560,7 +560,7 @@ function renderInit() {
         );
         return;
     }
-    const goal = h("textarea", { class: "cc-init-goal", rows: "2", maxlength: "2000", placeholder: "What are we building? (optional; Copilot also reads this whiteboard and the branch)", "aria-label": "Goal for the implementation plan" });
+    const goal = h("textarea", { class: "cc-init-goal", rows: "2", maxlength: "2000", placeholder: "What are we building? (optional; Copilot also reads this doc and the branch)", "aria-label": "Goal for the implementation plan" });
     const btn = h("button", { class: "primary cc-init-btn", onclick: () => initialize(goal.value, btn) }, "Initialize command center");
     goal.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -792,7 +792,7 @@ function renderMapHead(st, root, auto = false) {
 
 // ---------- guided tour (discoverability) ----------
 const HELP_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.4" r=".85" fill="currentColor"/></svg>';
-/** "?" always; plus a one-time "Take the tour" nudge until the tour has been started or dismissed on this whiteboard. */
+/** "?" always; plus a one-time "Take the tour" nudge until the tour has been started or dismissed on this doc. */
 function tourButtons() {
     return h("button", { class: "follow tour-help", title: "Tour the Command center (?)", "aria-label": "Tour the Command center", html: HELP_SVG, onclick: () => openTour() });
 }
@@ -928,7 +928,7 @@ function chatBlockedReason() {
     const l = cc.data.lease;
     // Nobody orchestrating yet (or the owner went stale): this panel's session is the one to talk to — it becomes the
     // orchestrator when it sets the plan. Only a live *other* owner blocks the chat.
-    if (l && leaseLive() && !cc.data.isOwnerHere) return `The Command chat talks to the orchestrator (session ${l.sessionId.slice(0, 8)}). Open this whiteboard in that session to chat with it.`;
+    if (l && leaseLive() && !cc.data.isOwnerHere) return `The Command chat talks to the orchestrator (session ${l.sessionId.slice(0, 8)}). Open this doc in that session to chat with it.`;
     return null;
 }
 /** Ownership can change under an open chat (lease taken over, or went stale). */

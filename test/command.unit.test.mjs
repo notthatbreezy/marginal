@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-process.env.WHITEBOARD_DATA_DIR = mkdtempSync(join(tmpdir(), "wb-unit-"));
+process.env.MARGINAL_DATA_DIR = mkdtempSync(join(tmpdir(), "wb-unit-"));
 
 const { classifyPattern, compilePatterns, globToRegExp, normalizeRepoPath, offPlanMatcher, patternsTouchDir, planPatterns, matchingActivePhases } = await import("../lib/command/patterns.mjs");
 const { Issues, ISSUE_CODES, nearestPath, distance } = await import("../lib/command/issues.mjs");

@@ -1,4 +1,4 @@
-// Build-time helper: scope a Command-tab design stylesheet under `.cc` so it can't leak into the whiteboard.
+// Build-time helper: scope a Command-tab design stylesheet under `.cc` so it can't leak into the doc.
 // Usage: node tools/scope-css.mjs <in.css>  → prints scoped CSS
 import { readFileSync } from "node:fs";
 

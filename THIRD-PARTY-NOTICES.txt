@@ -1,6 +1,6 @@
 THIRD-PARTY NOTICES
 
-This extension adapts portions of devdotfast/whiteboard
+Marginal adapts portions of devdotfast/whiteboard
 (https://github.com/devdotfast/whiteboard):
 
 - lib/blocks.mjs: the whiteboard block vocabulary (block types, field names,
@@ -12,8 +12,8 @@ This extension adapts portions of devdotfast/whiteboard
   numbered-patch format, derived from packages/review/src/source.ts and
   packages/review/src/review-api/README.md.
 
-The renderer (web/), server, storage and canvas wiring are original to this
-extension.
+The renderer (web/), server, storage and canvas wiring are original to
+Marginal.
 
 --------------------------------------------------------------------------------
 
