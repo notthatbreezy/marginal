@@ -4547,3 +4547,46 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
         color-scheme: dark;
     }
 }
+/* What the chat is about stays marked while you type: code lines, exact text selections, and a label in the bar. */
+.cv-ln.asking,
+.cv-ln.asking.cite {
+    background: var(--ask-fill);
+}
+.cv-ln.asking .cv-t {
+    opacity: 1 !important;
+}
+.cv-ln.asking .cv-n {
+    color: var(--purple);
+    opacity: 1;
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--purple) 70%, transparent);
+}
+::highlight(ask) {
+    background-color: color-mix(in srgb, var(--purple) 22%, transparent);
+}
+#chat-ref {
+    position: absolute;
+    left: 22px;
+    right: 30px;
+    top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--muted);
+    pointer-events: none;
+    white-space: nowrap;
+}
+#chat-ref .t {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#chat-ref .swatch {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--ask-fill);
+    box-shadow: inset 0 0 0 1px var(--ask-edge);
+}

@@ -169,7 +169,9 @@ function attachLineSelect(body, src, info) {
                         class: "primary",
                         onclick: () => {
                             const where = `${src.file}, ${d.ascii.toLowerCase()}${commit ? ` @ ${commit.slice(0, 8)}` : ""}`;
-                            openChat({ quote: `${where}\n${d.text}` });
+                            // The commented lines stay marked (purple) while the chat is about them.
+                            const askRows = list.slice(r[0], r[1] + 1);
+                            openChat({ quote: `${where}\n${d.text}`, ref: `${src.file.slice(src.file.lastIndexOf("/") + 1)} · ${d.label.replace(/^L/, "l")}`, askRows });
                             clear();
                         },
                     },
@@ -1230,19 +1232,24 @@ function connect() {
 // The reply comes from the main session; this popup shows only the turns it started.
 // Two modes share the popup: "board" (side-chat about the doc, ends on close) and "command" (the Command tab's
 // persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
-const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), statusEl: null, mode: "board", focus: [], blocked: null };
+const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
 const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
 const chatLog = $("#chat-log");
 const chatText = $("#chat-text");
 
-/** Mark what the open chat is about: one paragraph (unit = its data-l range), a whole block, or several picks. */
+/** Mark what the open chat is about: one paragraph (unit = its data-l range), a whole block, several picks,
+ *  code lines (askRows) or an exact text selection (askRange, painted with the CSS Highlight API: no DOM changes). */
 function markAsking() {
     document.querySelectorAll(".asking").forEach((el) => el.classList.remove("asking"));
+    CSS.highlights?.delete("ask");
     markAskingInner();
     joinRuns();
+    renderRef();
 }
 function markAskingInner() {
     if ($("#chat").hidden) return;
+    for (const row of chat.askRows ?? []) if (row.isConnected) row.classList.add("asking");
+    if (chat.askRange && globalThis.Highlight && CSS.highlights) CSS.highlights.set("ask", new Highlight(chat.askRange));
     if (chat.picks?.length) {
         for (const key of chat.picks) elOf(key)?.classList.add("asking");
         return;
@@ -1267,7 +1274,7 @@ function switchChatMode(mode) {
     chat.docId = state.documentId;
     chatBoxes[chat.mode] = { right: chatBox.style.right, bottom: chatBox.style.bottom, width: chatBox.style.width, userHeight: chatBox.dataset.userHeight };
     endThread();
-    chat.blockId = chat.unit = chat.picks = chat.quote = chat.quoteLabel = null;
+    chat.blockId = chat.unit = chat.picks = chat.quote = chat.quoteLabel = chat.ref = chat.askRows = chat.askRange = null;
     chat.focus = [];
     chat.blocked = null;
     syncBlocked();
@@ -1316,6 +1323,7 @@ function openChat(ctx) {
         $("#chat").hidden = false;
         $("#chat-fab").hidden = true;
         svc.onCommandChatOpen?.();
+        markAsking(); // clears any doc-side marks and relabels the bar for the Command chat
         fitHeight();
         if (!chat.blocked) chatText.focus();
         svc.onFocusChange?.(chat.focus);
@@ -1328,6 +1336,9 @@ function openChat(ctx) {
         chat.unit = ctx.unit ?? null;
         chat.picks = ctx.picks ?? null;
         chat.quote = ctx.quote ?? null;
+        chat.ref = ctx.ref ?? null;
+        chat.askRows = ctx.askRows ?? null;
+        chat.askRange = ctx.range ?? null;
     }
     $("#chat").hidden = false;
     $("#chat-fab").hidden = true;
@@ -1346,6 +1357,36 @@ function syncBlocked() {
     $("#chat-send").disabled = !!chat.blocked || !chatText.value.trim() || chat.awaiting;
 }
 
+/** A quiet line in the chat's drag bar naming what the conversation is about (the popup never covers the header). */
+function renderRef() {
+    let el = $("#chat-ref");
+    if (!el) {
+        el = h("span", { id: "chat-ref" });
+        $("#chat-bar").insertBefore(el, $("#chat-close"));
+    }
+    const text = chat.mode === "command" ? "Command chat · orchestrator" : (chat.ref ?? (state.doc ? "About this doc" : ""));
+    const marked = chat.mode !== "command" && !!(chat.askRows?.length || chat.askRange || chat.picks?.length || chat.blockId);
+    put(el, marked ? h("i", { class: "swatch", "aria-hidden": "true" }) : null, h("span", { class: "t" }, text));
+    el.title = chat.quote ? chat.quote.slice(0, 600) : text;
+    $("#chat").setAttribute("aria-description", text);
+}
+
+/** Short, single-line excerpt for labels. */
+const excerpt = (t, n = 40) => {
+    const s = String(t ?? "").replace(/\s+/g, " ").trim();
+    return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
+};
+const BLOCK_NOUN = { code_peek: "Code peek", code: "Code", sequence: "Sequence", flow_diagram: "Flow", call_stack_diff: "Call stack", database_lens: "Data lens", trace_quote: "Quote", callout: "Callout", image: "Image", markdown: "Text", section: "Section" };
+/** Label for a comment target: a quoted excerpt for prose/selections, the block kind + title otherwise. */
+function refOf(t, selection) {
+    if (selection) return `“${excerpt(selection)}”`;
+    if (t.unit) return `“${excerpt(t.text)}”`;
+    const b = t.blockId && findBlock(state.doc?.content, t.blockId);
+    if (!b) return t.text ? `“${excerpt(t.text)}”` : null;
+    const title = b.title ?? b.caption ?? b.source?.file?.split("/").pop();
+    return `${BLOCK_NOUN[b.type] ?? "Block"}${title ? ` · ${excerpt(title, 34)}` : ""}`;
+}
+
 function closeChat() {
     $("#chat").hidden = true;
     if (chat.mode === "command") {
@@ -1354,7 +1395,7 @@ function closeChat() {
         return;
     }
     endThread();
-    chat.blockId = chat.unit = chat.picks = chat.quote = null;
+    chat.blockId = chat.unit = chat.picks = chat.quote = chat.ref = chat.askRows = chat.askRange = null;
     markAsking();
     syncChatFab();
 }
@@ -1742,8 +1783,10 @@ gComment.onclick = (e) => {
     if (withModifier(e)) return pickFromGutter(e);
     if (picks.size) return multiComment();
     const t = currentTarget();
-    openChat({ blockId: t.blockId, unit: t.unit, quote: t.text });
-    getSelection()?.removeAllRanges();
+    const sel = getSelection();
+    const range = gutterState.selection && sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    openChat({ blockId: t.blockId, unit: t.unit, quote: t.text, ref: refOf(t, gutterState.selection), range });
+    sel?.removeAllRanges();
     hideGutter();
 };
 
@@ -1872,7 +1915,7 @@ function multiComment() {
     const parts = pickedParts();
     if (!parts.length) return;
     const quote = parts.map((p) => `[${p.label}]\n${p.text}`).join("\n\n");
-    openChat({ blockId: parts.length === 1 ? parts[0].key.split("|")[0] : null, picks: parts.map((p) => p.key), quote });
+    openChat({ blockId: parts.length === 1 ? parts[0].key.split("|")[0] : null, picks: parts.map((p) => p.key), quote, ref: parts.length === 1 ? `“${excerpt(parts[0].text)}”` : `${parts.length} selections` });
     clearPicks();
     hideGutter();
 }
@@ -1908,7 +1951,11 @@ document.addEventListener("mouseup", (e) => {
         btn.style.left = `${Math.max(8, Math.min(innerWidth - 190, r.left + r.width / 2 - 90))}px`;
         btn.style.top = `${Math.max(8, r.top - 36)}px`;
         btn.hidden = false;
-        btn.onclick = () => openChat({ blockId: blockEl?.dataset.id, quote: text });
+        const kept = range.cloneRange();
+        btn.onclick = () => {
+            openChat({ blockId: blockEl?.dataset.id, quote: text, ref: `“${excerpt(text)}”`, range: kept });
+            getSelection()?.removeAllRanges();
+        };
     }, 0);
 });
 
@@ -2098,7 +2145,7 @@ function closeTour() {
 function askAboutStop(b, i, st) {
     const where = b.type === "sequence" ? `${b.actors[st.from] ?? st.from} -> ${b.actors[st.to] ?? st.to}: ` : "";
     const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
-    openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}` });
+    openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}`, ref: `Tour step ${i + 1} · ${excerpt(st.title, 32)}` });
 }
 // ---------------- open in the default browser ----------------
 if (INSTANCE.startsWith("browser-")) document.documentElement.dataset.standalone = "";
