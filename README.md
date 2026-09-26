@@ -18,6 +18,7 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 - **Side chat:** a small, draggable chat whose replies stream from your Copilot session, scoped to what you pointed at.
 - **Diff, Commits and History tabs** for the change the doc explains, including agent-authored *file lenses* that group changed files.
 - **Scratchpad:** an always-present doc for quick sketches that aren't tied to a branch.
+- **Open in your browser:** the globe in the header opens the current doc and tab in your default browser, with room to spread out. The window stays live while the Copilot session that opened it is running, and it follows your OS light/dark setting.
 
 | Code tour | Call-stack focus |
 |---|---|

@@ -907,6 +907,8 @@ function setHeader() {
     if (doc) sub.push(`v${doc.version}`);
     $("#subtitle").textContent = sub.join("  ·  ");
     $("#tabs").hidden = !doc;
+    // Offered inside the Copilot panel only; a browser window opened from it is already "outside".
+    $("#open-external").hidden = INSTANCE.startsWith("browser-");
     for (const btn of document.querySelectorAll("#tabs button")) {
         const tab = btn.dataset.tab;
         btn.hidden = !doc || (!doc.target && (tab === "diff" || tab === "commits" || tab === "command"));
@@ -2098,6 +2100,22 @@ function askAboutStop(b, i, st) {
     const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
     openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}` });
 }
+// ---------------- open in the default browser ----------------
+if (INSTANCE.startsWith("browser-")) document.documentElement.dataset.standalone = "";
+// The canvas iframe can't reliably open system windows, so the extension process launches the browser.
+$("#open-external").onclick = async () => {
+    const btn = $("#open-external");
+    btn.disabled = true;
+    try {
+        await api("/open-external", { method: "POST", body: { documentId: state.documentId ?? null, tab: state.tab } });
+        toast("Opened in your browser");
+    } catch (e) {
+        toast(`Couldn't open the browser: ${e.message}`);
+    } finally {
+        setTimeout(() => (btn.disabled = false), 1200);
+    }
+};
+
 // ---------------- services for feature modules (Command tab) ----------------
 Object.assign(svc, {
     /** Unified hunks → the doc's diff listing (same look as the Diff tab). */

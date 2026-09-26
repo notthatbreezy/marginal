@@ -4504,3 +4504,46 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
 #peek-body > .peek-section.pad > .cv > .cv-body {
     max-height: calc(var(--peek-h) - 124px);
 }
+/* Header: open in browser */
+#open-external {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 6px;
+}
+#open-external:hover {
+    color: var(--fg);
+    background: var(--surface-2);
+}
+#tabs[hidden] + #open-external {
+    margin-left: auto;
+}
+
+/* In a browser window (outside the Copilot app) there are no host theme tokens: follow the OS light/dark setting.
+   Scoped to standalone windows so it can never fight the host's theme inside the app. */
+@media (prefers-color-scheme: dark) {
+    :root[data-standalone] {
+        --bg: var(--background-color-default, #0d1117);
+        --fg: var(--text-color-default, #e6edf3);
+        --muted: var(--text-color-muted, #8d96a0);
+        --border: var(--border-color-default, #30363d);
+        --focus: var(--color-focus-outline, #4493f8);
+        --blue: var(--true-color-blue, #4493f8);
+        --blue-muted: var(--true-color-blue-muted, rgba(68, 147, 248, 0.16));
+        --green: var(--true-color-green, #3fb950);
+        --green-muted: var(--true-color-green-muted, rgba(63, 185, 80, 0.16));
+        --red: var(--true-color-red, #f85149);
+        --red-muted: var(--true-color-red-muted, rgba(248, 81, 73, 0.16));
+        --yellow: var(--true-color-yellow, #d29922);
+        --yellow-muted: var(--true-color-yellow-muted, rgba(210, 153, 34, 0.16));
+        --purple: var(--true-color-purple, #ab7df8);
+        --purple-muted: var(--true-color-purple-muted, rgba(171, 125, 248, 0.16));
+        color-scheme: dark;
+    }
+}

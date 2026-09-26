@@ -440,6 +440,15 @@ test("server: /api/command/state + tree, and SSE pushes command events", async (
     assert.equal(st.state.fronts.length, 2);
     const tree = await get(`/api/command/tree?doc=${doc.documentId}`);
     assert.deepEqual(Object.fromEntries(tree.files)["src/runner/executor.ts"], 40);
+    // Open in browser: a fresh browser-* panel instance on the same doc and tab (launch suppressed in tests).
+    process.env.MARGINAL_NO_BROWSER = "1";
+    const ext = await fetch(`${u.origin}/api/open-external`, { method: "POST", headers: { "x-wb-token": tok, "content-type": "application/json" }, body: JSON.stringify({ documentId: doc.documentId, tab: "command" }) }).then((r) => r.json());
+    const eu = new URL(ext.url);
+    assert.match(eu.searchParams.get("instance"), /^browser-[0-9a-f]{12}$/);
+    assert.equal(eu.searchParams.get("tab"), "command");
+    assert.equal(eu.searchParams.get("t"), tok);
+    assert.equal(instances.get(eu.searchParams.get("instance")).documentId, doc.documentId);
+    assert.equal((await fetch(ext.url)).status, 200);
     const pat = await fetch(`${u.origin}/command/patterns.js`).then((r) => r.text());
     assert.match(pat, /export function compilePatterns/);
     const ac = new AbortController();
