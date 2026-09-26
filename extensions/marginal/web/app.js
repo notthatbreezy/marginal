@@ -299,7 +299,7 @@ function illustrativeCode(code, label) {
         "section",
         { class: "cv" },
         h("header", { class: "cv-head" }, h("span", { class: "cv-label" }, label ?? "Illustrative code"), h("span", { class: "cv-range" }, code.language)),
-        h("div", { class: "cv-body" }, h("div", { class: "cv-code", style: "padding-left:16px", html: highlight(detab(code.text), code.language) })),
+        h("div", { class: "cv-body" }, h("div", { class: "cv-code illus", html: highlight(detab(code.text), code.language) })),
     );
 }
 $("#peek-close").onclick = () => ($("#peek").hidden = true);

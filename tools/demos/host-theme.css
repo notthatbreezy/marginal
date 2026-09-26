@@ -1,0 +1,41 @@
+/* Simulates the tokens the GitHub app host injects into canvas documents.
+   The real canvas gets these from the host; demos and screenshots inject this copy. */
+:root {
+    --background-color-default: #ffffff;
+    --text-color-default: #1f2328;
+    --text-color-muted: #656d76;
+    --border-color-default: #d0d7de;
+    --color-focus-outline: #0969da;
+    --color-white: #ffffff;
+    --true-color-blue: #0969da;
+    --true-color-blue-muted: rgba(9, 105, 218, 0.12);
+    --true-color-green: #1a7f37;
+    --true-color-green-muted: rgba(26, 127, 55, 0.14);
+    --true-color-red: #cf222e;
+    --true-color-red-muted: rgba(207, 34, 46, 0.12);
+    --true-color-yellow: #9a6700;
+    --true-color-yellow-muted: rgba(154, 103, 0, 0.14);
+    --true-color-purple: #8250df;
+    --true-color-purple-muted: rgba(130, 80, 223, 0.12);
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    color-scheme: light;
+}
+html[data-color-mode="dark"] {
+    --background-color-default: #0d1117;
+    --text-color-default: #e6edf3;
+    --text-color-muted: #8d96a0;
+    --border-color-default: #30363d;
+    --color-focus-outline: #4493f8;
+    --true-color-blue: #4493f8;
+    --true-color-blue-muted: rgba(68, 147, 248, 0.16);
+    --true-color-green: #3fb950;
+    --true-color-green-muted: rgba(63, 185, 80, 0.16);
+    --true-color-red: #f85149;
+    --true-color-red-muted: rgba(248, 81, 73, 0.16);
+    --true-color-yellow: #d29922;
+    --true-color-yellow-muted: rgba(210, 153, 34, 0.18);
+    --true-color-purple: #ab7dfa;
+    --true-color-purple-muted: rgba(171, 125, 250, 0.16);
+    color-scheme: dark;
+}

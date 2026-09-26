@@ -1696,6 +1696,12 @@ svg .muted {
     font-size: 12.5px;
     line-height: 20px;
 }
+/* Illustrative code is one highlighted string, not numbered rows: keep its line breaks and indentation. */
+.cv-code.illus {
+    padding-left: 16px;
+    padding-right: 24px;
+    white-space: pre;
+}
 .cv-ln {
     display: flex;
     transition: opacity 0.2s;

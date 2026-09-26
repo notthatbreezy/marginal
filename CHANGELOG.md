@@ -4,6 +4,14 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- Illustrative code in notes, tour steps and peeks keeps its line breaks and indentation instead of running together on one line.
+
+### Docs
+
+- Animated demos in the README for commenting and chat, doc tours, and the Command center, recorded with `tools/demos/record.mjs`.
+
 ## [0.1.1] - 2026-09-26
 
 First public release.

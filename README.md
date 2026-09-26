@@ -20,6 +20,14 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 - **Scratchpad:** an always-present doc for quick sketches that aren't tied to a branch.
 - **Open in your browser:** the globe in the header opens the current doc and tab in your default browser, with room to spread out. The window stays live while the Copilot session that opened it is running, and it follows your OS light/dark setting.
 
+**Select, comment, chat.** Ctrl-click several paragraphs, comment on them together, and read the streamed reply without losing your place. Minimize the chat to keep reading; code links open the exact lines.
+
+![Selecting two list items, commenting, a streamed reply, minimizing the chat and opening a code link](docs/images/demo-docs-comment.webp)
+
+**Tour a diagram, and ask for more.** Step through a sequence diagram beside its code. The tour's chat stays docked for the whole walk, and when you ask for an example Copilot adds it to the step.
+
+![Opening a tour, stepping through, asking for an example and seeing it added to the step](docs/images/demo-docs-tour.webp)
+
 | Code tour | Call-stack focus |
 |---|---|
 | ![Code tour](docs/images/code-tour.png) | ![Call-stack focus](docs/images/call-stack-focus.png) |
@@ -35,6 +43,10 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 - **Checkpoint walkthroughs:** ask "walk me through the last checkpoint" to get a stepper with one stop per idea, each with its diff. The map zooms and badges each stop's files. The Command chat docks under the walkthrough, and Copilot revises or expands stops in place when you ask about them.
 - **Command chat:** a persistent chat with the orchestrating session. Point at tiles, fronts, checkpoints or walkthrough stops to attach them as focus chips.
 - **Guided tour:** press **?** (or click the **?** in the map header) for a one-minute tour of all of the above.
+
+**Watch the plan land, then get walked through it.** Fronts' edits light up the map live. A checkpoint walkthrough zooms the map to each stop's code, and you can ask the orchestrator about any stop.
+
+![Live edits on the map, a checkpoint walkthrough stepping through its stops, and a question to the orchestrator](docs/images/demo-command.webp)
 
 | Walkthrough | Guided tour |
 |---|---|

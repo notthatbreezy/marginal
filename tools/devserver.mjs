@@ -3,6 +3,7 @@
 // Usage: node tools/devserver.mjs [--edits] [--walk] [--revising] [--seconds=N]   → prints JSON {url, instance, docId, repo, fronts}
 //   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
 //   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
+//   --canned-chat  the Command chat answers with scripted, streamed replies (demos)
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -205,7 +206,15 @@ activity.push(
 
 const instances = new Map([["dev", { documentId: doc.documentId }]]);
 instances.save = () => {};
-const chat = { subscribe: () => () => {}, send: async () => ({ threadId: "t", messageId: "m" }), end: () => {} };
+const { createCannedChat } = await import("./demos/canned-chat.mjs");
+const chat = args.has("--canned-chat")
+    ? createCannedChat({
+          reply: (m) =>
+              /requeue|sleep/i.test(m.prompt)
+                  ? { statuses: ["Reading src/runner/executor.ts"], text: "Requeueing frees the worker right away: a job that sleeps in-process holds a slot for the whole backoff, and a deploy mid-wait would lose the retry. The queue already persists `runAfter`, so the delay survives restarts." }
+                  : { statuses: ["Reading the plan"], text: "runner-retry is on P2 and about two thirds through: the policy and backoff are done, and the executor wiring is what's changing now. triggers-sched is blocked on the cron-parse API decision." },
+      })
+    : { subscribe: () => () => {}, send: async () => ({ threadId: "t", messageId: "m" }), end: () => {} };
 const s = await startServer({ chat, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
 process.stdout.write(JSON.stringify({ url: s.urlFor("dev"), instance: "dev", docId: doc.documentId, repo, fronts: wts, tmp }) + "\n");
 

@@ -14,7 +14,7 @@ Thanks for helping. Marginal is small on purpose: no build step, no npm dependen
 | `extensions/marginal/web/` | The panel UI (`app.js`, shared helpers in `core.js`, `stepper.js`, `selection.js`, `guide.js`). |
 | `extensions/marginal/web/command/` | The Command tab (map, fronts, timeline, views, monitors, walkthrough, tour). |
 | `test/` | `node:test` suites and a smoke test. They create throwaway git repos and set `MARGINAL_DATA_DIR` to a temp dir. |
-| `tools/` | `devserver.mjs` (standalone Command tab with a fake repo) and `scope-css.mjs`. |
+| `tools/` | `devserver.mjs` (standalone Command tab with a fake repo), `scope-css.mjs`, and `demos/` (the README animations). |
 
 ## Workflow
 
@@ -30,6 +30,19 @@ Thanks for helping. Marginal is small on purpose: no build step, no npm dependen
 - Git calls go through `extensions/marginal/lib/command/gitx.mjs` (`--no-optional-locks`, at most four concurrent processes). Never change a user's HEAD, index or working tree.
 - UI automation for screenshots must be headless and must never take window focus.
 - Keep colours to theme tokens (`--bg`, `--fg`, `--blue`, …) and `color-mix()` so light and dark themes both work.
+
+## Demo animations
+
+The README's animated WebPs are recorded headlessly by `tools/demos/record.mjs`, which drives the real UI with Playwright and a scripted chat (`tools/demos/canned-chat.mjs`), so no Copilot session is involved. It is stop-motion: a frame is captured only when something changes and held for as long as a viewer needs, so waiting never shows.
+
+```sh
+npm i --no-save playwright-core sharp gifenc pngjs
+node tools/demos/record.mjs                 # all three; or name some: docs-comment docs-tour command
+node tools/demos/record.mjs --sheet --out=/tmp/demos   # review a take: contact sheet of the held frames
+```
+
+It uses Microsoft Edge by default (`DEMO_BROWSER=chrome` for Chrome). The Command demo uses `tools/devserver.mjs`'s fictional repo. The doc demos copy your Marginal data to a temp dir and use the doc named by `DEMO_DOC`, so that doc and its repository must exist locally; `DEMO_HEAD_REF` relabels its branch in the recording. Check every frame for anything private before committing.
+
 ## Releasing
 
 Releases are cut by GitHub Actions, so nothing depends on a local setup. Versions are semver and live in three places that must agree: `plugin.json`, `.github/plugin/marketplace.json` (`metadata.version` and the plugin entry) and `package.json`. The tests check this.
