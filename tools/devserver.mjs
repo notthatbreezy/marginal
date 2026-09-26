@@ -104,6 +104,7 @@ edit(repo, "docs/runner.md", 18, "docs");
 await new Promise((r) => setTimeout(r, 1200));
 await call("command_plan", { op: "phase", phaseId: "p1", status: "done", commit: git(repo, "rev-parse", "HEAD") });
 await call("command_front", { op: "status", id: "orchestrator", status: "done" });
+await call("command_view", { op: "set", phaseId: "p2", view: { id: "p2-retry", title: "Retry policy", root: "src", pins: [{ path: "src/runner" }] } });
 await call("command_plan", { op: "phase", phaseId: "p2", status: "active", frontIds: ["runner", "triggers", "tests"] });
 await call("command_plan", { op: "step", stepId: "s-backoff", status: "active", frontId: "runner" });
 await call("command_plan", { op: "step", stepId: "s-sched", status: "active", frontId: "triggers" });

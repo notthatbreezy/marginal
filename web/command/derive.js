@@ -1,5 +1,8 @@
 // Command tab: pure derivations from the change-event log (no DOM). Live view and replay share these by passing `at`.
 
+/** Mirror of lib/command/patterns.mjs isPresentChange (kept in lockstep by test/command.web.test.mjs). */
+export const isPresentChange = (e) => !!(e.totals.add || e.totals.del || e.binary || e.kind !== "modified");
+
 /** Per-file change state as of `at` (ms): Map(path → { fronts: Map(id → {add, del, kind, lastAt}), add, del, lastAt, kind, lead }) */
 export function changesAt(events, at = Infinity) {
     const perFront = new Map(); // `${front}\0${file}` → event
@@ -9,7 +12,7 @@ export function changesAt(events, at = Infinity) {
     }
     const files = new Map();
     for (const e of perFront.values()) {
-        if (!(e.totals.add || e.totals.del || e.binary || e.kind === "deleted")) continue;
+        if (!isPresentChange(e)) continue;
         let f = files.get(e.file);
         if (!f) files.set(e.file, (f = { fronts: new Map(), add: 0, del: 0, lastAt: 0, kind: e.kind, previousPath: e.previousPath }));
         const t = Date.parse(e.at);

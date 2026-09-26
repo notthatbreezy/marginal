@@ -2010,6 +2010,17 @@ function askAboutStop(b, i, st) {
     const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
     openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}` });
 }
+// ---------------- services for feature modules (Command tab) ----------------
+Object.assign(svc, {
+    /** Unified hunks → the whiteboard's diff listing (same look as the Diff tab). */
+    renderDiff: (hunks, file) => hunks.flatMap((hk) => [h("div", { class: "code" }, h("div", { class: "gap" }, hk.header)), diffListing(hk.lines, langOf(file))]),
+    codeView,
+    openChat: (ctx) => openChat(ctx),
+    copyText,
+    toast,
+    syncChatFab: () => syncChatFab(),
+});
+
 // ---------------- boot ----------------
 (async () => {
     try {

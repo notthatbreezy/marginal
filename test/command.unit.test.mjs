@@ -208,3 +208,93 @@ test("compaction keeps replay-correct baselines and velocity buckets", () => {
 test("every issue code is exercised somewhere", () => {
     assert.ok(ISSUE_CODES.includes("not_owner") && ISSUE_CODES.includes("duplicate_worktree"));
 });
+
+// ---------- M1 review fixes + M2 ----------
+test("globs share the path boundary: drive, control chars, empty segments; // collapses; ./ strips", () => {
+    assert.deepEqual(pat("src//*.js"), { kind: "glob", glob: "src/*.js" });
+    assert.deepEqual(pat("./src/**/*.js"), { kind: "glob", glob: "src/**/*.js" });
+    assert.equal(classifyPattern("C:*.js").error, "path_outside_repo");
+    assert.equal(classifyPattern("src/\u0000*.js").error, "format");
+    assert.equal(classifyPattern("src/./*.js").error, "format");
+    assert.equal(classifyPattern("src/../*.js").error, "path_outside_repo");
+    assert.equal(classifyPattern("/src/*.js").error, "path_outside_repo");
+});
+
+test("presence: zero-line added/renamed/untracked/deleted stay; zero modified is a revert marker", async () => {
+    const { isPresentChange } = await import("../lib/command/patterns.mjs");
+    const web = await import("../web/command/derive.js");
+    const cases = [
+        [{ totals: { add: 0, del: 0 }, kind: "renamed" }, true],
+        [{ totals: { add: 0, del: 0 }, kind: "added" }, true],
+        [{ totals: { add: 0, del: 0 }, kind: "untracked" }, true],
+        [{ totals: { add: 0, del: 0 }, kind: "deleted" }, true],
+        [{ totals: { add: 0, del: 0 }, kind: "modified", binary: true }, true],
+        [{ totals: { add: 0, del: 0 }, kind: "modified" }, false],
+        [{ totals: { add: 2, del: 0 }, kind: "modified" }, true],
+    ];
+    for (const [e, want] of cases) {
+        assert.equal(isPresentChange(e), want, JSON.stringify(e));
+        assert.equal(web.isPresentChange(e), want, `browser mirror: ${JSON.stringify(e)}`);
+    }
+});
+
+test("computeEvents: pure rename + empty file are events; binary edits differ by signature; they revert", () => {
+    const next = new Map([
+        ["b.ts", { add: 0, del: 0, kind: "renamed", previousPath: "a.ts" }],
+        ["empty.ts", { add: 0, del: 0, kind: "untracked" }],
+        ["img.png", { add: 0, del: 0, kind: "modified", binary: true, sig: "10:1" }],
+    ]);
+    const e1 = computeEvents({ prev: new Map(), next, frontId: "f", plan: null, at: "t" });
+    assert.deepEqual(e1.map((e) => e.file).sort(), ["b.ts", "empty.ts", "img.png"]);
+    const again = computeEvents({ prev: next, next: new Map([...next].map(([k, v]) => [k, { ...v }])), frontId: "f", plan: null, at: "t" });
+    assert.equal(again.length, 0, "same observation → no events");
+    const edited = new Map(next);
+    edited.set("img.png", { ...next.get("img.png"), sig: "12:2" });
+    assert.deepEqual(computeEvents({ prev: next, next: edited, frontId: "f", plan: null, at: "t" }).map((e) => e.file), ["img.png"]);
+    const reverted = computeEvents({ prev: next, next: new Map(), frontId: "f", plan: null, at: "t" });
+    assert.deepEqual(reverted.map((e) => [e.file, e.kind, e.totals.add]).sort(), [["b.ts", "modified", 0], ["empty.ts", "modified", 0], ["img.png", "modified", 0]]);
+});
+
+test("hunks: parse -U0 output, group adjacent hunks by function context", async () => {
+    const { parseHunks, groupHunks } = await import("../lib/command/hunks.mjs");
+    const text = ["diff --git a/x.ts b/x.ts", "--- a/x.ts", "+++ b/x.ts", "@@ -10,2 +10,3 @@ function run()", "-a", "-b", "+a", "+b", "+c", "@@ -20 +21 @@ function run()", "-x", "+y", "@@ -40,0 +42,2 @@", "+n", "+m"].join("\n");
+    const hs = parseHunks(text);
+    assert.deepEqual(hs.map((h) => [h.baseStart, h.baseLen, h.headStart, h.headLen, h.add, h.del]), [[10, 2, 10, 3, 3, 2], [20, 1, 21, 1, 1, 1], [40, 0, 42, 2, 2, 0]]);
+    assert.deepEqual(groupHunks(hs), [
+        { label: "function run()", add: 4, del: 3, headStart: 10, hunks: 2 },
+        { label: "line 42", add: 2, del: 0, headStart: 42, hunks: 1 },
+    ]);
+});
+
+test("mission reducer: explicit events only; asks pend until answered; idle hold → awaiting", async () => {
+    const { reduceMission, tickMission, IDLE_HOLD_MS } = await import("../lib/command/mission.mjs");
+    const now = Date.parse("2026-01-01T10:00:00Z");
+    let m = reduceMission(null, { type: "assistant.turn_start" }, { now });
+    assert.equal(m.status, "working");
+    assert.equal(reduceMission(m, { type: "tool.execution_start" }, { now }), m, "no change → same object");
+    assert.equal(reduceMission(m, { type: "assistant.turn_start", agentId: "sub" }, { now }), m, "subagent chatter ignored");
+    m = reduceMission(m, { type: "user_input.requested", data: { question: "A or B?", requestId: "r1" } }, { now });
+    assert.deepEqual([m.status, m.prompt], ["awaiting_operator", "A or B?"]);
+    assert.equal(reduceMission(m, { type: "tool.execution_start" }, { now }), m, "still waiting on the answer");
+    m = reduceMission(m, { type: "user_input.completed" }, { now });
+    assert.equal(m.status, "working");
+    m = reduceMission(m, { type: "session.idle" }, { now });
+    assert.equal(m.status, "working");
+    assert.equal(tickMission(m, now + IDLE_HOLD_MS - 1), m);
+    assert.equal(tickMission(m, now + IDLE_HOLD_MS).status, "awaiting_operator");
+    assert.equal(reduceMission(m, { type: "session.idle" }, { now, allDone: () => true }).status, "complete");
+    assert.equal(reduceMission(m, { type: "session.task_complete", data: { success: false, summary: "blocked" } }, { now }).status, "awaiting_operator");
+});
+
+test("view spec validation for command_view", () => {
+    const r = new Reader(new Issues());
+    const v = parseViewSpec(r, { id: "p2-focus", title: "P2 focus", root: "src/runner", pins: [{ path: "src/runner/retry" }], monitors: [{ path: "src/runner", mode: "diff-feed" }] }, "view");
+    assert.ok(r.issues.ok, JSON.stringify(r.issues.result()));
+    assert.equal(v.root, "src/runner");
+    const bad = new Reader(new Issues());
+    parseViewSpec(bad, { id: "Bad Id", root: "../x", monitors: [{ path: "src", mode: "heat" }] }, "view");
+    const codes = bad.issues.result().issues.map((i) => `${i.path}:${i.code}`);
+    assert.ok(codes.includes("view.id:format"), codes.join());
+    assert.ok(codes.some((c) => c.startsWith("view.root:")), codes.join());
+    assert.ok(codes.some((c) => c.startsWith("view.monitors[0].mode:")), codes.join());
+});

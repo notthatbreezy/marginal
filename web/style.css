@@ -2464,7 +2464,7 @@ svg .muted {
     border: 1px solid var(--border);
     white-space: nowrap;
 }
-.cc .offplan {
+.cc button.offplan {
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
@@ -2477,7 +2477,7 @@ svg .muted {
     border-radius: 999px;
     padding: 2px 10px;
 }
-.cc .offplan:hover {
+.cc button.offplan:hover {
     background: color-mix(in srgb, var(--yellow) 24%, transparent);
 }
 .cc .hatch-swatch {
@@ -3561,7 +3561,7 @@ svg .muted {
 .cc .f4 { --fc: var(--front-3); }
 .cc .f5 { --fc: var(--front-4); }
 .cc .f6 { --fc: var(--front-5); }
-.cc:not(:has(.rail-fronts)) {
+.cc:has(> .rail-fronts[hidden]) {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "strip" "map" "time";
 }
@@ -3664,4 +3664,289 @@ svg .muted {
         animation: none;
         box-shadow: 0 0 0 2px var(--fc);
     }
+}
+/* ---- Command M2: fronts rail, timeline/replay, off-plan filter, views & follow, pins, monitors, phase menu ---- */
+.cc {
+    position: relative;
+}
+.cc [hidden] {
+    display: none !important;
+}
+.cc .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.cc button.offplan {
+    cursor: pointer;
+}
+.cc button.offplan.on {
+    color: var(--color-white, #fff);
+    background: var(--yellow);
+}
+.cc button.offplan.on .hatch-swatch {
+    background: repeating-linear-gradient(45deg, currentColor 0 2px, transparent 2px 5px);
+}
+.cc .crumbs .sepc {
+    color: var(--muted);
+    opacity: 0.7;
+}
+.cc .crumbs .auto-btn {
+    cursor: pointer;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    color: var(--blue);
+    border-color: color-mix(in srgb, var(--blue) 40%, transparent);
+}
+.cc .crumbs .auto-btn:hover {
+    background: var(--blue-muted);
+}
+.cc .pins-legend {
+    color: var(--fg);
+}
+.cc .pins-legend .pin-ic {
+    color: var(--blue);
+}
+.cc .view-ctl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cc .return:hover {
+    text-decoration: underline;
+}
+.cc .viewpick {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    padding: 0 0 0 8px;
+}
+.cc .viewpick select {
+    font: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    background: transparent;
+    border: none;
+    padding: 3px 4px;
+    max-width: 220px;
+    cursor: pointer;
+}
+.cc .viewpick select:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: -1px;
+    border-radius: 5px;
+}
+/* Monitors dock: shares the map column with the stage. */
+.cc .map:has(> .dock:not([hidden])) .stage {
+    flex: 1.5;
+}
+.cc .dock {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+}
+.cc .mon-h > * {
+    flex: none;
+    white-space: nowrap;
+}
+.cc .mon-h .mon-path {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .mon-h .mon-path {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: var(--fg);
+    cursor: pointer;
+}
+.cc .mon-h .mon-path:hover {
+    color: var(--blue);
+}
+.cc .mon-h .mon-ct {
+    font-size: 12px;
+}
+.cc .feed li {
+    cursor: pointer;
+}
+.cc .feed li:hover:not(.open) {
+    background: var(--surface);
+}
+.cc .feed li .fdot {
+    background: var(--fc);
+}
+.cc .feed .peek {
+    cursor: auto;
+    max-height: 260px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+}
+.cc .feed .peek .loading,
+.cc .feed .peek .error {
+    padding: 8px 10px;
+    color: var(--muted);
+    font-size: 12px;
+}
+.cc .mon-empty,
+.cc .rail-empty {
+    margin: 0;
+    padding: 14px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 17px;
+}
+.cc .mon-files {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.cc .mon-files th {
+    position: sticky;
+    top: 0;
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg);
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.cc .mon-files td {
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--cc-hair);
+    white-space: nowrap;
+}
+.cc .mon-files td.path {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    max-width: 0;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .mon-files .fdot {
+    background: var(--fc);
+    margin-right: 3px;
+}
+/* Fronts rail */
+.cc .front {
+    cursor: pointer;
+}
+.cc .front:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: -2px;
+}
+.cc .front.focused {
+    background: color-mix(in srgb, var(--fc) 9%, var(--bg));
+    box-shadow: inset 3px 0 0 var(--fc);
+}
+.cc .front .drift {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--yellow);
+}
+/* Timeline: segments are buttons (phase menu); the histogram wrapper is the scrub surface. */
+.cc button.seg {
+    border: none;
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+.cc button.seg:hover {
+    filter: brightness(0.97);
+}
+.cc button.seg:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 1px;
+}
+.cc .hist-wrap {
+    position: relative;
+    cursor: ew-resize;
+    touch-action: none;
+    padding-top: 2px;
+}
+.cc .hist:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+.cc .timeline .muted {
+    color: var(--muted);
+    font-size: 12px;
+    align-self: center;
+}
+.cc.replaying .stage {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--yellow) 55%, transparent);
+}
+.cc.replaying .playhead,
+.cc.replaying .playhead::before {
+    background: var(--yellow);
+}
+/* Phase menu (anchored above the clicked segment). */
+.cc .cc-menu {
+    position: absolute;
+    z-index: 40;
+    width: 240px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+    font-size: 12.5px;
+}
+.cc .cc-menu-h {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 7px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--cc-hair);
+    margin-bottom: 3px;
+}
+.cc .cc-menu-h .st {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0 7px;
+    line-height: 18px;
+    color: var(--muted);
+    background: var(--surface-2);
+}
+.cc .cc-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font: inherit;
+    color: var(--fg);
+    cursor: pointer;
+}
+.cc .cc-menu button:hover,
+.cc .cc-menu button:focus-visible {
+    background: var(--surface-2);
+    outline: none;
+}
+.cc .cc-menu-empty {
+    padding: 6px 8px;
+    color: var(--muted);
+}
+/* Hunk rows inside large changed tiles */
+.cc .tn .hunks {
+    pointer-events: none;
 }

@@ -17,13 +17,14 @@ const repo = join(tmp, "repo");
 const wt1 = join(tmp, "wt-runner");
 const wt2 = join(tmp, "wt-tests");
 const other = join(tmp, "other");
+const wt3 = join(tmp, "wt-extra");
 
 const store = await import("../lib/store.mjs");
 const gitm = await import("../lib/git.mjs");
 const { ACTIONS, stats } = await import("../lib/command/actions.mjs");
 const poller = await import("../lib/command/poller.mjs");
 const { gitStats } = await import("../lib/command/gitx.mjs");
-const { eventsSince, readState, unwatchCommand } = await import("../lib/command/state.mjs");
+const { commandDir, eventsSince, readState, unwatchCommand } = await import("../lib/command/state.mjs");
 const { stopHeartbeat } = await import("../lib/command/owner.mjs");
 
 poller.CADENCE.fast = 150;
@@ -70,6 +71,7 @@ after(() => {
     try {
         git(repo, "worktree", "remove", "--force", wt1);
         git(repo, "worktree", "remove", "--force", wt2);
+        git(repo, "worktree", "remove", "--force", wt3);
     } catch {}
     rmSync(tmp, { recursive: true, force: true });
 });
@@ -197,6 +199,75 @@ test("phase/step/status transitions and their issues", async () => {
     assert.equal(nb.issues[0].code, "not_owner");
 });
 
+test("status prompt is only accepted with awaiting_operator", async () => {
+    const before = JSON.stringify(readState(doc.documentId));
+    for (const status of ["working", "complete"]) {
+        const r = await call("command_status", { status, prompt: "Choose a region" });
+        assert.equal(r.ok, false);
+        assert.equal(r.issues[0].path, "prompt");
+    }
+    assert.equal(JSON.stringify(readState(doc.documentId)), before);
+});
+
+test("removing a front revokes its phase/step associations (a re-registered id inherits nothing)", async () => {
+    git(repo, "worktree", "add", "-q", wt3, "-b", "extra");
+    assert.ok((await call("command_front", { op: "register", id: "extra", label: "extra", worktree: wt3 })).ok);
+    assert.ok((await call("command_plan", { op: "phase", phaseId: "p2", status: "active", frontIds: ["tests", "extra"] })).ok);
+    assert.ok((await call("command_plan", { op: "step", stepId: "s1", status: "active", frontId: "extra" })).ok);
+    assert.ok((await call("command_front", { op: "remove", id: "extra" })).ok);
+    let st = readState(doc.documentId);
+    assert.deepEqual(st.plan.phases[1].state.frontIds, ["tests"]);
+    assert.equal(st.plan.phases[0].steps[0].state.frontId, undefined);
+    assert.ok((await call("command_front", { op: "register", id: "extra", label: "extra again", worktree: wt3 })).ok);
+    st = readState(doc.documentId);
+    assert.deepEqual(st.plan.phases[1].state.frontIds, ["tests"]);
+    assert.ok((await call("command_front", { op: "remove", id: "extra" })).ok);
+});
+
+test("done without a commit snapshots into a hidden ref; HEAD, index and status untouched; no front → rejected atomically", async () => {
+    await call("command_plan", { op: "set", plan: { ...planInput, phases: [...planInput.phases, { id: "p3", title: "Docs", expects: ["README.md"] }] } });
+    const before = JSON.stringify(readState(doc.documentId));
+    const orphan = await call("command_plan", { op: "phase", phaseId: "p3", status: "done" });
+    assert.equal(orphan.ok, false);
+    assert.equal(orphan.issues[0].code, "required");
+    assert.equal(JSON.stringify(readState(doc.documentId)), before, "state unchanged");
+
+    const head = git(wt2, "rev-parse", "HEAD");
+    const status = git(wt2, "status", "--porcelain");
+    const r = await call("command_plan", { op: "phase", phaseId: "p2", status: "done" });
+    assert.ok(r.ok, JSON.stringify(r));
+    const cp = readState(doc.documentId).plan.phases[1].state.checkpoint;
+    assert.equal(cp.source, "snapshot");
+    assert.equal(cp.frontId, "tests");
+    assert.equal(cp.ref, `refs/whiteboard/checkpoints/${doc.documentId}/p2`);
+    assert.equal(git(repo, "rev-parse", cp.ref), cp.sha);
+    assert.match(git(repo, "show", `${cp.sha}:tests/executor.test.ts`), /retry/);
+    assert.equal(git(wt2, "rev-parse", "HEAD"), head);
+    assert.equal(git(wt2, "status", "--porcelain"), status);
+});
+
+test("a new plan base re-baselines totals as initial observations, not edits", async () => {
+    git(wt1, "add", "-A");
+    git(wt1, "commit", "-qm", "wip");
+    const sha = git(wt1, "rev-parse", "HEAD");
+    // Staging turned untracked files into "added" (a real observation); let the poller settle before re-basing.
+    let last = -1;
+    await until(async () => {
+        const s = eventsSince(doc.documentId, 0).at(-1).seq;
+        if (s === last) return true;
+        last = s;
+        await new Promise((r) => setTimeout(r, 700));
+    }, 10_000);
+    const seq0 = eventsSince(doc.documentId, 0).at(-1).seq;
+    assert.ok((await call("command_plan", { op: "set", plan: { ...planInput, base: sha } })).ok);
+    const evs = await until(() => {
+        const e = eventsSince(doc.documentId, seq0).filter((x) => x.frontId === "runner");
+        return e.some((x) => x.file === "src/runner/backoff.ts") ? e : null;
+    });
+    assert.ok(evs.every((e) => e.initial), JSON.stringify(evs));
+    assert.deepEqual(evs.find((e) => e.file === "src/runner/backoff.ts").totals, { add: 0, del: 0 });
+});
+
 test("pollers dedupe: once per front in-process, zero in a non-owner process", async () => {
     const d = doc.documentId;
     const loops1 = poller.pollingFronts(d);
@@ -255,9 +326,25 @@ test("server: /api/command/state + tree, and SSE pushes command events", async (
     s.server.close();
 });
 
+test("losing the lease stops this process's pollers; a stale takeover restarts them", async () => {
+    const d = doc.documentId;
+    assert.ok(poller.pollingFronts(d).length > 0);
+    const lease = join(commandDir(d), "owner.json");
+    const iso = (ms) => new Date(ms).toISOString();
+    writeFileSync(lease, JSON.stringify({ sessionId: "session-B", pid: 1, claimedAt: iso(Date.now()), heartbeatAt: iso(Date.now()) }));
+    await until(() => poller.pollingFronts(d).length === 0);
+    writeFileSync(lease, JSON.stringify({ sessionId: "session-B", pid: 1, claimedAt: iso(Date.now() - 120_000), heartbeatAt: iso(Date.now() - 60_000) }));
+    const r = await call("command_plan", { op: "set", plan: planInput });
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.match(r.lease, /taken over/);
+    assert.ok(poller.pollingFronts(d).length > 0);
+});
+
 test("deleting the whiteboard stops its pollers first", async () => {
     await import("../lib/command/index.mjs"); // registers the store hook
     assert.ok(poller.pollingFronts(doc.documentId).length > 0);
+    assert.ok(git(repo, "for-each-ref", `refs/whiteboard/checkpoints/${doc.documentId}/`).length > 0);
     await store.remove(doc.documentId);
     assert.deepEqual(poller.pollingFronts(doc.documentId), []);
+    assert.equal(git(repo, "for-each-ref", `refs/whiteboard/checkpoints/${doc.documentId}/`), "", "checkpoint refs dropped");
 });

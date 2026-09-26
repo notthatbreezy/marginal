@@ -79,3 +79,47 @@ test("velocity: trailing bucket, initial/baseline excluded, auto window by age",
     assert.deepEqual(b.get("f2"), [0, 0, 4]);
     assert.deepEqual([heatOf(5), heatOf(30), heatOf(100), heatOf(500)], [8, 14, 22, 30]);
 });
+
+// ---------- M2: views, follow, auto-root, zero-line changes ----------
+globalThis.location ??= { search: "" };
+const views = await import("../web/command/views.js");
+
+test("changesAt keeps zero-line renames/new files and carries off-plan per front", () => {
+    const t0 = Date.parse("2026-01-01T10:00:00Z");
+    const log = [ev(1, t0, "f1", "b.ts", 0, 0, { kind: "renamed", previousPath: "a.ts" }), ev(2, t0 + 1, "f1", "new.ts", 0, 0, { kind: "untracked", offPlan: true }), ev(3, t0 + 2, "f2", "c.ts", 0, 0)];
+    const m = changesAt(log);
+    assert.deepEqual([...m.keys()].sort(), ["b.ts", "new.ts"]);
+    assert.equal(m.get("b.ts").previousPath, "a.ts");
+    assert.equal(m.get("new.ts").fronts.get("f1").offPlan, true);
+});
+
+test("autoRoot: smallest subtree covering concrete expects (glob prefixes) and changed files", () => {
+    const plan = (expects, steps = []) => ({ phases: [{ expects, steps }] });
+    const d = (path) => ({ kind: "dir", path });
+    const f = (path) => ({ kind: "file", path });
+    assert.equal(views.autoRoot(plan([d("src/runner")]), ["src/runner/x.ts"]), "src/runner");
+    assert.equal(views.autoRoot(plan([d("src/runner")]), ["src/util/t.ts"]), "src");
+    assert.equal(views.autoRoot(plan([f("src/runner/a.ts")], [{ expects: [{ kind: "glob", glob: "src/runner/**/*.ts" }] }]), []), "src/runner");
+    assert.equal(views.autoRoot(plan([d("src")]), ["README.md"]), "");
+    assert.equal(views.autoRoot(null, []), "");
+});
+
+test("follow: applies the active phase's suggestion once; a user edit holds it; paused never applies", () => {
+    const sv = { id: "p2v", title: "P2", root: "src" };
+    const state = { plan: { phases: [{ id: "p1", state: { status: "done" }, suggestedView: { id: "p1v" } }, { id: "p2", state: { status: "active" }, suggestedView: sv }] } };
+    assert.equal(views.followDecision({ state, prefs: { follow: true } })?.id, "p2");
+    assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p2" } }), null, "already applied");
+    assert.equal(views.followDecision({ state, prefs: { follow: false } }), null, "paused");
+    assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p1", adjustedSince: "t", adjustedPhase: "p1" } }), null, "user adjusted since the last apply");
+    assert.equal(views.followDecision({ state, prefs: { follow: true, appliedPhase: "p1", adjustedSince: null } })?.id, "p2", "next phase applies when not adjusted");
+    assert.ok(views.quietSinceZoom(Date.now() - 6000) && !views.quietSinceZoom(Date.now() - 1000));
+});
+
+test("layoutFromView normalizes pins/monitors; viewChoices merges agent, phase and user views", () => {
+    const L = views.layoutFromView({ id: "v", root: "src", pins: [{ path: "src/a" }, "src/b"], monitors: [{ path: "src" }] });
+    assert.deepEqual(L, { root: "src", pins: ["src/a", "src/b"], monitors: [{ path: "src", mode: "diff-feed" }], filters: {} });
+    assert.ok(views.sameLayout(L, views.layoutFromView({ id: "w", root: "src", pins: ["src/a", "src/b"], monitors: [{ path: "src", mode: "diff-feed" }] })));
+    const state = { plan: { phases: [{ id: "p2", suggestedView: { id: "p2v", title: "P2" } }] }, views: [{ id: "p2v", title: "dup" }, { id: "agent2", title: "A2", origin: "agent" }] };
+    const ch = views.viewChoices(state, { savedViews: [{ id: "my-view-1", title: "Mine" }] });
+    assert.deepEqual(ch.map((v) => [v.id, v.origin, v.phaseId ?? null]), [["p2v", "agent", "p2"], ["agent2", "agent", null], ["my-view-1", "user", null]]);
+});

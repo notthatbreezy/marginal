@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 
 import { createChat } from "./lib/chat.mjs";
-import { adoptLeases, commandActions } from "./lib/command/index.mjs";
+import { adoptLeases, attachMission, commandActions } from "./lib/command/index.mjs";
 import { InputError } from "./lib/errors.mjs";
 import * as git from "./lib/git.mjs";
 import { getInstructions } from "./lib/instructions.mjs";
@@ -339,6 +339,7 @@ session.on((event) => {
 // Re-adopt Command leases this session held before a reload, so polling resumes without a new plan "set".
 try {
     adoptLeases(session.sessionId);
+    attachMission(session);
 } catch (e) {
     session.log(`whiteboard command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
 }
