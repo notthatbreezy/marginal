@@ -1,51 +1,7 @@
 // Whiteboard canvas renderer. Vanilla JS, no dependencies.
-const params = new URLSearchParams(location.search);
-const TOKEN = params.get("t") ?? "";
-const INSTANCE = params.get("instance") ?? "";
-
-const $ = (sel, root = document) => root.querySelector(sel);
-const SVGNS = "http://www.w3.org/2000/svg";
-
-function h(tag, attrs = {}, ...children) {
-    const el = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs ?? {})) {
-        if (v === undefined || v === null || v === false) continue;
-        if (k === "class") el.className = v;
-        else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-        else if (k === "html") el.innerHTML = v;
-        else el.setAttribute(k, v === true ? "" : v);
-    }
-    for (const c of children.flat()) if (c !== null && c !== undefined && c !== false) el.append(c instanceof Node ? c : String(c));
-    return el;
-}
-function s(tag, attrs = {}, ...children) {
-    const el = document.createElementNS(SVGNS, tag);
-    for (const [k, v] of Object.entries(attrs ?? {})) {
-        if (v === undefined || v === null || v === false) continue;
-        if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-        else el.setAttribute(k, v);
-    }
-    for (const c of children.flat()) if (c !== null && c !== undefined) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-    return el;
-}
-const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-/** replaceChildren that skips null/false like h() does (the native one renders them as text). */
-const put = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
-
-async function api(path, { method = "GET", body } = {}) {
-    const res = await fetch(`/api${path}`, { method, headers: { "x-wb-token": TOKEN, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-    return data;
-}
-
-function toast(msg) {
-    const t = $("#toast");
-    t.textContent = msg;
-    t.hidden = false;
-    clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => (t.hidden = true), 2400);
-}
+import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
+import { createStepper } from "./stepper.js";
+import { createSelection, flashBar, withModifier, multibar } from "./selection.js";
 
 // ---------------- state ----------------
 const state = {
@@ -59,150 +15,7 @@ const state = {
     catalog: [],
 };
 const sourceCache = new Map();
-const picks = new Map(); // multi-selection: "blockId|lineRange" (or "blockId|*" for a whole block) -> true
 
-// ---------------- markdown ----------------
-function slugify(t) {
-    return t
-        .toLowerCase()
-        .replace(/<[^>]+>/g, "")
-        .replace(/[^a-z0-9\s-]/g, "")
-        .trim()
-        .replace(/\s+/g, "-");
-}
-
-function inline(text) {
-    const codes = [];
-    let t = text.replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
-    t = esc(t);
-    t = t.replace(/\[([^\]]+)\]\(\s*([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\s*\)/g, (_, label, href) => {
-        const raw = href.replace(/&amp;/g, "&");
-        const m = /^review-source:(head|base)\/([^#]+)(?:#L(\d+)(?:-L(\d+))?)?$/.exec(raw);
-        if (m) return `<a href="#" class="src" data-side="${m[1]}" data-file="${esc(decodeURIComponent(m[2]))}" data-start="${m[3] ?? ""}" data-end="${m[4] ?? m[3] ?? ""}">${label}</a>`;
-        if (/^https?:|^mailto:/i.test(raw)) return `<a href="${esc(raw)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
-        if (raw.startsWith("#")) return `<a href="${esc(raw)}" class="anchor">${label}</a>`;
-        return label;
-    });
-    t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
-    t = t.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>").replace(/(^|[^_\w])_([^_\n]+)_(?!\w)/g, "$1<em>$2</em>");
-    t = t.replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    return t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[Number(i)])}</code>`);
-}
-
-function markdown(src, annotate = false) {
-    const lines = src.replace(/\r\n/g, "\n").split("\n");
-    const out = [];
-    let i = 0;
-    const isBlockStart = (l) => /^(#{1,6}\s|```|>|\s*([-*+]|\d+[.)])\s|\s*\|.*\|\s*$|(-{3,}|\*{3,})\s*$)/.test(l);
-    while (i < lines.length) {
-        const line = lines[i];
-        if (!line.trim()) {
-            i++;
-            continue;
-        }
-        const s = i;
-        let m;
-        let isList = false;
-        if ((m = /^```\s*([\w+-]*)/.exec(line))) {
-            const body = [];
-            i++;
-            while (i < lines.length && !/^```/.test(lines[i])) body.push(lines[i++]);
-            i++;
-            out.push(`<pre><code>${highlight(body.join("\n"), m[1])}</code></pre>`);
-        } else if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) {
-            const lvl = m[1].length;
-            out.push(`<h${lvl} id="${slugify(m[2])}">${inline(m[2])}</h${lvl}>`);
-            i++;
-        } else if (/^(-{3,}|\*{3,})\s*$/.test(line)) {
-            out.push("<hr>");
-            i++;
-        } else if (line.startsWith(">")) {
-            const body = [];
-            while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
-            out.push(`<blockquote>${markdown(body.join("\n"))}</blockquote>`);
-        } else if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1] ?? "")) {
-            const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
-            const head = cells(line);
-            i += 2;
-            const rows = [];
-            while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
-            out.push(`<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
-        } else if ((m = /^(\s*)([-*+]|\d+[.)])\s+/.exec(line))) {
-            out.push(list(lines, i, (n) => (i = n), annotate));
-            isList = true;
-        } else {
-            const body = [line];
-            i++;
-            while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) body.push(lines[i++]);
-            out.push(`<p>${inline(body.join(" "))}</p>`);
-        }
-        // Tag each commentable unit with its source line range; list items carry their own.
-        if (annotate && !isList && !out[out.length - 1].startsWith("<hr")) out[out.length - 1] = out[out.length - 1].replace(/^<(\w+)/, `<$1 data-l="${s}-${i - 1}"`);
-    }
-    return out.join("\n");
-}
-
-function list(lines, start, setIndex, annotate = false) {
-    const first = /^(\s*)([-*+]|\d+[.)])\s+/.exec(lines[start]);
-    const indent = first[1].length;
-    const ordered = /\d/.test(first[2]);
-    const items = [];
-    let i = start;
-    while (i < lines.length) {
-        const m = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/.exec(lines[i]);
-        if (m && m[1].length === indent) {
-            items.push({ text: m[3], sub: [], from: i });
-            i++;
-        } else if (m && m[1].length > indent && items.length) {
-            const nested = [];
-            while (i < lines.length) {
-                const mm = /^(\s*)([-*+]|\d+[.)])\s+/.exec(lines[i]);
-                if (mm && mm[1].length <= indent) break;
-                if (!lines[i].trim()) break;
-                nested.push(lines[i++]);
-            }
-            items[items.length - 1].sub.push(nested.join("\n"));
-        } else if (lines[i].trim() && !m && items.length && /^\s{2,}/.test(lines[i])) {
-            items[items.length - 1].text += " " + lines[i].trim();
-            i++;
-        } else break;
-    }
-    setIndex(i);
-    items.forEach((it, k) => (it.to = (items[k + 1]?.from ?? i) - 1));
-    const tag = ordered ? "ol" : "ul";
-    return `<${tag}>${items.map((it) => `<li${annotate ? ` data-l="${it.from}-${it.to}"` : ""}>${inline(it.text)}${it.sub.map((sub) => list(sub.split("\n"), 0, () => {})).join("")}</li>`).join("")}</${tag}>`;
-}
-
-// ---------------- tiny highlighter ----------------
-const KEYWORDS = new Set(
-    "abstract and as async await break case catch class const continue def default defer del delete do elif else enum export extends false final finally fn for from func function go if impl import in interface is let loop match mod mut new nil None not null or package private protected pub public raise return self static struct super switch this throw trait true True False try type typeof use var void where while with yield".split(" "),
-);
-function highlight(code, lang = "") {
-    if (lang === "text" || lang === "diff" || lang === "md" || lang === "markdown") return esc(code);
-    const re = /(\/\/[^\n]*|#(?![\[!])[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(\d[\d_.]*[a-z]*)\b|([A-Za-z_]\w*)/g;
-    let out = "";
-    let last = 0;
-    const hashComments = /^(py|python|sh|bash|shell|rb|ruby|yaml|yml|toml|ps1|powershell|r)$/i.test(lang);
-    const dashComments = /^(sql|lua|haskell|hs)$/i.test(lang);
-    for (const m of code.matchAll(re)) {
-        out += esc(code.slice(last, m.index));
-        last = m.index + m[0].length;
-        if (m[1]) {
-            const isHash = m[1].startsWith("#");
-            const isDash = m[1].startsWith("--");
-            if ((isHash && !hashComments) || (isDash && !dashComments)) {
-                out += esc(m[1].slice(0, 1));
-                last = m.index + 1;
-                continue;
-            }
-            out += `<span class="tok-c">${esc(m[1])}</span>`;
-        } else if (m[2]) out += `<span class="tok-s">${esc(m[2])}</span>`;
-        else if (m[3]) out += `<span class="tok-n">${esc(m[3])}</span>`;
-        else if (m[4]) out += KEYWORDS.has(m[4]) ? `<span class="tok-k">${m[4]}</span>` : m[4];
-    }
-    return out + esc(code.slice(last));
-}
-const langOf = (file = "") => (file.split(".").pop() ?? "").toLowerCase();
 
 // ---------------- source fetch + code listing ----------------
 function sourceKey(src) {
@@ -1312,7 +1125,7 @@ async function loadDoc(lastEdit) {
 }
 
 function showDoc(documentId) {
-    picks.clear();
+    clearPicks();
     state.documentId = documentId;
     state.viewVersion = null;
     state.tab = "board";
@@ -1351,7 +1164,7 @@ function connect() {
         if (ev.type === "show") {
             if (ev.documentId !== state.documentId || !state.booted) {
                 state.booted = true;
-                picks.clear();
+                clearPicks();
                 state.catalog = await api("/catalog").catch(() => state.catalog);
                 state.documentId = ev.documentId;
                 state.viewVersion = null;
@@ -1800,7 +1613,7 @@ function updateGutterMode() {
     const picked = picks.has(keyOf(target));
     const minus = picked && !shiftHeld;
     gPick.classList.toggle("minus", minus);
-    gPick.title = minus ? "Remove from selection" : shiftHeld && pickAnchor ? "Select range to here" : "Add to selection";
+    gPick.title = minus ? "Remove from selection" : shiftHeld && picks.anchor() ? "Select range to here" : "Add to selection";
     gPick.setAttribute("aria-label", gPick.title);
 }
 addEventListener("keydown", setModifiers);
@@ -1847,7 +1660,6 @@ gCopy.onclick = async (e) => {
 };
 
 // ---------------- multi-select (Ctrl/Cmd+click toggles, Shift+click selects a range) ----------------
-let pickAnchor = null;
 const keyOf = (el) => `${el.closest(".block[data-id]").dataset.id}|${el.dataset.l ?? "*"}`;
 function elOf(key) {
     const [bid, l] = key.split("|");
@@ -1873,39 +1685,34 @@ function joinRuns() {
     }
 }
 
-function paintPicks() {
-    document.querySelectorAll(".picked").forEach((el) => el.classList.remove("picked"));
-    for (const key of picks.keys()) elOf(key)?.classList.add("picked");
-    $("#multi-count").textContent = `${picks.size} selected`;
+// The whiteboard's selection over paragraphs and blocks (shared mechanics in selection.js).
+const picks = createSelection({
+    keyOf,
+    elOf,
+    units: allUnits,
+    actions: {
+        comment: () => multiComment(),
+        copy: async () => flashBar((await copyText(pickedText())) ? "Copied" : "Copy failed"),
+    },
+    onChange: () => afterPicks(),
+});
+function afterPicks() {
     if (!gutter.hidden) setGutterTitles(gutterState.unit);
     hintOn = !!gutterState.unit && !picks.size;
     updateCenter();
     updateGutterMode();
     joinRuns();
 }
-function clearPicks() {
-    picks.clear();
-    pickAnchor = null;
-    paintPicks();
+function paintPicks() {
+    picks.paint();
+    afterPicks();
 }
-function togglePick(el) {
-    const key = keyOf(el);
-    if (picks.has(key)) picks.delete(key);
-    else picks.set(key, true);
-    pickAnchor = key;
-    paintPicks();
-}
-function rangePick(el) {
-    const list = allUnits();
-    const from = pickAnchor ? list.indexOf(elOf(pickAnchor)) : -1;
-    const to = list.indexOf(el);
-    if (from < 0 || to < 0) return togglePick(el);
-    for (let i = Math.min(from, to); i <= Math.max(from, to); i++) picks.set(keyOf(list[i]), true);
-    paintPicks();
-}
+const clearPicks = () => picks.clear();
+const togglePick = (el) => picks.toggle(el);
+const rangePick = (el) => picks.range(el);
 /** Picked units in document order, with what each says. Paragraphs inside a picked block are covered by it. */
 function pickedParts() {
-    const els = [...picks.keys()].map(elOf).filter(Boolean);
+    const els = picks.keys().map(elOf).filter(Boolean);
     return els
         .filter((el) => !els.some((other) => other !== el && other.contains(el)))
         .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
@@ -1918,7 +1725,6 @@ function pickedParts() {
         });
 }
 
-const withModifier = (e) => e.button === 0 && (e.ctrlKey || e.metaKey || e.shiftKey);
 // Capture phase: a modified click on a unit selects it instead of following links, opening peeks or extending text selection.
 $("#main").addEventListener(
     "mousedown",
@@ -1955,13 +1761,7 @@ function multiComment() {
     hideGutter();
 }
 
-$("#multi-clear").onclick = clearPicks;
-$("#multi-copy").onclick = async () => {
-    const ok = await copyText(pickedText());
-    $("#multi-count").textContent = ok ? "Copied" : "Copy failed";
-    setTimeout(() => ($("#multi-count").textContent = `${picks.size} selected`), 1200);
-};
-$("#multi-comment").onclick = multiComment;
+
 
 document.addEventListener("mouseup", (e) => {
     if (e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv")) return;
@@ -2000,7 +1800,7 @@ document.addEventListener("mouseup", (e) => {
 // A diagram becomes a guided walk: the diagram, re-shaped vertically, on the left; one stop at a time on the
 // right with its explanation and code. Sequence steps become a numbered rail (a wide ladder does not fit a
 // column); flow diagrams re-lay top-to-bottom with the current node emphasized.
-const tour = { root: null, block: null, stops: [], i: 0, stage: null, pane: null };
+const tour = { root: null, block: null, stops: [], stepper: null };
 const ACTOR_HUES = ["--blue", "--purple", "--green", "--yellow", "--red"];
 
 function tourStops(b) {
@@ -2116,84 +1916,20 @@ function tourStage(b) {
     return h("div", { class: "tour-flow" }, svg);
 }
 
-function openTour(blockId) {
-    const b = findBlock(state.doc?.content, blockId);
-    if (!b) return;
-    closeTour();
-    Object.assign(tour, { block: b, stops: tourStops(b), i: 0 });
-    hideGutter();
-    $("#peek").hidden = true;
-    tour.stage = h("div", { class: "tour-stage" }, h("div", { class: "tour-stage-title" }, b.title), tourStage(b));
-    const progress = h(
-        "div",
-        { class: "tour-progress", role: "tablist", "aria-label": "Steps" },
-        tour.stops.map((st, i) => h("button", { role: "tab", title: `${i + 1}. ${st.title}`, "aria-label": `Step ${i + 1}: ${st.title}`, onclick: () => goTour(i) })),
-    );
-    tour.pane = h(
-        "div",
-        { class: "tour-pane" },
-        h(
-            "header",
-            { class: "tour-top" },
-            progress,
-            h("button", { class: "chat-icon tour-close", title: "Close tour (Esc)", "aria-label": "Close tour", onclick: closeTour, html: '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' }),
-        ),
-        h("div", { class: "tour-body" }),
-        h(
-            "footer",
-            { class: "tour-nav" },
-            h("span", { class: "tour-count" }),
-            h("button", { class: "tour-ask", onclick: askAboutStop }, "Ask about this step"),
-            h("button", { class: "tour-prev", onclick: () => goTour(tour.i - 1) }, h("kbd", {}, "←"), "Back"),
-            h("button", { class: "tour-next primary", onclick: () => (tour.i >= tour.stops.length - 1 ? closeTour() : goTour(tour.i + 1)) }),
-        ),
-    );
-    tour.root = h("div", { id: "tour", role: "dialog", "aria-modal": "true", "aria-label": `${b.title} tour` }, tour.stage, tour.pane);
-    // Clicking the diagram jumps to that step instead of opening a peek.
-    tour.stage.addEventListener(
-        "click",
-        (e) => {
-            const hit = e.target.closest("[data-i], [data-unit]");
-            if (!hit) return;
-            e.stopPropagation();
-            e.preventDefault();
-            const i = hit.dataset.i !== undefined ? Number(hit.dataset.i) : tour.stops.findIndex((s) => s.id === hit.dataset.unit);
-            if (i >= 0) goTour(i);
-        },
-        true,
-    );
-    document.body.append(tour.root);
-    syncChatFab();
-    goTour(0);
-    tour.pane.querySelector(".tour-next").focus({ preventScroll: true });
+function tourMeta(b, st) {
+    if (b.type === "sequence") return h("div", { class: "tour-meta" }, actorChip(b, st.from), arrowGlyph(st.style), st.to !== st.from ? actorChip(b, st.to) : null, st.style !== "call" ? h("span", { class: "badge" }, st.style) : null);
+    if (b.type === "call_stack_diff") {
+        const [cls, label] = STACK_STATUS[st.status];
+        return h("div", { class: "tour-meta" }, cls ? h("span", { class: `st ${cls}` }, label) : h("span", { class: "badge" }, label), st.via ? h("span", { class: "badge" }, `via ${st.via.kind}`) : null);
+    }
+    return st.kind && st.kind !== "process" ? h("div", { class: "tour-meta" }, h("span", { class: "badge" }, st.kind)) : null;
 }
 
-function closeTour() {
-    if (!tour.root) return;
-    tour.root.remove();
-    Object.assign(tour, { root: null, block: null, stops: [], stage: null, pane: null });
-    syncChatFab();
-}
-
-function goTour(i) {
-    if (!tour.root) return;
-    const n = tour.stops.length;
-    tour.i = Math.max(0, Math.min(n - 1, i));
-    const st = tour.stops[tour.i];
-    const b = tour.block;
-    const body = tour.pane.querySelector(".tour-body");
-    const meta =
-        b.type === "sequence"
-            ? h("div", { class: "tour-meta" }, actorChip(b, st.from), arrowGlyph(st.style), st.to !== st.from ? actorChip(b, st.to) : null, st.style !== "call" ? h("span", { class: "badge" }, st.style) : null)
-            : b.type === "call_stack_diff"
-              ? h("div", { class: "tour-meta" }, STACK_STATUS[st.status][0] ? h("span", { class: `st ${STACK_STATUS[st.status][0]}` }, STACK_STATUS[st.status][1]) : h("span", { class: "badge" }, STACK_STATUS[st.status][1]), st.via ? h("span", { class: "badge" }, `via ${st.via.kind}`) : null)
-              : st.kind && st.kind !== "process"
-              ? h("div", { class: "tour-meta" }, h("span", { class: "badge" }, st.kind))
-              : null;
-    put(
-        body,
+/** Stop body shared by tours (and reused by walkthroughs): title, meta, narration, code. */
+function renderTourStop(b, st, stepper) {
+    return [
         h("h2", { class: "tour-h" }, st.title),
-        meta,
+        tourMeta(b, st),
         st.text ? h("div", { class: "md tour-text", html: markdown(st.text) }) : null,
         st.code ? illustrativeCode(st.code) : null,
         ...st.sources.map((s) => codeView(s.src, { diff: true, label: s.label, context: 10 })),
@@ -2204,55 +1940,50 @@ function goTour(i) {
                   { class: "tour-leads" },
                   h("span", { class: "tour-leads-h" }, "Leads to"),
                   st.next.map((x) => {
-                      const j = tour.stops.findIndex((s) => s.id === x.node?.id);
-                      return h("button", { class: "tour-lead", disabled: j < 0, onclick: () => goTour(j) }, x.label ? h("span", { class: "muted" }, `${x.label} → `) : null, x.node?.label ?? "");
+                      const j = stepper.stops.findIndex((s) => s.id === x.node?.id);
+                      return h("button", { class: "tour-lead", disabled: j < 0, onclick: () => stepper.go(j) }, x.label ? h("span", { class: "muted" }, `${x.label} → `) : null, x.node?.label ?? "");
                   }),
               )
             : null,
-    );
-    body.classList.remove("enter");
-    void body.offsetWidth; // restart the entrance
-    body.classList.add("enter");
-    body.scrollTop = 0;
-    tour.pane.querySelectorAll(".tour-progress button").forEach((btn, k) => {
-        btn.classList.toggle("done", k < tour.i);
-        btn.classList.toggle("on", k === tour.i);
-        btn.setAttribute("aria-selected", String(k === tour.i));
-    });
-    tour.pane.querySelector(".tour-count").textContent = `${tour.i + 1} of ${n}`;
-    tour.pane.querySelector(".tour-prev").disabled = tour.i === 0;
-    const next = tour.pane.querySelector(".tour-next");
-    next.replaceChildren(tour.i >= n - 1 ? "Done" : "Next", h("kbd", {}, "→"));
-    // Stage: mark progress and bring the current stop into view.
-    tour.stage.querySelectorAll(".rail li, .stack-tree li").forEach((li, k) => {
-        li.classList.toggle("done", k < tour.i);
-        li.classList.toggle("active", k === tour.i);
-    });
-    tour.stage.querySelectorAll(".tour-flow [data-unit]").forEach((g) => g.classList.toggle("tour-active", g.dataset.unit === st.id));
-    const active = tour.stage.querySelector(".rail li.active, .stack-tree li.active, .tour-flow .tour-active");
-    active?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    ];
 }
 
-function askAboutStop() {
-    const st = tour.stops[tour.i];
-    const b = tour.block;
+function openTour(blockId) {
+    const b = findBlock(state.doc?.content, blockId);
+    if (!b) return;
+    closeTour();
+    hideGutter();
+    $("#peek").hidden = true;
+    tour.block = b;
+    tour.stops = tourStops(b);
+    tour.stepper = createStepper({
+        mount: document.body,
+        id: "tour",
+        label: `${b.title} tour`,
+        stops: tour.stops,
+        renderStage: () => h("div", {}, h("div", { class: "tour-stage-title" }, b.title), tourStage(b)),
+        renderStop: (st, i, stepper) => renderTourStop(b, st, stepper),
+        askLabel: "Ask about this step",
+        onAsk: (i, st) => askAboutStop(b, i, st),
+        onClose: () => {
+            Object.assign(tour, { root: null, block: null, stops: [], stepper: null });
+            syncChatFab();
+        },
+    });
+    tour.root = tour.stepper.root;
+    syncChatFab();
+}
+
+function closeTour() {
+    tour.stepper?.close();
+    tour.root = null;
+}
+
+function askAboutStop(b, i, st) {
     const where = b.type === "sequence" ? `${b.actors[st.from] ?? st.from} -> ${b.actors[st.to] ?? st.to}: ` : "";
     const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
-    openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${tour.i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}` });
+    openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}` });
 }
-
-document.addEventListener("keydown", (e) => {
-    if (!tour.root || e.target.closest?.("textarea, input, [contenteditable]") || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (["ArrowRight", "ArrowDown", "j", "PageDown"].includes(e.key)) {
-        e.preventDefault();
-        goTour(tour.i + 1);
-    } else if (["ArrowLeft", "ArrowUp", "k", "PageUp"].includes(e.key)) {
-        e.preventDefault();
-        goTour(tour.i - 1);
-    } else if (e.key === "Home") goTour(0);
-    else if (e.key === "End") goTour(tour.stops.length - 1);
-});
-
 // ---------------- boot ----------------
 (async () => {
     try {
