@@ -4491,3 +4491,16 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
 .cc .strip .tour-slot:empty {
     display: none;
 }
+/* Peek drawer: a code view is as tall as the drawer allows (drawer minus its header, padding and the view's own
+   header) and scrolls only when the code is longer than that; short code keeps its natural height. */
+#peek {
+    --peek-h: 100vh;
+}
+@media (max-width: 720px) {
+    #peek {
+        --peek-h: 70vh;
+    }
+}
+#peek-body > .peek-section.pad > .cv > .cv-body {
+    max-height: calc(var(--peek-h) - 124px);
+}
