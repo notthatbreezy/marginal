@@ -354,3 +354,8 @@ test("off-plan: files from checkpoints the front already finished stay in-plan",
     const off = offPlanMatcher(plan, "f");
     assert.deepEqual(["src/a/x.ts", "src/b/y.ts", "src/c/z.ts", "README.md"].map(off), [false, false, true, true]);
 });
+test("prefs keep the tour-seen flag (and only a literal true)", async () => {
+    const { parsePrefs } = await import("../lib/command/patterns.mjs");
+    assert.equal(parsePrefs({ guideSeen: true }).guideSeen, true);
+    assert.equal("guideSeen" in parsePrefs({ guideSeen: "yes" }), false);
+});

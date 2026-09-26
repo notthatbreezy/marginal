@@ -182,7 +182,7 @@ export function createTreemap(host, { onZoom, onHover, tooltip } = {}) {
         if (c?.lastAt) rows.push(["Last edit", relTime(c.lastAt, m.now)]);
         rows.push(["Plan", phase ? `${phase.title} (active)` : m.match.footprint(node.path) || (node.dir && m.match.touchesFootprint(node.path)) ? "In the plan" : "Outside the plan"]);
         rows.push(["Size", node.dir ? `${node.children.length} items` : `${node.lines} lines`]);
-        return [h("div", { class: "p" }, node.dir ? `${node.path || m.repoName}/` : node.path), h("dl", {}, rows.map(([k, v]) => [h("dt", {}, k), h("dd", { class: "num" }, v)])), m.tipExtra?.(node, c) ?? null, h("div", { class: "hintk" }, node.dir ? "Double-click to zoom in" : "")];
+        return [h("div", { class: "p" }, node.dir ? `${node.path || m.repoName}/` : node.path), h("dl", {}, rows.map(([k, v]) => [h("dt", {}, k), h("dd", { class: "num" }, v)])), m.tipExtra?.(node, c) ?? null, h("div", { class: "hintk" }, node.dir ? "Double-click to zoom in · P pin · M monitor" : "P pin · M monitor its folder · Ctrl-click select")];
     }
 
     host.addEventListener("mousemove", (e) => {

@@ -10,6 +10,7 @@ import { buildTree, findNode } from "./squarify.js";
 import { createTreemap } from "./treemap.js";
 import { PIN_WEIGHT, autoRoot, commonDir, emptyLayout, followDecision, hunkList, hunkRows, layoutFromView, quietSinceZoom, sameLayout, viewChoices } from "./views.js";
 import { createWalkthrough, stopMarkdown } from "./walkthrough.js";
+import { startCommandTour } from "./tour.js";
 import { createSelection, withModifier } from "../selection.js";
 
 const STALE_MS = 30_000; // lease liveness, aged locally between heartbeats (owner.mjs STALE_MS)
@@ -133,6 +134,8 @@ export async function mountCommand(host, { documentId }) {
 
 export function unmountCommand() {
     flushPrefs();
+    cc.tour?.close();
+    cc.tour = null;
     cc.walk?.destroy();
     cc.walk = null;
     cc.walkLink = null;
@@ -403,6 +406,7 @@ function render() {
     const changes = changesAt(cc.events, replay ? at : Infinity);
     const offCount = [...changes.values()].filter(isOff).length;
     renderStrip(st, at, offCount);
+    renderNudge();
     const main = cc.host.querySelector(".cc");
     main.classList.toggle("replaying", replay);
     syncWalkthrough(st);
@@ -621,6 +625,7 @@ function buildStrip() {
             h("span", { class: "n" }),
         ),
         h("span", { class: "strip-grow" }),
+        h("span", { class: "tour-slot" }),
     );
 }
 
@@ -731,7 +736,9 @@ function renderMapHead(st, root, auto = false) {
     put(legend, pinsLegend ?? [h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active checkpoint"), h("span", {}, h("i", { class: "lg op" }), "Off-plan")]);
 
     const ctl = cc.host.querySelector(".view-ctl");
-    if (!st.plan) return put(ctl);
+    // Rebuilt only when what it shows changes: a 4 Hz rebuild could swallow a click between mousedown and mouseup.
+    const same = (key) => ctl.dataset.key === key || ((ctl.dataset.key = key), false);
+    if (!st.plan) return same("noplan") || put(ctl, tourButtons());
     const choices = viewChoices(st, prefs());
     const sugg = activeSuggestion(st);
     const current = choices.find((v) => v.id === cc.ui.viewId);
@@ -758,6 +765,8 @@ function renderMapHead(st, root, auto = false) {
     const view = st.walkthroughView;
     const walk = view && !cc.walk?.open ? st.walkthroughs.find((x) => x.id === view.id) : null;
     const revisingNow = cc.revising && Date.now() - cc.revising < 60_000 && !cc.walk?.open;
+    const key = JSON.stringify([choices.map((v) => [v.id, v.title, v.origin, v.phaseId]), select.value, custom, follow, !!showReturn, sugg?.id, walk && [walk.id, walk.stops.length, walk.title], !!revisingNow, current?.origin]);
+    if (same(key)) return;
     put(
         ctl,
         revisingNow ? h("span", { class: "revising", role: "status" }, h("span", { class: "pulse" }), "Agent is revising the walkthrough…") : null,
@@ -777,7 +786,45 @@ function renderMapHead(st, root, auto = false) {
                 schedule(true);
             },
         }),
+        tourButtons(),
     );
+}
+
+// ---------- guided tour (discoverability) ----------
+const HELP_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.4" r=".85" fill="currentColor"/></svg>';
+/** "?" always; plus a one-time "Take the tour" nudge until the tour has been started or dismissed on this whiteboard. */
+function tourButtons() {
+    return h("button", { class: "follow tour-help", title: "Tour the Command center (?)", "aria-label": "Tour the Command center", html: HELP_SVG, onclick: () => openTour() });
+}
+/** The nudge lives at the end of the instrument strip, where there is room; shown until started or dismissed. */
+function renderNudge() {
+    const slot = cc.host.querySelector(".strip .tour-slot");
+    const show = !prefs().guideSeen && !cc.tour;
+    if (slot.dataset.show === String(show)) return;
+    slot.dataset.show = String(show);
+    put(
+        slot,
+        show
+            ? h(
+                  "span",
+                  { class: "tour-nudge" },
+                  h("button", { class: "tour-nudge-go", onclick: () => openTour() }, "New here? Take the tour"),
+                  h("button", { class: "tour-nudge-x", title: "Dismiss", "aria-label": "Dismiss the tour suggestion", onclick: () => (savePrefs({ guideSeen: true }), schedule(true)) }, "✕"),
+              )
+            : null,
+    );
+}
+function openTour() {
+    if (cc.tour) return;
+    if (!prefs().guideSeen) savePrefs({ guideSeen: true });
+    cc.tour = startCommandTour({
+        hasPlan: () => !!cc.data?.state.plan,
+        onClose: () => {
+            cc.tour = null;
+            schedule(true);
+        },
+    });
+    schedule(true);
 }
 
 function saveCurrentView() {
@@ -834,6 +881,10 @@ function keydown(e) {
     if (e.key === "Escape" && cc.ui.menu) return closeMenu();
     if (e.key === "Escape" && cc.sel?.size) return cc.sel.clear();
     if (e.key === "Escape" && cc.walk?.open && !e.target.closest?.("#chat")) return cc.walk.close();
+    if (e.key === "?" && !cc.tour) {
+        e.preventDefault();
+        return openTour();
+    }
     const st = cc.data?.state;
     if (!st?.plan) return;
     const hover = cc.ui.hover;
