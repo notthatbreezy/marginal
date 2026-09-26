@@ -3950,3 +3950,270 @@ svg .muted {
 .cc .tn .hunks {
     pointer-events: none;
 }
+/* ---- Command M3: walkthrough pop-up, map linkage, tile add-to-chat, Command chat (chips, activity lane) ---- */
+.cc .walk {
+    top: var(--cc-top, 53px);
+    grid-template-columns: minmax(180px, 34%) minmax(0, 1fr);
+    width: max(520px, 46vw);
+    min-width: 0;
+    max-width: calc(100vw - 20px);
+    animation: tour-open 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cc .walk .tour-stage {
+    padding: 16px 12px 20px 14px;
+}
+.cc .walk .tour-top {
+    padding: 8px 10px 8px 22px;
+}
+.cc .walk .tour-body {
+    padding: 8px 22px 24px;
+}
+.cc .walk .tour-nav {
+    padding: 10px 14px 12px 22px;
+}
+.cc .walk .tour-nav .ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--muted);
+}
+.cc .walk .tour-nav .ghost:hover {
+    color: var(--fg);
+    background: var(--surface-2);
+}
+.cc .walk .rail .lbl .cat {
+    display: inline-block;
+}
+.cc .walk .walk-status {
+    display: contents;
+}
+.cc .walk .tour-h.revised {
+    animation: cc-revised 1.6s ease-out;
+}
+@keyframes cc-revised {
+    from {
+        background: var(--purple-muted);
+    }
+}
+.cc .walk .walk-meta .path {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--fg);
+}
+.cc .walk .wf {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--fg);
+}
+.cc .walk .wf .fdot {
+    background: var(--fc);
+}
+.cc .walk .cv + .cv {
+    margin-top: 12px;
+}
+/* While a walkthrough is open the map shares the wall with it: map on the left, pop-up on the right. */
+.cc.walking {
+    padding-right: calc(max(520px, 46vw) + 10px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "strip" "map" "time";
+}
+.cc.walking > .rail-fronts {
+    display: none;
+}
+.cc .tn .badge-n {
+    z-index: 2;
+    pointer-events: none;
+}
+.cc .tn .stop-ping {
+    box-shadow: 0 0 0 2px var(--blue);
+}
+.cc .tn.in-chat {
+    outline: 1.5px dashed color-mix(in srgb, var(--blue) 70%, transparent);
+    outline-offset: -3px;
+}
+.cc .tn.picked.in-chat {
+    outline-style: solid;
+}
+.cc .tile-add {
+    z-index: 22;
+    cursor: pointer;
+}
+.cc .walk-reopen {
+    white-space: nowrap;
+}
+.cc .map-head .revising {
+    white-space: nowrap;
+}
+#multibar .primary-ish {
+    color: var(--blue);
+    font-weight: 600;
+}
+
+/* Command chat: the shared popup in "command" mode */
+#chat.cmd-chat {
+    --front-0: var(--blue);
+    --front-1: var(--purple);
+    --front-2: color-mix(in srgb, var(--blue) 50%, var(--green));
+    --front-3: color-mix(in srgb, var(--purple) 55%, var(--red));
+    --front-4: color-mix(in srgb, var(--red) 45%, var(--yellow));
+    --front-5: color-mix(in srgb, var(--fg) 55%, var(--bg));
+}
+#chat .f1 { --fc: var(--front-0); }
+#chat .f2 { --fc: var(--front-1); }
+#chat .f3 { --fc: var(--front-2); }
+#chat .f4 { --fc: var(--front-3); }
+#chat .f5 { --fc: var(--front-4); }
+#chat .f6 { --fc: var(--front-5); }
+#chat .feedlane {
+    flex: none;
+    margin: 0 10px 4px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 17px;
+}
+#chat .feedlane .fh {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--fg);
+    font-size: 11.5px;
+    margin-bottom: 3px;
+}
+#chat .feedlane .fh .grow {
+    flex: 1;
+}
+#chat .feedlane .fh button {
+    border: none;
+    background: transparent;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 0 4px;
+    cursor: pointer;
+}
+#chat .feedlane .fh button:hover {
+    color: var(--fg);
+}
+#chat .feedlane .fl.open {
+    max-height: 160px;
+    overflow: auto;
+}
+#chat .feedlane .l {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#chat .feedlane .l.tool {
+    opacity: 0.8;
+}
+#chat .feedlane .tm2 {
+    font-variant-numeric: tabular-nums;
+    margin-right: 6px;
+    opacity: 0.8;
+}
+#chat .chips {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 10px 2px;
+}
+#chat .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 1px 2px 1px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 19px;
+    background: var(--surface-2);
+}
+#chat .chip .lbl {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#chat .chip .k {
+    color: var(--muted);
+    font-weight: 400;
+}
+#chat .chip .x {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 10px;
+    cursor: pointer;
+}
+#chat .chip .x:hover {
+    color: var(--fg);
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+#chat .chip.pathc {
+    background: var(--blue-muted);
+}
+#chat .chip.pathc .lbl {
+    font-family: var(--mono);
+    font-size: 11px;
+}
+#chat .chip.frontc {
+    background: color-mix(in srgb, var(--fc) 13%, transparent);
+    color: color-mix(in srgb, var(--fc) 80%, var(--fg));
+    font-weight: 600;
+}
+#chat .chip.frontc .fdot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--fc);
+}
+#chat .chip.stopc {
+    background: var(--purple-muted);
+    color: color-mix(in srgb, var(--purple) 80%, var(--fg));
+    font-weight: 600;
+}
+#chat .chip.quotec {
+    background: var(--yellow-muted);
+}
+#chat .chat-blocked {
+    flex: none;
+    margin: 6px 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 17px;
+}
+#chat-text:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}.cc .walk-range {
+    flex-wrap: wrap;
+    row-gap: 2px;
+}
+.cc .walk-range span {
+    white-space: nowrap;
+}
+/* The chat button sits above the timeline, left of the fronts rail (or of the walkthrough while one is open). */
+body:has(#main.cc-host) #chat-fab {
+    right: 284px;
+    bottom: 84px;
+}
+body:has(#main.cc-host .cc.walking) #chat-fab {
+    right: calc(max(520px, 46vw) + 30px);
+}
+@media (max-width: 900px) {
+    body:has(#main.cc-host) #chat-fab {
+        right: 20px;
+    }
+}

@@ -18,6 +18,7 @@
             <div id="center">
                 <div id="multibar" hidden>
                     <span id="multi-count"></span>
+                    <button id="multi-chat" class="primary-ish" title="Add all selected to the Command chat" hidden>Add to chat</button>
                     <button id="multi-comment" title="Comment on all selected">Comment</button>
                     <button id="multi-copy" title="Copy all selected">Copy</button>
                     <button id="multi-clear" class="x" title="Clear selection (Esc)" aria-label="Clear selection">
@@ -67,7 +68,9 @@
                     <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
                 </button>
             </div>
+            <div id="chat-feed" class="feedlane" hidden aria-label="Orchestrator activity"></div>
             <div id="chat-log" aria-live="polite"></div>
+            <div id="chat-chips" class="chips" hidden aria-label="Focus"></div>
             <div class="chat-input" data-os-rail>
                 <textarea id="chat-text" rows="1" placeholder="Ask about this…" aria-label="Message Copilot"></textarea>
                 <button id="chat-send" class="chat-icon" title="Send (Shift+Enter)" aria-label="Send" disabled>

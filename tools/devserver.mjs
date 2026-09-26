@@ -1,6 +1,8 @@
 // Headless dev server for the Command tab: a temp "relay" repo with worktrees, a real plan + fronts driven through the
 // command actions, scripted edits, and the real loopback server. No Copilot session needed; nothing takes focus.
-// Usage: node tools/devserver.mjs [--edits] [--seconds=N]   → prints JSON {url, instance, docId, repo, fronts}
+// Usage: node tools/devserver.mjs [--edits] [--walk] [--revising] [--seconds=N]   → prints JSON {url, instance, docId, repo, fronts}
+//   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
+//   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -131,10 +133,66 @@ for (const step of script) {
 }
 await call("command_front", { op: "status", id: "triggers", status: "blocked", note: "Needs a decision on cron-parse's public API" });
 
+if (args.has("--walk") || args.has("--revising")) {
+    const policy = `import type { RunError } from "../errors";
+
+export type RetryPolicy = {
+    maxAttempts: number;
+    baseDelayMs: number;
+    maxDelayMs: number;
+    retryOn: (err: RunError) => boolean;
+};
+
+export const DEFAULT_POLICY: RetryPolicy = {
+    maxAttempts: 5,
+    baseDelayMs: 500,
+    maxDelayMs: 30_000,
+    retryOn: (err) => err.transient,
+};
+
+/** Delay before the next attempt, or null when the run should fail now. */
+export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): number | null {
+    if (attempt >= policy.maxAttempts || !policy.retryOn(err)) return null;
+    const exp = policy.baseDelayMs * 2 ** (attempt - 1);
+    return Math.min(exp, policy.maxDelayMs);
+}
+`;
+    writeFileSync(join(wts.runner, "src/runner/retry/policy.ts"), policy);
+    const ex = readFileSync(join(wts.runner, "src/runner/executor.ts"), "utf8").split("\n");
+    ex.splice(10, 3, "  private async handleFailure(err: RunError, attempt: number) {", "    const delay = nextDelay(this.policy, attempt, err);", "    if (delay === null) throw err; // exhausted or non-retryable", "    await this.queue.requeue(this.job, jitteredBackoff(delay));", "  }");
+    writeFileSync(join(wts.runner, "src/runner/executor.ts"), ex.join("\n"));
+    await new Promise((r) => setTimeout(r, 1500));
+    const walkthrough = {
+        id: "p1-p2",
+        title: "What changed from Scaffold to Retry policy",
+        from: { phaseId: "p1" },
+        to: { ref: "live", frontId: "runner" },
+        stops: [
+            { id: "policy", title: "A policy decides whether and when to retry", category: "feature", explanation: "`RetryPolicy` is plain data plus one predicate. `nextDelay()` returns **null** when the run should fail now (attempts exhausted, or the error isn't transient), otherwise an exponential delay capped at `maxDelayMs`.", ranges: [{ file: "src/runner/retry/policy.ts", startLine: 3, endLine: 22 }] },
+            { id: "executor", title: "The executor asks the policy instead of throwing", category: "feature", explanation: "Before P2 any step failure bubbled straight out of `handleFailure`. Now it asks `nextDelay()` and requeues the job with jittered backoff; `null` still throws.", ranges: [{ file: "src/runner/executor.ts", startLine: 9, endLine: 17 }] },
+            { id: "backoff", title: "Backoff adds jitter and a ceiling", category: "feature", explanation: "Jitter spreads retries of jobs that failed together, so a flaky dependency doesn't get a thundering herd.", ranges: [{ file: "src/runner/retry/backoff.ts", startLine: 1, endLine: 8 }] },
+            { id: "offplan", title: "Off-plan helper in util/time.ts", category: "risk", explanation: "A 14-line helper landed in `src/util/time.ts`, which P2 doesn't list. Worth a look before merging.", ranges: [{ file: "src/util/time.ts", startLine: 118, endLine: 126 }] },
+        ],
+    };
+    const rw = (w) => ACTIONS.command_walkthrough({ op: "show", walkthrough: w }, ctx);
+    if (args.has("--revising")) await rw({ ...walkthrough, stops: [{ ...walkthrough.stops[0], ranges: [{ file: "src/runner/retry/polcy.ts", startLine: 1, endLine: 5 }] }] });
+    else {
+        const r = await rw(walkthrough);
+        if (!r.ok) throw new Error(`walkthrough: ${JSON.stringify(r.issues)}`);
+    }
+}
+const { activity } = await import("../lib/command/index.mjs");
+const t0 = Date.now();
+activity.push(
+    { at: new Date(t0 - 9 * 60_000).toISOString(), kind: "message", text: "P2 · Retry policy started (runner-retry, triggers-sched, tests)" },
+    { at: new Date(t0 - 6 * 60_000).toISOString(), kind: "tool", text: "create session · tests worktree relay-tests" },
+    { at: new Date(t0 - 2 * 60_000).toISOString(), kind: "message", text: "Told triggers-sched to wait for the cron-parse API decision" },
+);
+
 const instances = new Map([["dev", { documentId: doc.documentId }]]);
 instances.save = () => {};
 const chat = { subscribe: () => () => {}, send: async () => ({ threadId: "t", messageId: "m" }), end: () => {} };
-const s = await startServer({ chat, instances, getSessionId: () => "orchestrator-dev" });
+const s = await startServer({ chat, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
 process.stdout.write(JSON.stringify({ url: s.urlFor("dev"), instance: "dev", docId: doc.documentId, repo, fronts: wts, tmp }) + "\n");
 
 if (args.has("--edits")) {

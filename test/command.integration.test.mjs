@@ -24,7 +24,7 @@ const gitm = await import("../lib/git.mjs");
 const { ACTIONS, stats } = await import("../lib/command/actions.mjs");
 const poller = await import("../lib/command/poller.mjs");
 const { gitStats } = await import("../lib/command/gitx.mjs");
-const { commandDir, eventsSince, readState, unwatchCommand } = await import("../lib/command/state.mjs");
+const { commandDir, eventsSince, onCommand, readState, unwatchCommand } = await import("../lib/command/state.mjs");
 const { stopHeartbeat } = await import("../lib/command/owner.mjs");
 
 poller.CADENCE.fast = 150;
@@ -264,6 +264,72 @@ test("done without a commit snapshots into a hidden ref; HEAD, index and status 
     assert.match(git(repo, "show", `${cp.sha}:tests/executor.test.ts`), /retry/);
     assert.equal(git(wt2, "rev-parse", "HEAD"), head);
     assert.equal(git(wt2, "status", "--porcelain"), status);
+});
+
+test("command_diff resolves checkpoint refs; unfinished phases are unresolvable with a hint", async () => {
+    const d = await call("command_diff", { from: { phaseId: "p1" }, to: { phaseId: "p2" } }, ctxB); // read-only: any session
+    assert.ok(d.ok, JSON.stringify(d));
+    assert.ok(d.files.some((f) => f.path === "tests/executor.test.ts"));
+    assert.match(d.summary, /P1 → P2/);
+    const p = await call("command_diff", { from: { ref: "base" }, to: { phaseId: "p2" }, format: "patch", paths: ["tests/executor.test.ts"] });
+    assert.match(p.patch, /retry/);
+    const bad = await call("command_diff", { from: { phaseId: "p3" }, to: { ref: "live" } });
+    assert.deepEqual(bad.issues.map((i) => [i.path, i.code]), [["from.phaseId", "ref_unresolvable"], ["to.frontId", "required"]]);
+    assert.match(bad.issues[0].hint, /live/);
+});
+
+test("walkthrough: invalid show → all issues + revising event, nothing stored; show / edit / stale / close", async () => {
+    const d = doc.documentId;
+    const seen = [];
+    const off = onCommand((e) => e.documentId === d && e.kind === "revising" && seen.push(e));
+    const before = JSON.stringify(readState(d));
+    const stop = (id, ranges, extra = {}) => ({ id, title: `Stop ${id}`, explanation: "Why it **matters**.", ranges, ...extra });
+    const bad = await call("command_walkthrough", {
+        op: "show",
+        walkthrough: { id: "p1-p2", title: "P1 to P2", from: { phaseId: "p1" }, to: { phaseId: "p2" }, stops: [stop("a", [{ file: "tests/executor.tst.ts", startLine: 1, endLine: 2 }]), stop("a", [{ file: "tests/executor.test.ts", startLine: 1, endLine: 99 }], { category: "nope" })] },
+    });
+    assert.equal(bad.ok, false);
+    const codes = bad.issues.map((i) => `${i.path}:${i.code}`);
+    assert.ok(codes.includes("walkthrough.stops[0].ranges[0].file:path_not_in_diff"), codes.join());
+    assert.match(bad.issues.find((i) => i.code === "path_not_in_diff").hint, /tests\/executor\.test\.ts/);
+    assert.ok(codes.includes("walkthrough.stops[1].ranges[0].endLine:range_out_of_bounds"), codes.join());
+    assert.ok(codes.includes("walkthrough.stops[1].category:enum"), codes.join());
+    assert.ok(codes.includes("walkthrough.stops[1].id:duplicate_id"), codes.join());
+    assert.equal(JSON.stringify(readState(d)), before);
+    assert.equal(seen.at(-1)?.active, true);
+
+    const ok = await call("command_walkthrough", { op: "show", walkthrough: { id: "p1-p2", title: "P1 to P2", from: { phaseId: "p1" }, to: { phaseId: "p2" }, stops: [stop("a", [{ file: "tests/executor.test.ts", startLine: 1, endLine: 2 }], { category: "test" })] } });
+    assert.ok(ok.ok, JSON.stringify(ok));
+    assert.equal(seen.at(-1)?.active, false, "success clears revising");
+    let st = readState(d);
+    assert.equal(st.walkthroughs[0].revision, 1);
+    assert.deepEqual(st.walkthroughView.stopId, "a");
+    assert.equal(st.walkthroughs[0].pins.base, st.plan.phases[0].state.checkpoint.sha);
+
+    const stale = await call("command_walkthrough", { op: "edit", id: "p1-p2", baseRevision: 7, edits: [{ op: "focus_stop", stopId: "a" }] });
+    assert.equal(stale.issues[0].code, "stale_revision");
+    const ed = await call("command_walkthrough", {
+        op: "edit",
+        id: "p1-p2",
+        baseRevision: 1,
+        edits: [
+            { op: "update_stop", stopId: "a", stop: { explanation: "Now clearer." } },
+            { op: "insert_stop", afterId: "a", stop: stop("b", [{ file: "tests/executor.test.ts", startLine: 2, endLine: 2 }]) },
+            { op: "focus_stop", stopId: "b" },
+        ],
+    });
+    assert.ok(ed.ok, JSON.stringify(ed));
+    st = readState(d);
+    const w = st.walkthroughs[0];
+    assert.deepEqual([w.revision, w.stops.map((s) => s.id), w.stops[0].explanation, w.lastEdit.changed, w.lastEdit.inserted, st.walkthroughView.stopId], [2, ["a", "b"], "Now clearer.", ["a"], ["b"], "b"]);
+    const onlyOne = await call("command_walkthrough", { op: "edit", id: "p1-p2", baseRevision: 2, edits: [{ op: "remove_stop", stopId: "a" }, { op: "remove_stop", stopId: "b" }] });
+    assert.equal(onlyOne.issues[0].code, "too_few");
+    const read = await call("command_read", { include: ["walkthrough", "focus"] }, ctxB);
+    assert.equal(read.walkthrough.current.revision, 2);
+    assert.deepEqual(read.focus, { items: [] });
+    assert.ok((await call("command_walkthrough", { op: "close", id: "p1-p2" })).ok);
+    assert.equal(readState(d).walkthroughView, null);
+    off();
 });
 
 test("a new plan base re-baselines totals as initial observations, not edits", async () => {

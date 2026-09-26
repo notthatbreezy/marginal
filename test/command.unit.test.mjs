@@ -323,3 +323,25 @@ test("a carried-forward done phase without a checkpoint is repaired on plan re-s
     const plan = parsePlan(new Issues(), { id: "retry", title: "R", phases: [{ id: "p1", title: "a" }, { id: "p2", title: "b" }] }, { base: "abc", previous: prev });
     assert.deepEqual(plan.phases.map((p) => p.state.status), ["active", "pending"]);
 });
+// ---------- M3 ----------
+test("activity lane: root messages (first line) and tool starts; subagents, chat turns and chatter excluded", async () => {
+    const { activityOf } = await import("../lib/command/mission.mjs");
+    assert.deepEqual(activityOf({ type: "assistant.message", data: { content: "\n**P2** started\nmore" } }, { now: 0 }), { at: new Date(0).toISOString(), kind: "message", text: "P2 started" });
+    assert.equal(activityOf({ type: "tool.execution_start", data: { toolName: "create_session", arguments: { name: "tests" } } }).text, "create session · tests");
+    assert.equal(activityOf({ type: "tool.execution_start", data: { toolName: "report_intent" } }), null);
+    assert.equal(activityOf({ type: "assistant.message", data: { content: "x", parentToolCallId: "t" } }), null);
+    assert.equal(activityOf({ type: "assistant.message", data: { content: "x" } }, { isChatTurn: () => true }), null);
+});
+
+test("focus payload from the panel keeps only well-formed §7.10 items", async () => {
+    const { parseFocus } = await import("../lib/server.mjs");
+    const f = parseFocus({ items: [{ kind: "path", path: "src/a", isDir: 1 }, { kind: "front" }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }, { kind: "range", file: "a.ts", startLine: 0, endLine: 5, pins: { base: "b", head: "h" } }, { kind: "evil", path: "x" }], replayAt: "2026-01-01T00:00:00Z" });
+    assert.deepEqual(f, { items: [{ kind: "path", path: "src/a", isDir: true }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }], replayAt: "2026-01-01T00:00:00Z" });
+    assert.deepEqual(parseFocus(null), { items: [] });
+});
+
+test("instructions topic 'command' documents the protocol", async () => {
+    const { getInstructions } = await import("../lib/instructions.mjs");
+    const t = getInstructions("command");
+    for (const s of ["command_plan", "command_front", "command_diff", "command_walkthrough", "baseRevision", "issues"]) assert.ok(t.includes(s), s);
+});

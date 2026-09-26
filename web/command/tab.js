@@ -8,10 +8,13 @@ import { renderFronts, renderTimeline } from "./fronts.js";
 import { renderMonitors } from "./monitors.js";
 import { buildTree, findNode } from "./squarify.js";
 import { createTreemap } from "./treemap.js";
-import { PIN_WEIGHT, autoRoot, emptyLayout, followDecision, hunkList, hunkRows, layoutFromView, quietSinceZoom, sameLayout, viewChoices } from "./views.js";
+import { PIN_WEIGHT, autoRoot, commonDir, emptyLayout, followDecision, hunkList, hunkRows, layoutFromView, quietSinceZoom, sameLayout, viewChoices } from "./views.js";
+import { createWalkthrough, stopMarkdown } from "./walkthrough.js";
+import { createSelection, withModifier } from "../selection.js";
 
 const STALE_MS = 30_000; // lease liveness, aged locally between heartbeats (owner.mjs STALE_MS)
 const MAX_MONITORS = 3;
+const ADD_CHAT_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 5.5v4M6 7.5h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const FOLLOW_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="1.9" fill="currentColor"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
 
 const cc = {
@@ -28,6 +31,13 @@ const cc = {
     lastRender: 0,
     liveTimer: 0,
     loading: null, // SSE events that arrive while a full reload is in flight
+    walk: null, // walkthrough pop-up controller
+    walkLink: null, // { files: Map(path → stop #), stopOn, root, key } while a walkthrough is open
+    sel: null, // multi-select over map tiles
+    inChat: new Set(), // paths currently in the Command chat focus
+    activity: [],
+    feedOpen: false,
+    ownerHere: null,
     announced: { phases: "", offPlan: 0 },
 };
 
@@ -65,12 +75,71 @@ export async function mountCommand(host, { documentId }) {
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onDown, true);
     cc.off.push(() => document.removeEventListener("keydown", onKey), () => document.removeEventListener("pointerdown", onDown, true));
-    cc.liveTimer = setInterval(() => cc.data && schedule(), 5000); // ages "live" rings, lease liveness and relative times
+    cc.liveTimer = setInterval(() => {
+        if (!cc.data) return;
+        schedule(); // ages "live" rings, lease liveness and relative times
+        cc.walk?.tick();
+    }, 5000);
+    cc.sel = createSelection({
+        keyOf: (el) => el.dataset.path,
+        elOf: (p) => cc.tm?.elFor(p) ?? null,
+        units: () => [...cc.host.querySelectorAll(".stage .tn")],
+        actions: {
+            chat: (keys) => (svc.addToCommandChat?.(keys.map(pathItem)), cc.sel.clear()),
+            comment: (keys) => (svc.addToCommandChat?.(keys.map(pathItem), { quote: keys.join("\n"), quoteLabel: `${keys.length} path${keys.length === 1 ? "" : "s"}` }), cc.sel.clear()),
+            copy: async (keys) => svc.toast?.((await svc.copyText?.(keys.join("\n"))) ? `Copied ${keys.length} path${keys.length === 1 ? "" : "s"}` : "Copy failed"),
+        },
+    });
+    cc.walk = createWalkthrough({
+        mount: root,
+        frontOf: (path) => {
+            const c = changesAt(cc.events).get(path);
+            return c ? cc.data.state.fronts.find((f) => f.id === c.lead) ?? null : null;
+        },
+        onStop: (w, stop) => linkStop(w, stop),
+        onClose: (w, { user }) => {
+            cc.walkLink = null;
+            if (user && w) savePrefs({ walkthroughDismissed: { id: w.id, seq: cc.data.state.walkthroughView?.seq ?? 0 } });
+            schedule(true);
+        },
+        onCopy: async (w, stop, i) => svc.toast?.((await svc.copyText?.(stopMarkdown(w, stop, i))) ? "Stop copied as Markdown" : "Copy failed"),
+        onComment: (w, stop, i) => svc.addToCommandChat?.([stopItem(w, stop, i)], { quote: `Stop ${i + 1}: ${stop.title}\n\n${stop.explanation}`, quoteLabel: `stop ${i + 1}` }),
+        onAsk: (w, stop, i) => svc.addToCommandChat?.([stopItem(w, stop, i), ...stop.ranges.map((r) => rangeItem(w, r))]),
+    });
+    Object.assign(svc, {
+        commandChatBlocked: chatBlockedReason,
+        commandFocusPayload: (focus) => ({ items: focus.map((f) => f.item), ...(cc.ui.at !== null ? { replayAt: new Date(cc.ui.at).toISOString() } : {}) }),
+        onCommandChatOpen: () => {
+            renderFeed();
+            // While a walkthrough is open, the chat sits to its left instead of over its stop actions.
+            const walk = cc.host?.querySelector(".walk");
+            const box = document.getElementById("chat");
+            if (!walk || !box) return;
+            const wr = walk.getBoundingClientRect();
+            if (box.getBoundingClientRect().right > wr.left + 1) box.style.right = `${Math.max(0, innerWidth - wr.left + 12)}px`;
+        },
+        onFocusChange: (focus) => {
+            cc.inChat = new Set(focus.filter((f) => f.item.kind === "path").map((f) => f.item.path));
+            schedule(true);
+        },
+    });
+    const place = () => root.style.setProperty("--cc-top", `${Math.round(host.getBoundingClientRect().top) + 8}px`);
+    place();
+    addEventListener("resize", place);
+    cc.off.push(() => removeEventListener("resize", place));
     await reloadAll();
+    loadActivity();
 }
 
 export function unmountCommand() {
     flushPrefs();
+    cc.walk?.destroy();
+    cc.walk = null;
+    cc.walkLink = null;
+    cc.sel?.clear();
+    cc.sel = null;
+    svc.hideCommandChat?.();
+    for (const k of ["commandChatBlocked", "commandFocusPayload", "onCommandChatOpen", "onFocusChange"]) delete svc[k];
     for (const off of cc.off) off();
     cc.off = [];
     clearInterval(cc.liveTimer);
@@ -100,6 +169,7 @@ async function reloadAll() {
         const [data, ev, tree] = await Promise.all([api(`/command/state?${q()}`), api(`/command/events?${q()}&since=0`), api(`/command/tree?${q()}`)]);
         if (!isMounted()) return;
         cc.data = data;
+        if (data.revising?.active) cc.revising = Date.parse(data.revising.at); // a rejection that happened before this panel connected
         cc.events = mergeEvents(ev.events, cc.loading); // keep SSE deltas that raced the snapshot
         cc.files = tree.files;
         restoreLayout();
@@ -144,6 +214,13 @@ function onEvent(ev) {
         cc.data.lease = ev.lease;
         if (ev.lease?.sessionId !== was) reloadState(); // ownership moved: server recomputes isOwnerHere
         else schedule();
+    } else if (ev.kind === "revising") {
+        cc.walk?.revising(ev.active);
+        cc.revising = ev.active ? Date.now() : 0;
+        schedule(true);
+    } else if (ev.kind === "activity") {
+        cc.activity = [...cc.activity, ev.item].slice(-50);
+        renderFeed();
     } else if (ev.kind === "state" || ev.kind === "prefs") reloadState();
     else if (ev.kind === "compacted" || ev.kind === "tree") reloadAll();
 }
@@ -328,6 +405,9 @@ function render() {
     renderStrip(st, at, offCount);
     const main = cc.host.querySelector(".cc");
     main.classList.toggle("replaying", replay);
+    syncWalkthrough(st);
+    main.classList.toggle("walking", !!cc.walk?.open);
+    syncOwner();
     const empty = cc.host.querySelector(".cc-empty");
     if (!st.plan) {
         renderMapHead(st, "");
@@ -342,7 +422,7 @@ function render() {
     cc.host.querySelector(".timeline").hidden = false;
     const L = cc.ui.layout;
     const auto = L.root === null;
-    let root = auto ? autoRoot(st.plan, [...changes.keys()]) : L.root;
+    let root = cc.walkLink ? cc.walkLink.root : auto ? autoRoot(st.plan, [...changes.keys()]) : L.root;
     if (root && !findNode(cc.tree, root)) root = "";
     renderMapHead(st, root, auto);
     const fronts = new Map(st.fronts.map((f) => [f.id, f]));
@@ -376,7 +456,12 @@ function render() {
         offPlan: (path, c) => isOff(c),
         decorateFile: replay ? null : decorateHunks,
         tipExtra: (node, c) => (isOff(c) ? h("div", { class: "warn" }, "Off-plan: outside every active checkpoint this front is working on.") : null),
+        badges: cc.walkLink?.files,
+        stopOn: cc.walkLink?.stopOn,
+        stopKey: cc.walkLink?.key,
+        inChat: cc.inChat,
     });
+    cc.sel.paint(); // tiles are rebuilt every render; re-apply the selection
     renderFronts(cc.host.querySelector(".rail-fronts"), frontRows(st, changes), {
         focusId: cc.ui.focusFront,
         series: sparkSeries(now),
@@ -389,7 +474,7 @@ function render() {
             cc.ui.hoverFront = id;
             schedule(true);
         },
-        onAddChat: svc.addToCommandChat ? (id) => svc.addToCommandChat({ kind: "front", id }) : null,
+        onAddChat: svc.addToCommandChat ? (id) => svc.addToCommandChat([frontItem(fronts.get(id))]) : null,
     });
     const range = timeRange(st, now);
     renderTimeline(cc.host.querySelector(".timeline"), {
@@ -537,12 +622,40 @@ function buildMap() {
         stage,
         h("div", { class: "dock", hidden: true, "aria-label": "Monitors" }),
     );
+    const add = h("button", { class: "addchat tile-add", hidden: true, title: "Add to chat", "aria-label": "Add this to the Command chat", html: ADD_CHAT_SVG, onclick: () => add.dataset.path !== undefined && svc.addToCommandChat?.([pathItem(add.dataset.path)]) });
+    let hideT = 0;
+    add.addEventListener("pointerenter", () => clearTimeout(hideT));
+    add.addEventListener("pointerleave", () => (hideT = setTimeout(() => (add.hidden = true), 150)));
+    stage.append(add);
     cc.tm = createTreemap(stage.querySelector(".tm"), {
         onZoom: (p) => zoomTo(p),
-        onHover: (p) => {
+        onHover: (p, el) => {
             cc.ui.hover = p;
+            clearTimeout(hideT);
+            if (p === null || !el || !svc.addToCommandChat) return void (hideT = setTimeout(() => (add.hidden = true), 150));
+            const r = el.getBoundingClientRect();
+            const sr = stage.getBoundingClientRect();
+            add.dataset.path = p;
+            add.style.left = `${Math.max(2, Math.min(r.right - sr.left - 26, sr.width - 26))}px`;
+            add.style.top = `${Math.max(2, r.top - sr.top + 3)}px`;
+            add.hidden = false;
         },
     });
+    // Ctrl/Cmd+click toggles a tile, Shift+click extends; a plain click elsewhere on the map clears.
+    stage.addEventListener("mousedown", (e) => withModifier(e) && e.target.closest(".tn") && e.preventDefault(), true);
+    stage.addEventListener(
+        "click",
+        (e) => {
+            const el = e.target.closest(".tn");
+            if (withModifier(e) && el) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.shiftKey) cc.sel.range(el);
+                else cc.sel.toggle(el);
+            } else if (cc.sel?.size && !e.target.closest(".addchat")) cc.sel.clear();
+        },
+        true,
+    );
     return section;
 }
 
@@ -592,8 +705,13 @@ function renderMapHead(st, root, auto = false) {
         choices.map((v) => h("option", { value: v.id }, `${v.origin === "user" ? "" : "✦ "}${v.title ?? v.id}${v.phaseId ? ` · ${v.phaseId.toUpperCase()}` : ""}`)),
     );
     select.value = current ? current.id : custom ? "__custom" : "__auto";
+    const view = st.walkthroughView;
+    const walk = view && !cc.walk?.open ? st.walkthroughs.find((x) => x.id === view.id) : null;
+    const revisingNow = cc.revising && Date.now() - cc.revising < 60_000 && !cc.walk?.open;
     put(
         ctl,
+        revisingNow ? h("span", { class: "revising", role: "status" }, h("span", { class: "pulse" }), "Agent is revising the walkthrough…") : null,
+        walk ? h("button", { class: "return walk-reopen", title: `Reopen “${walk.title}”`, onclick: () => (savePrefs({ walkthroughDismissed: null }), schedule(true)) }, `▸ Walkthrough · ${walk.stops.length} stops`) : null,
         showReturn ? h("button", { class: "return", title: `Apply the view suggested for ${sugg.title}`, onclick: () => applyView(sugg.suggestedView, { phaseId: sugg.id }) }, "Return to suggested") : null,
         custom ? h("button", { class: "return save-view", title: "Save this layout as a view", onclick: () => saveCurrentView() }, "Save view") : null,
         h("label", { class: "viewpick", title: "Views set the zoom, pins and monitors" }, current?.origin && current.origin !== "user" ? h("span", { class: "spark-ic", "aria-hidden": "true" }, "✦") : null, "View:", select),
@@ -643,6 +761,7 @@ function openPhaseMenu(p, anchor, st) {
     if (first) items.push(["Replay from its first edit", at(Date.parse(first.at))]);
     if (p.state.status === "done") items.push([`Replay at completion${p.state.checkpoint ? ` (${p.state.checkpoint.sha.slice(0, 7)})` : ""}`, at(Date.parse(p.state.since))]);
     if (cc.ui.at !== null) items.push(["Back to live", at(null)]);
+    if (svc.addToCommandChat) items.push(["Ask about this phase", () => (closeMenu(), svc.addToCommandChat([phaseItem(p)]))]);
     const menu = h(
         "div",
         { class: "cc-menu", role: "menu", "aria-label": `${p.title} actions` },
@@ -663,6 +782,8 @@ function keydown(e) {
     if (!isMounted() || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.target.closest?.("input, textarea, select, [contenteditable], .chat")) return;
     if (e.key === "Escape" && cc.ui.menu) return closeMenu();
+    if (e.key === "Escape" && cc.sel?.size) return cc.sel.clear();
+    if (e.key === "Escape" && cc.walk?.open && !e.target.closest?.("#chat")) return cc.walk.close();
     const st = cc.data?.state;
     if (!st?.plan) return;
     const hover = cc.ui.hover;
@@ -679,6 +800,91 @@ function keydown(e) {
         e.preventDefault();
         zoomTo(root.includes("/") ? root.slice(0, root.lastIndexOf("/")) : "");
     }
+}
+
+// ---------- conversation (M3): focus items, chat gating, activity lane ----------
+function pathItem(path) {
+    const isDir = !!findNode(cc.tree, path)?.dir;
+    return { key: `path:${path}`, kindLabel: isDir ? "dir" : "file", label: `${path || cc.data.repository}${isDir ? "/" : ""}`, cls: "pathc", item: { kind: "path", path, isDir } };
+}
+function frontItem(f) {
+    return { key: `front:${f.id}`, label: f.label, cls: `frontc f${f.color + 1}`, dot: true, item: { kind: "front", frontId: f.id } };
+}
+function phaseItem(p) {
+    return { key: `phase:${p.id}`, kindLabel: "phase", label: p.id.toUpperCase(), title: p.title, cls: "stopc", item: { kind: "phase", phaseId: p.id } };
+}
+function stopItem(w, stop, i) {
+    return { key: `stop:${w.id}:${stop.id}`, kindLabel: "stop", label: String(i + 1), title: stop.title, cls: "stopc", item: { kind: "stop", walkthroughId: w.id, stopId: stop.id, revision: w.revision } };
+}
+function rangeItem(w, r) {
+    const name = r.file.slice(r.file.lastIndexOf("/") + 1);
+    return { key: `range:${r.file}:${r.startLine}-${r.endLine}:${w.pins.head}`, kindLabel: "lines", label: `${name}:${r.startLine}–${r.endLine}`, title: r.file, cls: "pathc", item: { kind: "range", file: r.file, startLine: r.startLine, endLine: r.endLine, pins: { base: w.pins.base, head: w.pins.head } } };
+}
+
+function chatBlockedReason() {
+    if (!cc.data) return "Loading…";
+    if (cc.data.isOwnerHere && leaseLive()) return null;
+    const l = cc.data.lease;
+    if (l && leaseLive()) return `The Command chat talks to the orchestrator (session ${l.sessionId.slice(0, 8)}). Open this whiteboard in that session to chat with it.`;
+    return "No orchestrator is running this plan right now. The Command chat opens in the session that sets the plan (command_plan).";
+}
+/** Ownership can change under an open chat (lease taken over, or went stale). */
+function syncOwner() {
+    const here = !!cc.data?.isOwnerHere && leaseLive();
+    if (here === cc.ownerHere) return;
+    cc.ownerHere = here;
+    svc.refreshCommandChatBlocked?.();
+    if (here) loadActivity();
+}
+
+async function loadActivity() {
+    try {
+        const r = await api(`/command/activity?${q()}`);
+        if (!isMounted()) return;
+        cc.activity = r.items ?? [];
+        renderFeed();
+    } catch {}
+}
+function renderFeed() {
+    const feed = document.getElementById("chat-feed");
+    if (!feed || !svc.commandChatOpen?.()) return;
+    const items = [...cc.activity].reverse();
+    feed.hidden = !items.length || !cc.ownerHere;
+    if (feed.hidden) return;
+    const shown = cc.feedOpen ? items.slice(0, 50) : items.slice(0, 3);
+    const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    put(
+        feed,
+        h("div", { class: "fh" }, "Orchestrator activity", h("span", { class: "grow" }), items.length > 3 ? h("button", { onclick: () => ((cc.feedOpen = !cc.feedOpen), renderFeed()) }, cc.feedOpen ? "Show less" : `Show all ${items.length}`) : null),
+        h("div", { class: `fl${cc.feedOpen ? " open" : ""}` }, shown.map((it) => h("div", { class: `l ${it.kind}`, title: it.text }, h("span", { class: "tm2" }, hhmm(it.at)), it.text))),
+    );
+    svc.syncChatFab?.();
+}
+
+// ---------- walkthrough ↔ map ----------
+function syncWalkthrough(st) {
+    if (!cc.walk) return;
+    const view = st.walkthroughView ?? null;
+    const w = view ? st.walkthroughs.find((x) => x.id === view.id) : null;
+    const d = prefs().walkthroughDismissed;
+    const dismissed = !!(view && d && d.id === view.id && d.seq === view.seq);
+    cc.walk.sync(dismissed ? null : w, dismissed ? null : view);
+    if (!cc.walk.open) cc.walkLink = null;
+}
+
+/** Entering a stop zooms the map to its files, badges every stop's files with its number, and pulses the stop's tile. */
+function linkStop(w, stop) {
+    const files = new Map();
+    w.stops.forEach((s, j) => s.ranges.forEach((r) => files.has(r.file) || files.set(r.file, j + 1)));
+    const own = [...new Set(stop.ranges.map((r) => r.file))];
+    const focus = stop.focus ?? own[0];
+    const dirs = [focus, ...own].filter((p) => cc.tree && findNode(cc.tree, p));
+    let root = dirs.length ? commonDir(dirs.map((p) => (findNode(cc.tree, p)?.dir ? `${p}/x` : p))) : "";
+    // Keep some surroundings: a tiny directory (a couple of files) reads better from its parent.
+    if (root && (findNode(cc.tree, root)?.children.length ?? 0) < 4) root = root.includes("/") ? root.slice(0, root.lastIndexOf("/")) : "";
+    cc.walkLink = { files, stopOn: focus, root, key: `${w.id}:${stop.id}:${w.revision}` };
+    savePrefs({ walkthroughStop: { id: w.id, stopId: stop.id, revision: w.revision } });
+    schedule(true);
 }
 
 // ---------- announcements ----------

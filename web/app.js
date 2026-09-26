@@ -1,7 +1,7 @@
 // Whiteboard canvas renderer. Vanilla JS, no dependencies.
 import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
 import { createStepper } from "./stepper.js";
-import { createSelection, flashBar, withModifier, multibar } from "./selection.js";
+import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 
@@ -930,8 +930,10 @@ function setActivity(list) {
 
 /** The header's center slot shows one thing at a time: selection bar > hover hint > activity. */
 let hintOn = false;
+// Any selection (whiteboard units or Command map tiles) owns the bar while it has picks.
+multibar.onSync.push(() => updateCenter());
 function updateCenter() {
-    const multi = picks.size > 0;
+    const multi = (activeSelection()?.size ?? 0) > 0;
     $("#multibar").hidden = !multi;
     $("#hint").hidden = multi || !hintOn;
     $("#activity").hidden = multi || hintOn || !activityOn;
@@ -1224,7 +1226,10 @@ function connect() {
 
 // ---------------- side-chat with Copilot ----------------
 // The reply comes from the main session; this popup shows only the turns it started.
-const chat = { threadId: null, blockId: null, unit: null, quote: null, awaiting: false, bubbles: new Map(), statusEl: null };
+// Two modes share the popup: "board" (side-chat about the whiteboard, ends on close) and "command" (the Command tab's
+// persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
+const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), statusEl: null, mode: "board", focus: [], blocked: null };
+const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
 const chatLog = $("#chat-log");
 const chatText = $("#chat-text");
 
@@ -1254,8 +1259,64 @@ function endThread() {
     fitHeight();
 }
 
+function switchChatMode(mode) {
+    if (chat.mode === mode) return;
+    chatBoxes[chat.mode] = { right: chatBox.style.right, bottom: chatBox.style.bottom, width: chatBox.style.width, userHeight: chatBox.dataset.userHeight };
+    endThread();
+    chat.blockId = chat.unit = chat.picks = chat.quote = chat.quoteLabel = null;
+    chat.focus = [];
+    chat.blocked = null;
+    syncBlocked();
+    chat.mode = mode;
+    const b = chatBoxes[mode];
+    chatBox.style.right = b?.right ?? "";
+    chatBox.style.bottom = b?.bottom ?? "";
+    chatBox.style.width = b?.width ?? "";
+    if (b?.userHeight) chatBox.dataset.userHeight = b.userHeight;
+    else delete chatBox.dataset.userHeight;
+    chatBox.classList.toggle("cmd-chat", mode === "command");
+    chatText.placeholder = mode === "command" ? "Ask the orchestrator…" : "Ask about this…";
+    $("#chat").setAttribute("aria-label", mode === "command" ? "Chat with the orchestrator" : "Chat with Copilot");
+    $("#chat-feed").hidden = mode !== "command";
+    renderChips();
+}
+
+/** Focus chips (Command chat): items are {key, kind, label, cls?, item} where item is the spec §7.10 payload entry. */
+function addFocus(items) {
+    for (const it of items) if (!chat.focus.some((f) => f.key === it.key)) chat.focus.push(it);
+    chat.focus = chat.focus.slice(-40);
+    renderChips();
+}
+function renderChips() {
+    const host = $("#chat-chips");
+    const quote = chat.mode === "command" && chat.quote ? h("span", { class: "chip quotec", title: chat.quote.slice(0, 400) }, h("span", { class: "k" }, "quote"), chat.quoteLabel ?? "selection", h("button", { class: "x", "aria-label": "Remove quote", onclick: () => ((chat.quote = chat.quoteLabel = null), renderChips()) }, "✕")) : null;
+    const chips = chat.mode === "command" ? chat.focus.map((f) => h("span", { class: `chip ${f.cls ?? ""}`, title: f.title ?? f.label }, f.kindLabel ? h("span", { class: "k" }, f.kindLabel) : null, f.dot ? h("span", { class: "fdot" }) : null, h("span", { class: "lbl" }, f.label), h("button", { class: "x", "aria-label": `Remove ${f.label}`, onclick: () => ((chat.focus = chat.focus.filter((x) => x.key !== f.key)), renderChips(), svc.onFocusChange?.(chat.focus)) }, "✕"))) : [];
+    put(host, quote, chips);
+    host.hidden = !quote && !chips.length;
+    fitHeight();
+}
+
 function openChat(ctx) {
     $("#ask-float").hidden = true;
+    const mode = ctx.mode ?? (state.tab === "command" ? "command" : "board");
+    switchChatMode(mode);
+    if (mode === "command") {
+        if (ctx.focus?.length) addFocus(ctx.focus);
+        if (ctx.quote) {
+            chat.quote = ctx.quote;
+            chat.quoteLabel = ctx.quoteLabel ?? null;
+            renderChips();
+        }
+        chat.blocked = svc.commandChatBlocked?.() ?? null;
+        syncBlocked();
+        $("#chat").hidden = false;
+        $("#chat-fab").hidden = true;
+        svc.onCommandChatOpen?.();
+        fitHeight();
+        if (!chat.blocked) chatText.focus();
+        svc.onFocusChange?.(chat.focus);
+        return;
+    }
     const sameTarget = !$("#chat").hidden && ctx.blockId === chat.blockId && ctx.quote === chat.quote;
     if (!sameTarget) {
         endThread();
@@ -1271,8 +1332,23 @@ function openChat(ctx) {
     chatText.focus();
 }
 
+/** Command chat is only live in the orchestrator's session (the lease owner); elsewhere say where to go. */
+function syncBlocked() {
+    const note = $("#chat-blocked") ?? h("div", { id: "chat-blocked", class: "chat-blocked", role: "note" });
+    if (!note.isConnected) chatLog.before(note);
+    note.textContent = chat.blocked ?? "";
+    note.hidden = !chat.blocked;
+    chatText.disabled = !!chat.blocked;
+    $("#chat-send").disabled = !!chat.blocked || !chatText.value.trim() || chat.awaiting;
+}
+
 function closeChat() {
     $("#chat").hidden = true;
+    if (chat.mode === "command") {
+        // Persistent: the thread, log and focus stay for the next open.
+        syncChatFab();
+        return;
+    }
     endThread();
     chat.blockId = chat.unit = chat.picks = chat.quote = null;
     markAsking();
@@ -1281,7 +1357,9 @@ function closeChat() {
 
 /** The chat button is the way in when nothing is selected: shown on a whiteboard whenever the chat is closed. */
 function syncChatFab() {
-    $("#chat-fab").hidden = !$("#chat").hidden || !state.documentId || state.tab !== "board" || !!tour.root;
+    const tabOk = state.tab === "board" || (state.tab === "command" && !!state.doc?.target);
+    $("#chat-fab").hidden = !$("#chat").hidden || !state.documentId || !tabOk || !!tour.root;
+    $("#chat-fab").title = state.tab === "command" ? "Chat with the orchestrator" : "Chat about this whiteboard";
 }
 $("#chat-fab").onclick = () => openChat({});
 
@@ -1304,7 +1382,8 @@ const chatBox = $("#chat");
 const MIN_W = 280;
 /** Never shorter than the drag bar + input box (which grows with its text), plus a sliver of messages once there are any. */
 const chatEmpty = () => !chatLog.childElementCount;
-const minChatHeight = () => Math.max(chatEmpty() ? 0 : 150, ($("#chat-bar").offsetHeight || 22) + ($(".chat-input").offsetHeight || 40) + 16 + (chatEmpty() ? 0 : 48));
+const extraH = () => ["#chat-feed", "#chat-chips", "#chat-blocked"].reduce((n, s) => n + ($(s)?.hidden === false ? $(s).offsetHeight + 4 : 0), 0);
+const minChatHeight = () => Math.max(chatEmpty() ? 0 : 150, ($("#chat-bar").offsetHeight || 22) + ($(".chat-input").offsetHeight || 40) + 16 + extraH() + (chatEmpty() ? 0 : 48));
 function anchor() {
     const r = chatBox.getBoundingClientRect();
     return { right: innerWidth - r.right, bottom: innerHeight - r.bottom, width: r.width, height: r.height };
@@ -1422,11 +1501,18 @@ async function sendChat() {
     $("#chat-send").disabled = true;
     try {
         const first = !chat.threadId;
+        const cmd = chat.mode === "command";
         const res = await api(`/ask?instance=${encodeURIComponent(INSTANCE)}`, {
             method: "POST",
-            body: { documentId: state.documentId, blockId: chat.blockId, quote: first ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined },
+            body: cmd
+                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) } }
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined },
         });
         chat.threadId = res.threadId;
+        if (cmd && chat.quote) {
+            chat.quote = chat.quoteLabel = null; // a quote rides along with one message; focus chips stay
+            renderChips();
+        }
     } catch (e) {
         setStatus(null);
         chatLog.append(h("div", { class: "chat-error" }, `Not sent: ${e.message}`));
@@ -2019,6 +2105,22 @@ Object.assign(svc, {
     copyText,
     toast,
     syncChatFab: () => syncChatFab(),
+    /** Command tab → chat: add focus items and/or a quote, opening the persistent Command chat. */
+    addToCommandChat: (focus, extra = {}) => openChat({ mode: "command", focus, ...extra }),
+    commandChatOpen: () => !$("#chat").hidden && chat.mode === "command",
+    commandFocus: () => (chat.mode === "command" ? chat.focus : []),
+    /** Leaving the Command tab hides its chat (kept for the next visit). */
+    hideCommandChat: () => {
+        if (chat.mode === "command" && !$("#chat").hidden) {
+            $("#chat").hidden = true;
+            syncChatFab();
+        }
+    },
+    refreshCommandChatBlocked: () => {
+        if (chat.mode !== "command") return;
+        chat.blocked = svc.commandChatBlocked?.() ?? null;
+        syncBlocked();
+    },
 });
 
 // ---------------- boot ----------------

@@ -19,6 +19,7 @@ let active = null; // only one stepper handles the keyboard at a time
  * @param {() => void} [o.onClose]
  * @param {Node} [o.headerExtra]                  extra node in the top bar (e.g. revising chip)
  * @param {(stops:any[]) => number} [o.findStage] map a clicked [data-unit] to a stop index
+ * @param {Array<{label:string,title?:string,onClick:(i:number,stop:any)=>void}>} [o.actions] extra footer buttons (per-stop actions)
  */
 export function createStepper(o) {
     let stops = o.stops;
@@ -34,7 +35,15 @@ export function createStepper(o) {
         { class: "tour-pane" },
         h("header", { class: "tour-top" }, progress, o.headerExtra ?? null, h("button", { class: "chat-icon tour-close", title: "Close (Esc)", "aria-label": "Close", onclick: () => close(), html: CLOSE_SVG })),
         body,
-        h("footer", { class: "tour-nav" }, count, o.onAsk ? h("button", { class: "tour-ask", onclick: () => o.onAsk(i, stops[i]) }, o.askLabel ?? "Ask about this step") : null, prev, next),
+        h(
+            "footer",
+            { class: "tour-nav" },
+            count,
+            (o.actions ?? []).map((a) => h("button", { class: "tour-ask ghost", title: a.title ?? a.label, onclick: () => a.onClick(i, stops[i]) }, a.label)),
+            o.onAsk ? h("button", { class: "tour-ask", onclick: () => o.onAsk(i, stops[i]) }, o.askLabel ?? "Ask about this step") : null,
+            prev,
+            next,
+        ),
     );
     const root = h("div", { id: o.id, class: `stepper stepper-${o.id}`, role: "dialog", "aria-modal": o.modal === false ? "false" : "true", "aria-label": o.label }, stage, pane);
     stage.addEventListener(
@@ -128,7 +137,7 @@ export function createStepper(o) {
 }
 
 document.addEventListener("keydown", (e) => {
-    if (!active || !active.root.isConnected || e.target.closest?.("textarea, input, select, [contenteditable]") || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!active || !active.root.isConnected || e.target.closest?.("textarea, input, select, [contenteditable], [role=slider]") || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = active.index;
     if (["ArrowRight", "ArrowDown", "j", "PageDown"].includes(e.key)) {
         e.preventDefault();

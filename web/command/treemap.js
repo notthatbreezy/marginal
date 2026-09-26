@@ -22,6 +22,7 @@ export function createTreemap(host, { onZoom, onHover, tooltip } = {}) {
     let hoverPath = null;
     let dirTotals = new Map();
     const pinged = new Map(); // path → lastAt already announced with a ping
+    let pulsed = null; // walkthrough stop tile already pulsed (one pulse per stop entry)
 
     function totalsByDir(changes) {
         const t = new Map();
@@ -76,6 +77,8 @@ export function createTreemap(host, { onZoom, onHover, tooltip } = {}) {
                 el.append(h("div", { class: "th" }, pinned ? h("span", { class: "pin", title: "Pinned" }, "◆") : null, h("span", { class: "nm" }, `${n.name || m.repoName || ""}/`), w > 110 && tot ? h("span", { class: "ct" }, fmtCounts(tot.add, tot.del)) : null));
             }
             el.setAttribute("aria-label", `${n.path || m.repoName}/, ${tot ? `${tot.add} added ${tot.del} removed` : "no changes"}`);
+            if (m.picked?.has(n.path)) el.classList.add("picked");
+            if (m.inChat?.has(n.path)) el.classList.add("in-chat");
             const top = showHead ? HEAD : 2;
             const iw = w - PAD * 2;
             const ih = hgt - top - PAD;
@@ -132,6 +135,15 @@ export function createTreemap(host, { onZoom, onHover, tooltip } = {}) {
             m.decorateFile?.(el, n, c, w, hgt);
             if (m.filter && !m.filter(n.path, c)) el.classList.add("dim");
             if (m.picked?.has(n.path)) el.classList.add("picked");
+            if (m.inChat?.has(n.path)) el.classList.add("in-chat");
+            if (m.badges?.has(n.path)) el.append(h("span", { class: "badge-n", "aria-hidden": "true" }, String(m.badges.get(n.path))));
+            if (m.stopOn === n.path) {
+                el.classList.add("stop-on");
+                if (pulsed !== `${n.path}\0${m.stopKey}`) {
+                    pulsed = `${n.path}\0${m.stopKey}`;
+                    el.append(h("i", { class: "ping stop-ping", "aria-hidden": "true" }));
+                }
+            }
             el.setAttribute("aria-label", `${n.path}${c ? `, ${[...c.fronts.keys()].map((id) => m.fronts.get(id)?.label ?? id).join(" and ")}, ${c.add} added ${c.del} removed` : ""}${m.offPlan?.(n.path, c) ? ", off-plan" : ""}`);
         };
 

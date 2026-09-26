@@ -96,8 +96,8 @@ async function pinsFor(i, ctx) {
 const actions = [
     {
         name: "instructions",
-        description: "Read how to author whiteboards. Call this first. Topics: authoring (explain a change/branch/PR), scratchpad (sketch an explanation), blocks (block reference), file-lenses.",
-        inputSchema: { type: "object", properties: { topic: { type: "string", enum: ["authoring", "scratchpad", "blocks", "file-lenses"] } } },
+        description: "Read how to author whiteboards. Call this first. Topics: authoring (explain a change/branch/PR), scratchpad (sketch an explanation), blocks (block reference), file-lenses, command (Command center protocol for multi-worktree implementation plans, checkpoint walkthroughs).",
+        inputSchema: { type: "object", properties: { topic: { type: "string", enum: ["authoring", "scratchpad", "blocks", "file-lenses", "command"] } } },
         handler: wrap((i) => getInstructions(i.topic ?? "authoring")),
     },
     {
@@ -339,7 +339,7 @@ session.on((event) => {
 // Re-adopt Command leases this session held before a reload, so polling resumes without a new plan "set".
 try {
     adoptLeases(session.sessionId);
-    attachMission(session);
+    attachMission(session, { isChatTurn: () => !!chat.activeThread() });
 } catch (e) {
     session.log(`whiteboard command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
 }
