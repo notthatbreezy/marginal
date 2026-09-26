@@ -2,7 +2,7 @@
 // M1 instrument strip + territory map; M2 fronts rail, checkpoint timeline + scrub replay, off-plan filter,
 // views & follow, auto-root, fisheye pins, monitors dock, hunk rows. Everything renders "as of" a time: live = now.
 import { api, bus, h, put, svc } from "../core.js";
-import { compilePatterns, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
+import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
 import { buckets, changesAt, velocity } from "./derive.js";
 import { renderFronts, renderTimeline } from "./fronts.js";
 import { renderMonitors } from "./monitors.js";
@@ -70,6 +70,7 @@ export async function mountCommand(host, { documentId }) {
 }
 
 export function unmountCommand() {
+    flushPrefs();
     for (const off of cc.off) off();
     cc.off = [];
     clearInterval(cc.liveTimer);
@@ -175,20 +176,29 @@ function schedule(now = false) {
 const prefs = () => cc.data?.prefs ?? {};
 let prefsTimer = 0;
 let prefsPatch = {};
+let prefsDoc = null; // the document the pending patch belongs to (captured, never re-read from cc at flush time)
+function flushPrefs() {
+    clearTimeout(prefsTimer);
+    prefsTimer = 0;
+    if (!prefsDoc || !Object.keys(prefsPatch).length) return;
+    const body = prefsPatch;
+    const doc = prefsDoc;
+    prefsPatch = {};
+    prefsDoc = null;
+    api(`/command/prefs?doc=${encodeURIComponent(doc)}`, { method: "POST", body }).catch(() => {});
+}
 function savePrefs(patch) {
+    if (prefsDoc && prefsDoc !== cc.docId) flushPrefs();
+    prefsDoc = cc.docId;
     Object.assign(cc.data.prefs, patch);
     Object.assign(prefsPatch, patch);
     clearTimeout(prefsTimer);
-    prefsTimer = setTimeout(() => {
-        const body = prefsPatch;
-        prefsPatch = {};
-        api(`/command/prefs?${q()}`, { method: "POST", body }).catch(() => {});
-    }, 300);
+    prefsTimer = setTimeout(flushPrefs, 300);
 }
 
 function restoreLayout() {
     const p = prefs();
-    if (p.layout) cc.ui.layout = { ...emptyLayout(), ...p.layout };
+    cc.ui.layout = p.layout ? parseLayout(p.layout) : emptyLayout(); // prefs.json is shared: never trust its shape
     cc.ui.viewId = p.viewId ?? null;
 }
 
@@ -272,6 +282,7 @@ function matchers(plan) {
 }
 
 const isOff = (c) => !!c && [...c.fronts.values()].some((v) => v.offPlan);
+const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z0-9]+$/i;
 
 function frontRows(st, changes) {
     const rows = st.fronts.map((front) => ({ front, add: 0, del: 0, files: 0, offPlan: 0, where: whereOf(st.plan, front.id) }));
@@ -337,12 +348,18 @@ function render() {
     const fronts = new Map(st.fronts.map((f) => [f.id, f]));
     const pins = new Map(L.pins.map((p) => [p, PIN_WEIGHT]));
     const onlyFront = cc.ui.hoverFront ?? cc.ui.focusFront;
+    const vf = L.filters ?? {};
+    const offOnly = cc.ui.offOnly || !!vf.offPlanOnly;
+    const viewFronts = vf.frontIds?.length ? new Set(vf.frontIds) : null;
     const filter =
-        onlyFront || cc.ui.offOnly
+        onlyFront || offOnly || viewFronts || vf.hideTests || vf.minChurn
             ? (path, c) => {
-                  if (!c) return false;
+                  if (vf.hideTests && TEST_PATH.test(path)) return false;
+                  if (!c) return !(onlyFront || offOnly || viewFronts || vf.minChurn);
                   if (onlyFront && !c.fronts.has(onlyFront)) return false;
-                  if (cc.ui.offOnly && !isOff(c)) return false;
+                  if (viewFronts && ![...c.fronts.keys()].some((id) => viewFronts.has(id))) return false;
+                  if (offOnly && !isOff(c)) return false;
+                  if (vf.minChurn && c.add + c.del < vf.minChurn) return false;
                   return true;
               }
             : null;

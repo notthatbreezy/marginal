@@ -78,11 +78,11 @@ function toggle(li, e, o) {
 }
 
 // The peek shows the file's *current* diff for that front; cache it until the file's totals move (monitors re-render at 4 Hz).
-const peekCache = new Map(); // `${front}\0${file}\0${add}/${del}` → {hunks} | {error} | Promise
+const peekCache = new Map(); // `${doc}\0${front}\0${file}\0${add}/${del}` → {hunks} | {error} | Promise
 
 function peekKey(e, o) {
     const cur = o.changes.get(e.file)?.fronts.get(e.frontId);
-    return `${e.frontId}\0${e.file}\0${cur ? `${cur.add}/${cur.del}` : "none"}`;
+    return `${o.docId}\0${e.frontId}\0${e.file}\0${cur ? `${cur.add}/${cur.del}` : "none"}`;
 }
 
 function fillPeek(peek, d, e, o) {

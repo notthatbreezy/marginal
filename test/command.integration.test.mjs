@@ -221,7 +221,27 @@ test("removing a front revokes its phase/step associations (a re-registered id i
     assert.ok((await call("command_front", { op: "register", id: "extra", label: "extra again", worktree: wt3 })).ok);
     st = readState(doc.documentId);
     assert.deepEqual(st.plan.phases[1].state.frontIds, ["tests"]);
+    // Reusing the id starts a new incarnation: an edit made under the old one is cleared, never replayed as churn.
+    writeFileSync(join(wt3, "README.md"), "# relay\nextra\n");
+    await until(() => eventsSince(doc.documentId, 0).some((e) => e.frontId === "extra" && e.file === "README.md" && e.totals.add === 1));
     assert.ok((await call("command_front", { op: "remove", id: "extra" })).ok);
+    const cleared = eventsSince(doc.documentId, 0).filter((e) => e.frontId === "extra" && e.file === "README.md").at(-1);
+    assert.deepEqual([cleared.totals.add, cleared.baseline], [0, true]);
+    execFileSync("git", ["checkout", "--", "README.md"], { cwd: wt3 });
+    const seq = eventsSince(doc.documentId, 0).at(-1).seq;
+    assert.ok((await call("command_front", { op: "register", id: "extra", label: "extra", worktree: wt3 })).ok);
+    writeFileSync(join(wt3, "tests", "executor.test.ts"), "test('x', () => {});\ntest('y', () => {});\n");
+    const first = await until(() => eventsSince(doc.documentId, seq).find((e) => e.frontId === "extra"));
+    assert.equal(first.initial, true, "first observation of a new incarnation is initial");
+    assert.ok(!eventsSince(doc.documentId, seq).some((e) => e.frontId === "extra" && e.file === "README.md"), "no phantom revert");
+    assert.ok((await call("command_front", { op: "remove", id: "extra" })).ok);
+});
+
+test("view remove also clears a phase's suggestion", async () => {
+    assert.ok((await call("command_view", { op: "set", phaseId: "p2", view: { id: "p2v", title: "P2", root: "tests" } })).ok);
+    assert.ok(readState(doc.documentId).plan.phases[1].suggestedView);
+    assert.ok((await call("command_view", { op: "remove", id: "p2v" })).ok);
+    assert.equal(readState(doc.documentId).plan.phases[1].suggestedView, undefined);
 });
 
 test("done without a commit snapshots into a hidden ref; HEAD, index and status untouched; no front → rejected atomically", async () => {

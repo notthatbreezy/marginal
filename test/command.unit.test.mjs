@@ -298,3 +298,28 @@ test("view spec validation for command_view", () => {
     assert.ok(codes.some((c) => c.startsWith("view.root:")), codes.join());
     assert.ok(codes.some((c) => c.startsWith("view.monitors[0].mode:")), codes.join());
 });
+// ---------- M2 review fixes ----------
+test("prefs.json is parsed at the boundary: malformed layout parts are dropped, not trusted", async () => {
+    const { parsePrefs, parseLayout } = await import("../lib/command/patterns.mjs");
+    const p = parsePrefs({ follow: "yes", layout: { root: "../x", pins: ["src/a", 3, "src/**/*.ts"], monitors: { path: "src" }, filters: { minChurn: -1, hideTests: "y" } }, savedViews: [{ id: "Bad Id" }, { id: "ok", monitors: [{ path: "src", mode: "heat" }] }], junk: 1 });
+    assert.equal(p.follow, true);
+    assert.deepEqual(p.layout, { root: null, pins: ["src/a"], monitors: [], filters: {} });
+    assert.deepEqual(p.savedViews.map((v) => [v.id, v.monitors]), [["ok", [{ path: "src", mode: "diff-feed" }]]]);
+    assert.equal("junk" in p, false);
+    assert.deepEqual(parseLayout(null), { root: null, pins: [], monitors: [], filters: {} });
+    assert.equal(parseLayout({ root: "" }).root, "");
+});
+
+test("view specs take concrete paths: globs in root/pins/monitors are rejected with a prefix hint", () => {
+    const r = new Reader(new Issues());
+    parseViewSpec(r, { id: "v", title: "V", pins: ["src/**/*.ts"], monitors: [{ path: "src/*.mjs" }] }, "view");
+    const iss = r.issues.result().issues;
+    assert.deepEqual(iss.map((i) => [i.path, i.code]), [["view.pins[0].path", "format"], ["view.monitors[0].path", "format"]]);
+    assert.equal(iss[0].hint, "src");
+});
+
+test("a carried-forward done phase without a checkpoint is repaired on plan re-set", () => {
+    const prev = { phases: [{ id: "p1", steps: [], state: { status: "done", since: "t", frontIds: ["f"] } }, { id: "p2", steps: [], state: { status: "done", since: "t" } }] };
+    const plan = parsePlan(new Issues(), { id: "retry", title: "R", phases: [{ id: "p1", title: "a" }, { id: "p2", title: "b" }] }, { base: "abc", previous: prev });
+    assert.deepEqual(plan.phases.map((p) => p.state.status), ["active", "pending"]);
+});

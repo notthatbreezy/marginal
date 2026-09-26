@@ -57,18 +57,19 @@ export function followDecision({ state, prefs }) {
     const active = (state.plan?.phases ?? []).filter((p) => p.state.status === "active" && p.suggestedView);
     const target = active.at(-1);
     if (!target || prefs.follow === false) return null;
+    // A user adjustment holds the phase it was made in (appliedPhase === target → no re-apply, "Return to suggested"
+    // is offered instead). A *new* phase applies its view again; "zoomed just now" is the caller's quiet-window check.
     if (prefs.appliedPhase === target.id) return null;
-    if (prefs.adjustedSince && prefs.adjustedPhase === prefs.appliedPhase && prefs.appliedPhase) return null;
     return target;
 }
 
 export const quietSinceZoom = (t, now = Date.now()) => !t || now - t > USER_ZOOM_QUIET_MS;
 
 // ---------- hunk rows ----------
-const hunkCache = new Map(); // `${front}\0${file}\0${totals}` → rows | Promise
+const hunkCache = new Map(); // `${doc}\0${front}\0${file}\0${totals}` → rows | Promise
 
 export function hunkRows(docId, frontId, file, totalsKey, onReady) {
-    const key = `${frontId}\0${file}\0${totalsKey}`;
+    const key = `${docId}\0${frontId}\0${file}\0${totalsKey}`;
     const hit = hunkCache.get(key);
     if (Array.isArray(hit)) return hit;
     if (!hit) {
