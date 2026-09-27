@@ -268,12 +268,12 @@ await test("patch edits, baseVersion guards, changes since a version, and friend
     // line ranges (numbered from the current text), with expect; line ops before finds; inserts with to = from - 1
     await store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [5, 5], text: "- step three\n- step four", expect: "- step three" }, { lines: [3, 2], text: "- step zero" }, { find: "tests pass", replace: "CI is green" }] });
     assert.equal(md(), "# Plan\n\n- step zero\n- step one\n- step 2\n- step three\n- step four\n\nDone when CI is green.");
-    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [1, 1], text: "x", expect: "# Nope" }] }), /no longer read as expected/);
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [1, 1], text: "x", expect: "# Nope" }] }), /expect must match lines 1–1/);
     await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, field: "title", ops: [{ find: "a", replace: "b" }] }), /no text field "title"/);
     // baseVersion: refused only when the target itself changed since
     const vRead = store.getDoc(d).version;
     await store.editProse(d, [{ blockId: id, from: 0, to: 0, before: "# Plan", after: "# The plan" }]); // the user edits in place
-    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, baseVersion: vRead, ops: [{ find: "step one", replace: "step 1" }] }), /changed since version \d+ \(by the user/);
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, baseVersion: vRead, ops: [{ find: "step one", replace: "step 1" }] }), /changed \(markdown\) since version \d+: first in v\d+, by the user/);
     await store.applyEdit(d, { type: "update", targetId: other, baseVersion: vRead, changes: { markdown: "Another block, edited." } });
     // the user's save follows its text when Copilot's patch shifted the lines
     await store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [2, 1], text: "Intro line." }] });
@@ -290,7 +290,7 @@ await test("patch edits, baseVersion guards, changes since a version, and friend
     assert.ok(ch.changed.some((x) => x.id === other && x.change === "modified"));
     // dry runs understand patch too (Discuss mode holds them)
     assert.equal(await store.checkEdits(d, [{ type: "patch", targetId: id, ops: [{ find: "Intro line.", replace: "Intro." }] }]), 1);
-    await rejects(() => store.checkEdits(d, [{ type: "patch", targetId: id, baseVersion: vRead, ops: [{ find: "Intro line.", replace: "Intro." }] }]), /changed since/);
+    await rejects(() => store.checkEdits(d, [{ type: "patch", targetId: id, baseVersion: vRead, ops: [{ find: "Intro line.", replace: "Intro." }] }]), /changed.* since version/);
     // schema: a Markdown-only child may leave out its type; restating the type in update is fine
     const sec = await store.applyEdit(d, { type: "insert", content: { type: "section", title: "S", children: [{ markdown: "child" }] } });
     assert.equal(store.getDoc(d).content.find((b) => b.id === sec.targetId).children[0].type, "markdown");
@@ -305,13 +305,14 @@ await test("patch edits, baseVersion guards, changes since a version, and friend
         await rejects(() => store.applyEdit(d, { type: "patch", targetId: t, ops: [{ lines: [1, 2], text: "q" }, { lines: [2, 1], text: "z" }] }), /overlap/);
         await store.applyEdit(d, { type: "remove", targetId: t });
     }
-    // a move since baseVersion is a change too, and changes reports reorders within a parent
+    // a move since baseVersion conflicts with another move, not with a text edit; changes reports reorders within a parent
     const vMove = store.getDoc(d).version;
     const order = store.getDoc(d).content.map((b) => b.id);
     const others = [id, sec.targetId].sort((x, y) => order.indexOf(x) - order.indexOf(y));
     await store.applyEdit(d, order.indexOf(other) < order.indexOf(others[0]) ? { type: "move", targetId: other, afterId: others[1] } : { type: "move", targetId: other, beforeId: others[0] });
-    await rejects(() => store.applyEdit(d, { type: "update", targetId: other, baseVersion: vMove, changes: { markdown: "x" } }), /changed since/);
+    await rejects(() => store.applyEdit(d, { type: "move", targetId: other, afterId: id, baseVersion: vMove }), /moved or its contents changed since version/);
     assert.equal(store.changesSince(d, vMove).changed.find((x) => x.id === other)?.change, "moved");
+    await store.applyEdit(d, { type: "update", targetId: other, baseVersion: vMove, changes: { markdown: "moved, then edited" } });
     for (const x of [id, other, sec.targetId]) await store.applyEdit(d, { type: "remove", targetId: x });
     // a brand-new doc is at version 0, and that's a valid baseline
     const fresh = await store.create({ title: "Fresh" });
@@ -368,10 +369,13 @@ await test("addressing: heading paths (read, under) and message regions (read, r
     await rejects(() => store.applyEdit(d, { type: "region", ref, markdown: "x" }), /was changed since the message/);
     assert.equal(store.getDoc(d).version, v2);
     assert.equal(store.readRegion(d, ref).status, "changed");
-    // Discuss mode's dry runs understand the new edits, and catch a batch that conflicts with itself
+    // Discuss mode's dry runs understand the new edits; a batch never conflicts with itself, and checks exactly what applying does
     assert.equal(await store.checkEdits(d, [{ type: "under", heading: "Risks", markdown: "- maybe one" }]), 1);
     const vb = store.getDoc(d).version;
-    await rejects(() => store.checkEdits(d, [{ type: "under", heading: "Risks", baseVersion: vb, markdown: "x" }, { type: "under", heading: "Risks", baseVersion: vb, markdown: "y" }]), /edits\[1\].*changed since/);
+    const pair = [{ type: "under", heading: "Risks", baseVersion: vb, markdown: "- x" }, { type: "under", heading: "Risks", baseVersion: vb, markdown: "- y" }];
+    assert.equal(await store.checkEdits(d, pair), 2);
+    await store.applyEdits(d, pair);
+    assert.equal(store.readHeading(d, "Risks").markdown, "- y");
     // edits leave everything outside their span exactly as it was (a fenced block's double blank line survives)
     const fence = (await store.applyEdit(d, { type: "insert", content: { type: "markdown", markdown: "# A\n\nold a\n\n# B\n\n```\nx\n\n\ny\n```\n\n\ntail" } })).targetId;
     const fmd = () => store.getDoc(d).content.find((b) => b.id === fence).markdown;
@@ -400,6 +404,55 @@ await test("heading paths: titles with > or › in them, exact arrays, escapes, 
     assert.equal(body("parse_input_file"), "snake");
     assert.equal(body("a*b and bold and code"), "mixed");
     assert.equal(store.readHeading(d, "parse_input_file").heading, "Plan > Inputs > parse_input_file");
+    await store.applyEdit(d, { type: "remove", targetId: sec });
+});
+
+await test("edit feedback: scoped conflicts, clear messages, atomic batches, expect, text fields, near misses, export", async () => {
+    const d = doc.documentId;
+    const sec = (await store.applyEdit(d, { type: "insert", content: { type: "section", title: "Plan", children: [{ markdown: "# Goals\n\nShip [it](review-source:head/src/api.ts#L1-L2)." }, { type: "code", language: "ts", text: "const a = 1;\nconst b = 2;" }] } })).targetId;
+    const kids = () => store.getDoc(d).content.find((b) => b.id === sec).children;
+    const [md, code] = kids().map((k) => k.id);
+    // 1. renaming the parent isn't a change to the child (and changes doesn't list the child)
+    const v0 = store.getDoc(d).version;
+    await store.applyEdit(d, { type: "update", targetId: sec, changes: { title: "The plan" } });
+    await store.applyEdit(d, { type: "replace", targetId: md, baseVersion: v0, content: { type: "markdown", markdown: "# Goals\n\nShip it soon." } });
+    assert.deepEqual(store.changesSince(d, v0).changed.map((x) => x.id).sort(), [md, sec].sort());
+    assert.deepEqual(store.changesSince(d, v0).changed.find((x) => x.id === sec).fields, ["title"]);
+    // ...and a real conflict names the version, who and what
+    const v1 = store.getDoc(d).version;
+    await store.editProse(d, [{ blockId: md, from: 2, to: 2, before: "Ship it soon.", after: "Ship it today." }]);
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: md, baseVersion: v1, ops: [{ find: "Goals", replace: "Aims" }] }), new RegExp(`${md} changed \\(markdown\\) since version ${v1}: first in v${v1 + 1}, by the user \\(an in-place edit`));
+    // 2. a batch is all or nothing
+    const v2 = store.getDoc(d).version;
+    await rejects(() => store.applyEdits(d, [{ type: "patch", targetId: md, ops: [{ find: "today", replace: "now" }] }, { type: "remove", targetId: "nope" }]), /edits\[1\] failed, so nothing was saved/);
+    assert.equal(store.getDoc(d).version, v2);
+    // 3. expect may be the whole range or just its first line
+    await store.applyEdit(d, { type: "patch", targetId: md, ops: [{ lines: [1, 3], expect: "# Goals", text: "# Goals\n\nShip it now." }] });
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: md, ops: [{ lines: [1, 3], expect: "# Nope", text: "x" }] }), /all of them, or just line 1/);
+    // 7. a code block's text is its default field; a near miss says where
+    await store.applyEdit(d, { type: "patch", targetId: code, ops: [{ find: "const b = 2;", replace: "const b = 3;" }] });
+    assert.equal(kids().find((k) => k.id === code).text, "const a = 1;\nconst b = 3;");
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: code, ops: [{ find: "const  b = 3;", replace: "x" }] }), /matches if spacing and line breaks are ignored/);
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: code, ops: [{ find: "const c = 3;", replace: "x" }] }), /closest \(lines 2–2\): "const b = 3;"/);
+    // 5. Markdown export: headings nest, code links become paths, code is fenced, the header's sha256 is the body's
+    const out = await store.docMarkdown(d);
+    assert.match(out.markdown, /^---\nmarginal:\n {2}documentId: /);
+    assert.match(out.markdown, new RegExp(`version: ${store.getDoc(d).version}`));
+    assert.match(out.body, /\n## The plan\n\n### Goals\n\nShip it now\./);
+    assert.match(out.body, /```ts\nconst a = 1;\nconst b = 3;\n```/);
+    const { createHash } = await import("node:crypto");
+    assert.equal(createHash("sha256").update(out.body).digest("hex"), out.sha256);
+    assert.ok(out.markdown.includes(`sha256: ${out.sha256}`));
+    const scoped = await store.docMarkdown(d, { heading: "The plan > Goals" });
+    assert.match(scoped.body, /^## Goals\n\nShip it now\.\n$/);
+    const { mkdtempSync, readFileSync: rd } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const file = join(mkdtempSync(join(tmpdir(), "wb-exp-")), "sub", "plan.md");
+    const ex = await store.exportDoc(d, { path: file });
+    assert.equal(rd(file, "utf8").includes(`sha256: ${ex.sha256}`), true);
+    await rejects(() => store.exportDoc(d, { path: "relative.md" }), /absolute/);
+    await rejects(() => store.exportDoc(d, { path: join(tmpdir(), "x.txt") }), /\.md/);
     await store.applyEdit(d, { type: "remove", targetId: sec });
 });
 

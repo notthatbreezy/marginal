@@ -1,7 +1,7 @@
 // Durable doc store: one JSON file per doc plus immutable version snapshots.
-import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { assignIds, BLOCK_TYPES, checkBlock, CONTAINER_TYPES, flowEdgeSchema, frameSchema, locate, parseBlock, parseUnit, sourcesOf, stepSchema, flowNodeSchema, topBlockOf, UNIT_TYPES, walkBlocks } from "./blocks.mjs";
 import { InputError } from "./errors.mjs";
@@ -387,13 +387,36 @@ async function applyEditInner(doc, edit, { dryRun = false } = {}) {
     return { documentId: doc.id, version: draft.version, targetId, type: kind, ...(linkId ? { linkId } : {}), ...(el ? { children: childrenSummary(el) } : {}) };
 }
 
-export function applyEdit(docId, edit) {
+export async function applyEdit(docId, edit) {
+    return (await applyEdits(docId, [edit]))[0];
+}
+
+/**
+ * A batch of edits, all or nothing: every edit is checked in order against the doc as the ones before it leave it,
+ * and only if all pass are they applied (each still saves its own version and animates). baseVersion guards compare
+ * with the doc as the batch found it, so a batch never conflicts with itself.
+ */
+export function applyEdits(docId, edits) {
     return withLock(docId, async () => {
-        const doc = getDoc(docId);
-        const conv = convertEdit(doc, edit);
-        const res = await applyEditInner(doc, conv.edit);
-        conv.after?.();
-        return conv.note ? { ...res, note: conv.note } : res;
+        const start = getDoc(docId);
+        let draft = start;
+        for (const [n, e] of edits.entries()) {
+            try {
+                ({ draft } = await applyEditInner(draft, convertEdit(draft, e, start).edit, { dryRun: true }));
+            } catch (err) {
+                if (!(err instanceof InputError)) throw err;
+                throw new InputError(`${edits.length > 1 ? `edits[${n}] failed, so nothing was saved: ` : ""}${err.message}`);
+            }
+        }
+        const results = [];
+        for (const e of edits) {
+            const doc = getDoc(docId);
+            const conv = convertEdit(doc, e, start);
+            const res = await applyEditInner(doc, conv.edit);
+            conv.after?.();
+            results.push(conv.note ? { ...res, note: conv.note } : res);
+        }
+        return results;
     });
 }
 
@@ -402,30 +425,94 @@ export function applyEdit(docId, edit) {
  * the target element (patch/update/…), or just the text under a heading (under); a region guards itself (its text
  * must still be there).
  */
-function convertEdit(doc, edit) {
+function convertEdit(doc, edit, guardDoc = doc) {
     if (edit?.type === "region") return regionToEdit(doc, edit);
-    if (edit?.type === "under") return underToEdit(doc, edit);
-    guardBase(doc, edit);
+    if (edit?.type === "under") return underToEdit(doc, edit, guardDoc);
+    guardBase(guardDoc, edit);
     return { edit: edit?.type === "patch" ? patchToUpdate(doc, edit) : edit };
 }
 
-// An element's content and where it sits (its parent and the sibling before it), so a move since then counts too.
-const elementJson = (doc, id) => {
+/** JSON with keys in a fixed order: re-saving an element must never make equal content look different. */
+export function stable(v) {
+    if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+    if (v && typeof v === "object") return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
+    return JSON.stringify(v);
+}
+const CHILD_KEYS = ["children", "steps", "nodes", "edges"];
+const ownFields = (n) => Object.fromEntries(Object.entries(n).filter(([k]) => !CHILD_KEYS.includes(k)));
+/**
+ * What an edit relies on staying put. update/patch: the element's own fields (a parent's rename or a child's edit
+ * isn't a conflict); replace/remove: the element and everything in it; move: that plus where it sits.
+ */
+function guardView(doc, id, type) {
     const hit = locate(doc.content, id);
-    return hit ? JSON.stringify({ node: hit.node, parent: hit.parent?.id ?? null, prev: hit.list?.[hit.index - 1]?.id ?? null }) : null;
-};
-/** baseVersion: the doc version the edit was written against. Refused only if its target changed since then. */
+    if (!hit) return null;
+    if (type === "update" || type === "patch") return stable(ownFields(hit.node));
+    if (type === "move") return stable({ node: hit.node, parent: hit.parent?.id ?? null, prev: hit.list?.[hit.index - 1]?.id ?? null });
+    return stable(hit.node);
+}
+/** baseVersion: the doc version the edit was written against. Refused only if what the edit relies on changed. */
 function guardBase(doc, edit) {
     if (!edit || typeof edit !== "object" || edit.baseVersion === undefined) return;
     if (!Number.isInteger(edit.baseVersion) || edit.baseVersion < 0 || edit.baseVersion > doc.version) throw new InputError(`baseVersion must be a version of this doc (0–${doc.version}).`);
     const id = edit.targetId;
     if (!id || edit.baseVersion === doc.version) return;
-    const then = elementJson(getVersion(doc.id, edit.baseVersion), id);
-    if (then !== elementJson(doc, id)) {
-        const who = history(doc.id).filter((v) => v.version > edit.baseVersion && (v.lastEdit?.targetId === id || v.lastEdit?.blockId === id || v.lastEdit?.edits?.some?.((e) => e.blockId === id)));
-        const by = [...new Set(who.map((v) => (v.lastEdit?.by === "user" ? "the user" : "Copilot")))].join(" and ") || "someone";
-        throw new InputError(`${id} changed since version ${edit.baseVersion} (by ${by}; the doc is at v${doc.version}). Nothing was saved: read it again (read {targetId:"${id}"} or changes {sinceVersion:${edit.baseVersion}}) and redo the edit against v${doc.version}.`);
+    const then = guardView(getVersion(doc.id, edit.baseVersion), id, edit.type);
+    const now = guardView(doc, id, edit.type);
+    if (then === now) return;
+    // Say which version changed it, who made it and what it was, so the agent can decide without another read.
+    let first = null;
+    for (let v = edit.baseVersion + 1; v <= doc.version && v <= edit.baseVersion + 500; v++) {
+        let snap;
+        try {
+            snap = v === doc.version ? doc : getVersion(doc.id, v);
+        } catch {
+            continue;
+        }
+        if (guardView(snap, id, edit.type) !== then) {
+            first = snap;
+            break;
+        }
     }
+    const le = first?.lastEdit;
+    const who = le?.by === "user" ? "the user" : "Copilot";
+    const how = le ? `${le.by === "user" ? "an in-place edit" : `${le.type ?? "an edit"}`}${le.targetId && le.targetId !== id ? ` of ${le.targetId}` : ""}${le.fields?.length ? `: ${le.fields.join(", ")}` : ""}` : "an edit";
+    const a = locate(getVersion(doc.id, edit.baseVersion).content, id)?.node;
+    const b = locate(doc.content, id)?.node;
+    const fields = a && b ? [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !CHILD_KEYS.includes(k) && stable(a[k]) !== stable(b[k])) : [];
+    const what = !b ? "was removed" : fields.length ? `changed (${fields.join(", ")})` : edit.type === "move" ? "moved or its contents changed" : "changed inside";
+    throw new InputError(`${id} ${what} since version ${edit.baseVersion}: first in v${first?.version ?? "?"}, by ${who} (${how}); the doc is at v${doc.version}. Nothing was saved: read it again (read {targetId:"${id}"} or changes {sinceVersion:${edit.baseVersion}}) and redo the edit against v${doc.version}.`);
+}
+
+/** Where a failed find probably meant: the same text with different spacing, or the most similar stretch of lines. */
+function nearestText(text, find) {
+    const squash = (s) => s.replace(/\s+/g, " ").trim();
+    if (squash(find) && squash(text).includes(squash(find))) return "it matches if spacing and line breaks are ignored: copy the exact text from read {targetId, lines:true}";
+    const pairs = (s) => {
+        const t = s.toLowerCase().replace(/\s+/g, " ");
+        const m = new Map();
+        for (let i = 0; i < t.length - 1; i++) m.set(t.slice(i, i + 2), (m.get(t.slice(i, i + 2)) ?? 0) + 1);
+        return m;
+    };
+    const dice = (a, b) => {
+        const A = pairs(a);
+        const B = pairs(b);
+        let hit = 0;
+        let n = 0;
+        for (const [k, v] of A) (hit += Math.min(v, B.get(k) ?? 0)), (n += v);
+        for (const v of B.values()) n += v;
+        return n ? (2 * hit) / n : 0;
+    };
+    const lines = text.split("\n");
+    const span = Math.max(1, find.split("\n").length);
+    let best = { score: 0, at: 0 };
+    for (let i = 0; i + span <= lines.length; i++) {
+        const score = dice(lines.slice(i, i + span).join("\n"), find);
+        if (score > best.score) best = { score, at: i };
+    }
+    if (best.score < 0.45) return null;
+    const got = lines.slice(best.at, best.at + span).join("\n");
+    return `closest (lines ${best.at + 1}–${best.at + span}): ${JSON.stringify(got.length > 300 ? `${got.slice(0, 300)}…` : got)}`;
 }
 
 /**
@@ -439,7 +526,8 @@ function patchToUpdate(doc, edit) {
     for (const k of Object.keys(edit)) if (!allowed.has(k)) throw new InputError(`patch: unknown field "${k}" (allowed: ${[...allowed].join(", ")})`);
     const hit = locate(doc.content, edit.targetId ?? "");
     if (!hit) throw new InputError(`Unknown targetId: ${edit.targetId}`);
-    const field = edit.field ?? "markdown";
+    // The element's text: its markdown, or a code block's text, unless a field is named.
+    const field = edit.field ?? (typeof hit.node.markdown === "string" ? "markdown" : typeof hit.node.text === "string" ? "text" : "markdown");
     const cur = hit.node[field];
     if (typeof cur !== "string") throw new InputError(`patch: ${edit.targetId} has no text field "${field}"${typeof hit.node.markdown === "string" ? ' (it has "markdown")' : ""}; text fields here: ${Object.entries(hit.node).filter(([, v]) => typeof v === "string" && !["id", "type"].includes(v)).map(([k]) => k).join(", ") || "none"}.`);
     const ops = edit.ops;
@@ -454,7 +542,10 @@ function patchToUpdate(doc, edit) {
             const [from, to = from] = Array.isArray(op.lines) ? op.lines : [];
             if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from - 1 || to > lines.length) throw new InputError(`${at}.lines must be [from, to] within 1–${lines.length} (to = from − 1 inserts before from).`);
             if (typeof op.text !== "string") throw new InputError(`${at}.text must be a string ("" deletes the lines).`);
-            if (op.expect !== undefined && lines.slice(from - 1, to).join("\n") !== op.expect) throw new InputError(`${at}: lines ${from}–${to} no longer read as expected; now:\n${lines.slice(from - 1, to).join("\n").slice(0, 600)}`);
+            // expect is the range's text as you read it (all of it, or just its first line).
+            const now = lines.slice(from - 1, to).join("\n");
+            if (op.expect !== undefined && now !== op.expect && !(typeof op.expect === "string" && !op.expect.includes("\n") && lines[from - 1] === op.expect))
+                throw new InputError(`${at}: expect must match lines ${from}–${to} (all of them, or just line ${from}); they now read:\n${now.slice(0, 600)}`);
             lineOps.push({ from, to, text: op.text, at });
         } else if (typeof op.find === "string") {
             if (!op.find) throw new InputError(`${at}.find is empty.`);
@@ -474,7 +565,10 @@ function patchToUpdate(doc, edit) {
     let text = lines.join("\n");
     for (const op of finds) {
         const count = text.split(op.find).length - 1;
-        if (!count) throw new InputError(`${op.at}: "${op.find.slice(0, 80)}" isn't in ${edit.targetId}.${field} (it may have changed; read it again).`);
+        if (!count) {
+            const near = nearestText(text, op.find);
+            throw new InputError(`${op.at}: "${op.find.slice(0, 80)}" isn't in ${edit.targetId}.${field}${near ? `; ${near}` : " (it may have changed; read it again)"}.`);
+        }
         if (count > 1 && !op.all) throw new InputError(`${op.at}: "${op.find.slice(0, 80)}" occurs ${count} times; add surrounding text to make it unique, or pass all:true.`);
         text = op.all ? text.split(op.find).join(op.replace) : text.replace(op.find, () => op.replace);
     }
@@ -638,13 +732,13 @@ function guardUnder(doc, edit) {
         throw new InputError(`heading ${JSON.stringify(edit.heading)} didn't exist at version ${edit.baseVersion}; read it again.`);
     }
     const now = headingContent(doc, edit.heading);
-    if (then.markdown !== now.markdown || JSON.stringify(then.children) !== JSON.stringify(now.children)) throw new InputError(`The text under ${JSON.stringify(now.heading)} changed since version ${edit.baseVersion} (the doc is at v${doc.version}). Nothing was saved: read {heading:${JSON.stringify(edit.heading)}} again and redo the edit.`);
+    if (then.markdown !== now.markdown || stable(then.children) !== stable(now.children)) throw new InputError(`The text under ${JSON.stringify(now.heading)} changed since version ${edit.baseVersion} (the doc is at v${doc.version}). Nothing was saved: read {heading:${JSON.stringify(edit.heading)}} again and redo the edit.`);
 }
 /** under {heading, markdown, append?}: replace (or append to) what's under a heading; the heading itself stays. */
-function underToEdit(doc, edit) {
+function underToEdit(doc, edit, guardDoc = doc) {
     for (const k of Object.keys(edit)) if (!["type", "heading", "markdown", "append", "baseVersion"].includes(k)) throw new InputError(`under: unknown field "${k}" (allowed: heading, markdown, append, baseVersion)`);
     if (typeof edit.markdown !== "string") throw new InputError('under needs markdown (the new text under the heading; "" empties it).');
-    guardUnder(doc, edit);
+    guardUnder(guardDoc, edit);
     const e = resolveHeading(doc, edit.heading);
     const md = edit.markdown.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
     if (e.kind === "heading") {
@@ -810,13 +904,13 @@ export function changesSince(docId, sinceVersion, { maxBytes = 30000 } = {}) {
         for (let k = x.i - 1; k >= 0; k--) if (other.has(x.siblings[k].id)) return x.siblings[k].id;
         return null;
     };
-    const strip = (n) => JSON.stringify({ ...n, children: undefined, steps: undefined, nodes: undefined, edges: undefined });
+    const strip = (n) => stable(ownFields(n));
     const changed = [];
     for (const [id, b] of B) {
         const a = A.get(id);
         if (!a) changed.push({ id, change: "added", type: b.node.type ?? b.kind, parentId: b.parentId });
         else if (strip(a.node) !== strip(b.node) || a.parentId !== b.parentId || prevKept(a, B) !== prevKept(b, A)) {
-            const fields = [...new Set([...Object.keys(a.node), ...Object.keys(b.node)])].filter((k) => !["children", "steps", "nodes", "edges"].includes(k) && JSON.stringify(a.node[k]) !== JSON.stringify(b.node[k]));
+            const fields = [...new Set([...Object.keys(a.node), ...Object.keys(b.node)])].filter((k) => !["children", "steps", "nodes", "edges"].includes(k) && stable(a.node[k]) !== stable(b.node[k]));
             const moved = a.parentId !== b.parentId || prevKept(a, B) !== prevKept(b, A);
             const c = { id, change: moved ? (fields.length ? "moved+modified" : "moved") : "modified", type: b.node.type ?? b.kind, fields };
             if (typeof a.node.markdown === "string" && typeof b.node.markdown === "string" && a.node.markdown !== b.node.markdown) c.diff = lineDiff(a.node.markdown, b.node.markdown);
@@ -861,10 +955,11 @@ export function lineDiff(a, b) {
 
 /** The doc as it would be after a batch of edits (nothing saved), and what each edit touched. */
 export async function previewEdits(docId, edits) {
-    let doc = getDoc(docId);
+    const start = getDoc(docId);
+    let doc = start;
     const changes = [];
     for (const e of edits) {
-        ({ draft: doc } = await applyEditInner(doc, convertEdit(doc, e).edit, { dryRun: true }));
+        ({ draft: doc } = await applyEditInner(doc, convertEdit(doc, e, start).edit, { dryRun: true }));
         changes.push(doc.lastEdit);
     }
     return { doc, changes, baseVersion: getDoc(docId).version };
@@ -872,11 +967,12 @@ export async function previewEdits(docId, edits) {
 
 /** Check a batch of edits against the doc without saving anything (each sees the ones before it). */
 export async function checkEdits(docId, edits) {
-    let doc = getDoc(docId);
+    const start = getDoc(docId);
+    let doc = start;
     for (const [n, e] of edits.entries()) {
         try {
-            // Guards compare with the draft, so a batch that conflicts with itself fails here, not halfway through applying.
-            ({ draft: doc } = await applyEditInner(doc, convertEdit(doc, e).edit, { dryRun: true }));
+            // Exactly what applyEdits checks, so a batch that passes here applies whole.
+            ({ draft: doc } = await applyEditInner(doc, convertEdit(doc, e, start).edit, { dryRun: true }));
         } catch (err) {
             if (!(err instanceof InputError)) throw err;
             throw new InputError(`${edits.length > 1 ? `edits[${n}]: ` : ""}${err.message}`);
@@ -1182,6 +1278,144 @@ export function outline(doc) {
     else lines.push('Address a section or a heading inside text by its path: heading:"Section > Heading" (read {heading}; edit {type:"under", heading, markdown}).');
     doc.content.forEach((b) => outlineBlock(b, 0, lines));
     return lines.join("\n");
+}
+
+// ---------- Markdown export: the doc as plain Markdown, diagrams as text, with what it was made from ----------
+const srcRef = (s) => (s ? `${s.file}#L${s.startLine}${s.endLine && s.endLine !== s.startLine ? `-L${s.endLine}` : ""}${s.side === "base" ? " (base)" : ""}` : "");
+/** Code links inside prose point at repo paths (the header says which commits). */
+const plainLinks = (md) => md.replace(/\]\(review-source:(head|base)\/([^)\s]+)\)/g, (_, side, path) => `](${path})${side === "base" ? " (base)" : ""}`);
+/** Markdown's own headings sit under the section they're in. */
+function shiftHeadings(md, by) {
+    let fence = false;
+    return md
+        .split("\n")
+        .map((l) => {
+            if (/^\s*(```|~~~)/.test(l)) fence = !fence;
+            if (fence || !by) return l;
+            const m = l.match(/^(#{1,6})(\s.*)$/);
+            return m ? `${"#".repeat(Math.max(1, Math.min(6, m[1].length + by)))}${m[2]}` : l;
+        })
+        .join("\n");
+}
+const fence = (text, lang = "") => {
+    const ticks = "`".repeat(Math.max(3, ...(String(text).match(/`+/g) ?? [""]).map((t) => t.length + 1)));
+    return `${ticks}${lang}\n${text}\n${ticks}`;
+};
+function notesMd(notes, pad) {
+    return (notes ?? []).flatMap((n) => [`${pad}- ${n.title ? `**${n.title}**${n.text ? ": " : ""}` : ""}${(n.text ?? "").replace(/\n+/g, " ")}${n.source ? ` (${srcRef(n.source)})` : ""}`, ...(n.code ? [fence(n.code.text, n.code.language).replace(/^/gm, `${pad}  `)] : [])]);
+}
+async function blockMd(b, depth, doc) {
+    const h = (t) => `${"#".repeat(Math.min(6, depth + 2))} ${t}`;
+    const kids = async (list, d) => (await Promise.all((list ?? []).map((c) => blockMd(c, d, doc)))).filter(Boolean).join("\n\n");
+    switch (b.type) {
+        case "markdown":
+            return shiftHeadings(plainLinks(b.markdown), depth + 1);
+        case "section":
+            return [h(b.title), await kids(b.children, depth + 1)].filter(Boolean).join("\n\n");
+        case "callout": {
+            const body = [b.title ? `**${b.title}**${b.tone && b.tone !== "info" ? ` (${b.tone})` : ""}` : null, await kids(b.children, depth + 1)].filter(Boolean).join("\n\n");
+            return body.replace(/^/gm, "> ");
+        }
+        case "divider":
+            return "---";
+        case "code":
+            return [b.caption ? `*${b.caption}*` : null, fence(b.text, b.language === "text" ? "" : b.language)].filter(Boolean).join("\n\n");
+        case "code_peek": {
+            const s = b.source;
+            const pins = s.pins ?? doc.target;
+            let body = "";
+            try {
+                const f = pins?.repositoryId ? await readFileAt(pins.repositoryId, s.side === "base" ? pins.base : pins.head, s.file) : null;
+                if (f?.exists && !f.binary) body = f.lines.slice(s.startLine - 1, s.endLine ?? s.startLine).join("\n");
+            } catch {}
+            return [`*${srcRef(s)}${b.caption ? ` — ${b.caption}` : ""}*`, body ? fence(body, (s.file.split(".").pop() ?? "").toLowerCase()) : null].filter(Boolean).join("\n\n");
+        }
+        case "sequence": {
+            const who = (k) => b.actors[k] ?? k;
+            const steps = b.steps.flatMap((s, i) => [
+                `${i + 1}. **${who(s.from)} → ${who(s.to)}**${s.style && s.style !== "call" ? ` (${s.style})` : ""}: ${s.label}${s.source ? ` — ${srcRef(s.source)}` : ""}`,
+                ...(s.explanation ? [`   ${s.explanation}`] : []),
+                ...(s.code ? [fence(s.code.text, s.code.language).replace(/^/gm, "   ")] : []),
+                ...notesMd(s.notes, "   "),
+            ]);
+            return [`**Sequence: ${b.title}**`, `Actors: ${Object.entries(b.actors).map(([k, v]) => `${v} (${k})`).join(", ")}`, steps.join("\n")].join("\n\n");
+        }
+        case "flow_diagram": {
+            const nodes = b.nodes.flatMap((n) => [`- \`${n.key}\`${n.kind ? ` (${n.kind})` : ""}: ${n.label}${n.description ? ` — ${n.description}` : ""}`, ...(n.attachments ?? []).map((a) => `  - ${a.label}: ${a.sources.map(srcRef).join(", ")}`), ...notesMd(n.notes, "  ")]);
+            const edges = b.edges.map((e) => `- \`${e.from}\` → \`${e.to}\`${e.label ? `: ${e.label}` : ""}${e.style === "dashed" ? " (dashed)" : ""}`);
+            return [`**Flow: ${b.title}**${b.direction ? ` (${b.direction})` : ""}`, b.description ?? null, `Nodes:\n${nodes.join("\n")}`, edges.length ? `Edges:\n${edges.join("\n")}` : null].filter(Boolean).join("\n\n");
+        }
+        case "call_stack_diff": {
+            const tree = (frames) => {
+                const out = [];
+                const walk = (parent, pad) => frames.filter((f) => (f.parentKey ?? null) === parent).forEach((f) => {
+                    out.push(`${pad}- ${f.label ?? f.key ?? srcRef(f.source)}${f.via ? ` (via ${f.via.kind}: ${f.via.reason})` : ""} — ${srcRef(f.source)}`, ...notesMd(f.notes, `${pad}  `));
+                    if (f.key) walk(f.key, `${pad}  `);
+                });
+                walk(null, "");
+                return out.join("\n") || "(none)";
+            };
+            return [`**Call stack: ${b.title}**`, `Before:\n${tree(b.base)}`, `After:\n${tree(b.head)}`].join("\n\n");
+        }
+        case "database_lens": {
+            const fieldsMd = (fs, pad) => Object.entries(fs ?? {}).flatMap(([k, f]) => [`${pad}- \`${k}\` ${f.dataType}${f.primaryKey ? " PK" : ""}${f.nullable ? " null" : ""}${f.references ? ` → ${f.references.store}.${f.references.collection}.${f.references.field}` : ""}`, ...fieldsMd(f.fields, `${pad}  `)]);
+            const stores = Object.entries(b.stores).flatMap(([k, s]) => [`- **${s.label}** (${s.storage})`, ...Object.entries(s.collections).flatMap(([ck, c]) => [`  - ${c.label} (\`${ck}\`)`, ...fieldsMd(c.fields, "    ")])]);
+            const uses = b.useCases.flatMap((u) => [`- **${u.label}**${u.summary ? `: ${u.summary}` : ""}`, ...u.operations.map((o) => `  - ${o.kind} ${o.store}.${o.collection}${o.field ? `.${o.field}` : ""} by ${o.actor}: ${o.label} — ${srcRef(o.source)}`)]);
+            return [`**Data: ${b.title}**`, `Stores:\n${stores.join("\n")}`, `Use cases:\n${uses.join("\n")}`].join("\n\n");
+        }
+        case "trace_quote":
+            return `> ${b.role ? `**${b.role}:** ` : ""}${b.text.replace(/\n/g, "\n> ")}${b.attribution ? `\n>\n> — ${b.attribution}` : ""}`;
+        case "image":
+            return `![${b.alt}](${b.url.startsWith("data:") ? "(embedded image)" : b.url})${b.caption ? `\n\n*${b.caption}*` : ""}`;
+        default:
+            return `*(${b.type})*`;
+    }
+}
+/**
+ * The doc (or one heading's part of it) as Markdown. The header records what it was made from: doc id and version,
+ * the repository and its base/head commits, and a sha256 of the body, so a copy can be checked against the doc.
+ */
+export async function docMarkdown(docId, { heading } = {}) {
+    const doc = getDoc(docId);
+    let body;
+    let scope = null;
+    if (heading !== undefined) {
+        const e = resolveHeading(doc, heading);
+        scope = e.path.join(" > ");
+        if (e.kind === "heading") {
+            const md = locate(doc.content, e.blockId).node.markdown.split("\n");
+            body = shiftHeadings(plainLinks([`${"#".repeat(e.rank)} ${e.text}`, ...md.slice(e.line + 1, e.end + 1)].join("\n")), 1 - e.rank + 1);
+        } else body = await blockMd(locate(doc.content, e.blockId).node, 0, doc);
+    } else body = [`# ${doc.title}`, ...(await Promise.all(doc.content.map((b) => blockMd(b, 0, doc))))].join("\n\n");
+    body = `${body.replace(/\n{3,}/g, "\n\n").trim()}\n`;
+    const sha256 = createHash("sha256").update(body).digest("hex");
+    const t = doc.target;
+    const repo = t ? (() => { try { return getRepository(t.repositoryId).name; } catch { return t.repositoryId; } })() : null;
+    const q = (s) => JSON.stringify(String(s));
+    const header = [
+        "---",
+        "marginal:",
+        `  documentId: ${q(doc.id)}`,
+        `  title: ${q(doc.title)}`,
+        `  version: ${doc.version}`,
+        ...(scope ? [`  heading: ${q(scope)}`] : []),
+        ...(t ? [`  repository: ${q(repo)}`, `  base: ${t.base}${t.baseRef ? `  # ${t.baseRef}` : ""}`, `  head: ${t.head}${t.headRef ? `  # ${t.headRef}` : ""}`] : []),
+        ...(doc.pullRequest ? [`  pullRequest: ${q(doc.pullRequest.url)}`] : []),
+        `  exportedAt: ${q(new Date().toISOString())}`,
+        `  sha256: ${sha256}  # of the Markdown below this header`,
+        "---",
+        "",
+    ].join("\n");
+    return { markdown: header + body, body, sha256, version: doc.version, base: t?.base ?? null, head: t?.head ?? null };
+}
+/** Write the doc's Markdown to a file (an absolute path ending in .md or .markdown). */
+export async function exportDoc(docId, { path, heading } = {}) {
+    if (typeof path !== "string" || !isAbsolute(path)) throw new InputError("path must be an absolute file path, e.g. C:\\work\\plan.md or /tmp/plan.md.");
+    if (!/\.(md|markdown)$/i.test(path)) throw new InputError("path must end in .md or .markdown.");
+    const out = await docMarkdown(docId, { heading });
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, out.markdown);
+    return { path, bytes: Buffer.byteLength(out.markdown), sha256: out.sha256, version: out.version, base: out.base, head: out.head, ...(heading !== undefined ? { heading } : {}) };
 }
 
 export { BLOCK_TYPES };

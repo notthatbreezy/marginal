@@ -4,6 +4,23 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **Markdown export**: `export {path, heading?}` writes the doc (or one heading's part) to a .md file, and `read {format:"markdown"}` returns it: sections as nested headings, diagrams, call stacks and data lenses as text, code peeks with their code, and code links as repo paths. A header records the doc id and version, the repository and its base/head commits, and a sha256 of the body.
+- **A `marginal` tool** that runs the canvas's actions without an open panel (everything but showing a doc), so reads, edits and exports keep working after the panel closes.
+
+### Changed
+
+- Edit batches are all or nothing: if any edit is invalid, none is saved (each edit still saves its own version when the batch applies). Applying a held Discuss suggestion is all or nothing too.
+- `baseVersion` checks only what an edit relies on: an update or patch conflicts only with changes to the element's own fields (renaming its section no longer counts), a replace or remove with changes anywhere inside it, a move also with moves. Refusals name the first version that changed it, who made it and what changed.
+- A `lines` patch's `expect` may be the whole range or just its first line; a code block's `text` is patched and read by line without naming the field; a `find` that misses says where the closest text is (or that only spacing differs).
+- `changes` no longer reports elements whose content is unchanged but re-saved in a different key order.
+
+### Fixed
+
+- Code blocks keep their line breaks (they rendered on one line).
+- The canvas opens with `null` input as well as `{}`.
+
 ## [0.6.0] - 2026-09-27
 
 ### Removed

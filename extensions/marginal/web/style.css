@@ -755,6 +755,10 @@ pre {
     padding: 6px 0;
     min-width: max-content;
 }
+/* A code block is one highlighted text: its line breaks are the code's. */
+.b-code .code {
+    white-space: pre;
+}
 .code .ln {
     display: flex;
 }

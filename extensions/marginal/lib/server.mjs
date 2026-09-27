@@ -321,14 +321,11 @@ export async function startServer({ chat, instances, getSessionId }) {
             if (parts[2] === "discard") return send(res, 200, { discarded: true });
             let done = 0;
             try {
-                for (const e of p.edits) {
-                    await store.applyEdit(p.docId, e);
-                    done++;
-                }
+                done = (await store.applyEdits(p.docId, p.edits)).length; // all or nothing
             } catch (err) {
                 if (!(err instanceof InputError)) throw err;
-                chat.note(threadId, `[The user applied your suggested change, but only ${done} of ${p.edits.length} edits still fit the doc: ${err.message}]`);
-                throw new InputError(`${done ? `Applied ${done} of ${p.edits.length}; the rest` : "It"} no longer fits the doc (it changed since). Ask Copilot to redo it.`);
+                chat.note(threadId, `[The user tried to apply your suggested change, but it no longer fits the doc, so nothing was applied: ${err.message}]`);
+                throw new InputError("It no longer fits the doc (it changed since), so nothing was applied. Ask Copilot to redo it.");
             }
             chat.note(threadId, "[The user applied the change you suggested in your last reply; it is in the doc now.]");
             return send(res, 200, { applied: done });

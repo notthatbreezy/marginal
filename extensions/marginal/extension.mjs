@@ -169,10 +169,14 @@ const actions = [
     },
     {
         name: "read",
-        description: "Read a doc as an outline with element IDs, headings and the doc version. heading:\"Section > Heading\" returns just the text under that heading (or a section's contents); ref:\"m4.r1\" returns a region a chat message pointed at, as it is now; targetId returns one element in full (with lines:true, optionally fromLine/toLine, its text numbered by line); full:true returns the whole JSON; version reads history.",
-        inputSchema: { type: "object", properties: { documentId: docId, heading: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: 'A path of titles: "Plan > Findings", or ["Plan", "Findings"] (exact, for titles that contain " > ")' }, ref: { type: "string" }, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" } } },
-        handler: wrap((i, ctx) => {
+        description: "Read a doc as an outline with element IDs, headings and the doc version. heading:\"Section > Heading\" returns just the text under that heading (or a section's contents); ref:\"m4.r1\" returns a region a chat message pointed at, as it is now; targetId returns one element in full (with lines:true, optionally fromLine/toLine, its text numbered by line); full:true returns the whole JSON; format:\"markdown\" returns the doc (or one heading's part) as Markdown, diagrams as text, with a header of its version, commits and sha256; version reads history.",
+        inputSchema: { type: "object", properties: { documentId: docId, heading: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: 'A path of titles: "Plan > Findings", or ["Plan", "Findings"] (exact, for titles that contain " > ")' }, ref: { type: "string" }, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" }, format: { type: "string", enum: ["json", "markdown"] } } },
+        handler: wrap(async (i, ctx) => {
             const id = docIdFor(i, ctx);
+            if (i.format === "markdown") {
+                const md = await store.docMarkdown(id, { heading: i.heading });
+                return { documentId: id, version: md.version, sha256: md.sha256, base: md.base, head: md.head, markdown: md.markdown };
+            }
             if (i.ref !== undefined) return store.readRegion(id, i.ref);
             if (i.heading !== undefined) return store.readHeading(id, i.heading, { version: i.version });
             const doc = i.version !== undefined ? store.getVersion(id, i.version) : store.getDoc(id);
@@ -180,8 +184,8 @@ const actions = [
                 const el = findElement(doc.content, i.targetId);
                 if (!el) throw new InputError(`Unknown targetId: ${i.targetId}`);
                 if (!i.lines) return el;
-                const field = i.field ?? "markdown";
-                if (typeof el[field] !== "string") throw new InputError(`${i.targetId} has no text field "${field}".`);
+                const field = i.field ?? (typeof el.markdown === "string" ? "markdown" : typeof el.text === "string" ? "text" : "markdown");
+                if (typeof el[field] !== "string") throw new InputError(`${i.targetId} has no text field "${field}"; text fields here: ${Object.entries(el).filter(([k, v]) => typeof v === "string" && !["id", "type"].includes(k)).map(([k]) => k).join(", ") || "none"}.`);
                 const all = el[field].split("\n");
                 const from = Math.max(1, i.fromLine ?? 1);
                 const to = Math.min(all.length, i.toLine ?? all.length);
@@ -194,7 +198,7 @@ const actions = [
     },
     {
         name: "edit",
-        description: "Apply edits: {edit} or {edits:[...]}. To change part of existing text, use region, under or patch (never resend a whole long block). Types: region {ref:\"m4.r1\", markdown} (rewrite exactly what a chat message pointed at; \"\" removes it), under {heading:\"Section > Heading\", markdown, append?} (replace or add to the text under a heading; the heading stays), insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Any edit may carry baseVersion (the doc version you read): it's refused, with nothing saved, if its target changed since (e.g. the user edited it in place). Each saves a version and animates live. See instructions topic 'blocks'.",
+        description: "Apply edits: {edit} or {edits:[...]}. To change part of existing text, use region, under or patch (never resend a whole long block). Types: region {ref:\"m4.r1\", markdown} (rewrite exactly what a chat message pointed at; \"\" removes it), under {heading:\"Section > Heading\", markdown, append?} (replace or add to the text under a heading; the heading stays), insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. A batch is all or nothing: if any edit is invalid, none is saved. Any edit may carry baseVersion (the doc version you read): it's refused if what it changes changed since (update/patch: the element's own fields; replace/remove: it and its contents; move: also its place), and the error names the version, who and what. Each saves a version and animates live. See instructions topic 'blocks'.",
         inputSchema: { type: "object", properties: { documentId: docId, edit: { type: "object" }, edits: { type: "array", items: { type: "object" } } } },
         handler: wrap(async (i, ctx) => {
             const id = docIdFor(i, ctx);
@@ -211,13 +215,11 @@ const actions = [
                     note: `Not applied: the user asked this in Discuss mode (answer in the chat; don't change the doc). The edit${edits.length === 1 ? " was" : "s were"} checked and held as a suggestion (${held} edit${held === 1 ? "" : "s"} so far) that the user can preview in the doc (as a diff) and apply with one click. Don't retry or work around it, and don't restate the change: the preview shows it. Say in a line what it's for.`,
                 };
             }
-            const results = [];
             const tips = [];
-            for (const [n, e] of edits.entries()) {
-                try {
-                    const before = e?.type === "update" && typeof e.changes?.markdown === "string" ? findElement(store.getDoc(id).content, e.targetId)?.markdown : null;
-                    results.push(await store.applyEdit(id, e));
-                    // Resending a long text to change a little of it: say what would have been cheaper, once per call.
+            // Resending a long text to change a little of it: say what would have been cheaper, once per call.
+            for (const e of edits) {
+                const before = e?.type === "update" && typeof e.changes?.markdown === "string" ? findElement(store.getDoc(id).content, e.targetId)?.markdown : null;
+                {
                     if (typeof before === "string" && e.changes.markdown.length > 800 && !tips.length) {
                         const a = before;
                         const b = e.changes.markdown;
@@ -228,14 +230,18 @@ const actions = [
                         const changed = b.length - p - s;
                         if (changed < b.length * 0.25) tips.push(`That update resent ${b.length} characters to change about ${Math.max(changed, 1)}. Next time use under {heading}, region {ref} or patch {ops}: they send only the change and don't overwrite the user's edits elsewhere in the block.`);
                     }
-                } catch (err) {
-                    if (!(err instanceof InputError)) throw err;
-                    throw new InputError(`${edits.length > 1 ? `edits[${n}] failed (${n} earlier edit(s) were saved): ` : ""}${err.message}`);
                 }
             }
+            const results = await store.applyEdits(id, edits); // all or nothing
             if (tips.length) return i.edit && !i.edits ? { ...results[0], tip: tips[0] } : { results, tip: tips[0] };
             return i.edit && !i.edits ? results[0] : results;
         }),
+    },
+    {
+        name: "export",
+        description: "Write the doc (or one heading's part, heading:\"Plan\") to a Markdown file for people or other agents: diagrams as text, code links as repo paths, and a header recording the doc version, the repository's base/head commits and a sha256 of the body. path: absolute, ending in .md.",
+        inputSchema: { type: "object", properties: { documentId: docId, path: { type: "string" }, heading: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] } }, required: ["path"] },
+        handler: wrap((i, ctx) => store.exportDoc(docIdFor(i, ctx), { path: i.path, heading: i.heading })),
     },
     {
         name: "changes",
@@ -340,13 +346,39 @@ const actions = [
     ...commandActions({ resolveDoc: docIdFor, getSessionId: () => session?.sessionId }),
 ];
 
+/**
+ * The same actions without a panel: for when the canvas is closed, or a worker only needs to read, edit or export a
+ * doc. Everything but showing a doc works; pass documentId.
+ */
+const HEADLESS_SKIP = new Set(["show"]);
+const headlessTool = {
+    name: "marginal",
+    description: `Marginal docs without an open panel: run any Marginal canvas action by name with its input (pass documentId). Actions: ${actions.map((a) => a.name).filter((n) => !HEADLESS_SKIP.has(n)).join(", ")}. Same inputs and results as invoke_canvas_action on the Marginal canvas; call {action:"instructions"} first. To show a doc to the user, open the Marginal canvas instead.`,
+    parameters: { type: "object", properties: { action: { type: "string", description: "Action name, e.g. read, edit, changes, export, list, create" }, input: { type: "object", description: "The action's input (include documentId)" } }, required: ["action"] },
+    skipPermission: true,
+    handler: async ({ action, input } = {}) => {
+        const act = actions.find((a) => a.name === action);
+        if (!act) throw new Error(`Unknown Marginal action ${JSON.stringify(action)}. Actions: ${actions.map((a) => a.name).join(", ")}.`);
+        if (HEADLESS_SKIP.has(action)) throw new Error("show needs a panel: open the Marginal canvas with {documentId}.");
+        const inp = { ...(input && typeof input === "object" ? input : {}) };
+        if (action === "create" && inp.show === undefined) inp.show = false; // nothing to show it in
+        if (action === "create" && inp.show) throw new Error("create with show needs a panel: open the Marginal canvas, or pass show:false.");
+        try {
+            return await act.handler({ input: inp, instanceId: null, sessionId: session?.sessionId });
+        } catch (e) {
+            throw new Error(e?.message ?? String(e));
+        }
+    },
+};
+
 session = await joinSession({
+    tools: [headlessTool],
     canvases: [
         createCanvas({
             id: "marginal",
             displayName: "Marginal",
             description: "Draw structured, code-linked explanations (sequence/flow diagrams, call-stack diffs, schema lenses, verified code peeks) of branches, PRs and ideas; call the 'instructions' action first.",
-            inputSchema: { type: "object", properties: { documentId: { type: "string", description: "Doc to show; 'scratchpad' for the sketch pad. Omit for the home list." } } },
+            inputSchema: { type: ["object", "null"], properties: { documentId: { type: "string", description: "Doc to show; 'scratchpad' for the sketch pad. Omit for the home list." } } },
             actions,
             open: async (ctx) => {
                 try {
