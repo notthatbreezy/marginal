@@ -314,20 +314,39 @@ export function createProseEditor(o) {
         place();
     }
     /** The toolbar sits in the margin at the top of the editing area being typed in, where the comment/copy icons were. */
+    /**
+     * The tools belong to an editing area on screen: the one being typed in if it's visible, else the visible area
+     * nearest it. They ride along a tall area (never past its ends) and fade out when no area is in view.
+     */
     function place() {
         if (!active() || !focused) return;
-        const run = focused.run ?? [focused];
-        const el = run[0].el;
-        const col = el.closest(".md").getBoundingClientRect();
-        const first = el.getBoundingClientRect();
-        const last = run.at(-1).el.getBoundingClientRect();
-        const r = { top: first.top, height: last.bottom - first.top };
         const view = o.main.getBoundingClientRect();
+        const box = (run) => {
+            const a = run[0].el.getBoundingClientRect();
+            const b = run.at(-1).el.getBoundingClientRect();
+            return { top: a.top, bottom: b.bottom, height: b.bottom - a.top, col: run[0].el.closest(".md").getBoundingClientRect() };
+        };
+        const onScreen = (r) => r.bottom > view.top + 8 && r.top < view.bottom - 8;
+        const mine = focused.run ?? [focused];
+        let run = mine;
+        let r = box(run);
+        if (!onScreen(r)) {
+            const seen = (runs.length ? runs : [mine]).map((x) => ({ x, r: box(x) })).filter((v) => onScreen(v.r));
+            if (!seen.length) {
+                bar.classList.add("away");
+                if (!pop.hidden) closePop(false);
+                return;
+            }
+            // Nearest to the area being typed in.
+            seen.sort((a, b) => Math.abs(a.r.top - r.top) - Math.abs(b.r.top - r.top));
+            ({ x: run, r } = seen[0]);
+        }
+        bar.classList.remove("away");
         const hgt = bar.offsetHeight || 190;
-        // Centred on the area when the tools are taller than it, else level with its top; kept on screen.
-        const want = hgt > r.height ? r.top + (r.height - hgt) / 2 : r.top;
-        const top = Math.max(view.top + 6, Math.min(want, view.bottom - hgt - 6));
-        bar.style.left = `${Math.min(col.right + 18, view.right - 40)}px`;
+        // Centred on a short area; level with the top of a tall one, then sliding along it as it scrolls.
+        let top = hgt > r.height ? r.top + (r.height - hgt) / 2 : Math.max(r.top, Math.min(view.top + 6, r.bottom - hgt));
+        top = Math.max(view.top + 6, Math.min(top, view.bottom - hgt - 6));
+        bar.style.left = `${Math.min(r.col.right + 18, view.right - 40)}px`;
         bar.style.top = `${top}px`;
         if (!pop.hidden) placePop();
         syncState();

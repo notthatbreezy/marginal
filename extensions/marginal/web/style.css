@@ -5723,3 +5723,14 @@ body.prose-editing #center > :not(#edit-hint) {
     color: var(--muted);
     font-variant-numeric: tabular-nums;
 }
+
+/* The editing tools fade out while no editing area is on screen. */
+#editbar {
+    transition: opacity 0.18s ease, visibility 0s linear 0s;
+}
+#editbar.away {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, visibility 0s linear 0.18s;
+}

@@ -14,6 +14,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The editing tools stay beside an editing area on screen (the one you're typing in, else the nearest visible one), slide along tall ones, and fade out while none is in view.
 - Editing converts Markdown as you type: `` `code` ``, `**bold**` and `*italic*` format when closed, and `- ` or `1. ` at the start of a line starts a list (Enter continues it, Enter on an empty item ends it, Backspace at its start undoes it).
 - The margin icons and the editing tools line up with what they act on: centred on it when it's shorter than they are, level with its top otherwise.
 - Copilot's live edits no longer scroll the page to where they happened. The changed part still flashes, the page keeps your place (even when text above you grows), and the doc chat lists the changes under the reply that made them: click one to go there, or to open a changed diagram step in Inspect.
