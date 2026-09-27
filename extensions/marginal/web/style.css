@@ -175,11 +175,13 @@ pre {
     pointer-events: auto;
     animation: fadein 0.15s ease-out;
 }
-#hint {
+#hint,
+#center .hint {
     font-size: 12px;
     color: var(--muted);
     white-space: nowrap;
 }
+#center .hint kbd,
 #hint kbd {
     font-family: inherit;
     font-size: 11px;

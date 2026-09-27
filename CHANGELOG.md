@@ -14,6 +14,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The header's hint slot says what's useful now: how to jump (Ctrl/⌘-J) and that hovering text offers comment, copy and edit while you're just reading, and Shift+Enter to send while you type in a chat.
 - The editing tools stay beside an editing area on screen (the one you're typing in, else the nearest visible one), slide along tall ones, and fade out while none is in view.
 - Editing converts Markdown as you type: `` `code` ``, `**bold**` and `*italic*` format when closed, and `- ` or `1. ` at the start of a line starts a list (Enter continues it, Enter on an empty item ends it, Backspace at its start undoes it).
 - The margin icons and the editing tools line up with what they act on: centred on it when it's shorter than they are, level with its top otherwise.

@@ -973,12 +973,18 @@ function setActivity(list) {
 let hintOn = false;
 // Any selection (doc units or Command map tiles) owns the bar while it has picks.
 multibar.onSync.push(() => updateCenter());
+/** Priority: a selection, then typing in the chat, the hover hint, Copilot's activity, and when nothing else is going
+ *  on, how to get around. (Editing prose takes the whole slot; see edit.js.) */
 function updateCenter() {
     const multi = (activeSelection()?.size ?? 0) > 0;
+    const typing = document.activeElement === chatText && !chatText.disabled && !$("#chat").hidden;
     $("#multibar").hidden = !multi;
-    $("#hint").hidden = multi || !hintOn;
-    $("#activity").hidden = multi || hintOn || !activityOn;
+    $("#chat-hint").hidden = multi || !typing;
+    $("#hint").hidden = multi || typing || !hintOn;
+    $("#activity").hidden = multi || typing || hintOn || !activityOn;
+    $("#idle-hint").hidden = multi || typing || hintOn || activityOn || state.tab !== "board" || !state.doc || state.viewVersion !== null || !toc?.entries?.length;
 }
+if (/Mac|iPhone|iPad/.test(navigator.platform)) $("#idle-hint .k-jump").textContent = "⌘";
 
 function renderHome() {
     state.doc = null;
@@ -1032,6 +1038,7 @@ function renderBoard() {
         setTimeout(() => (container.style.minHeight = ""), 2000);
     }
     main.replaceChildren(container);
+    queueMicrotask(updateCenter); // the idle hint depends on the doc and its outline
     tables?.enhance(); // before restoring the scroll: wide tables change the page height
     main.scrollTop = prevScroll;
     const again = anchor && main.querySelector(`.block[data-id="${CSS.escape(anchor.id)}"]`);
@@ -1150,6 +1157,7 @@ async function renderHistory() {
 }
 
 async function render() {
+    queueMicrotask(() => updateCenter());
     if (!state.documentId) return renderHome();
     if (!state.doc) return;
     setHeader();
@@ -1873,6 +1881,7 @@ function autosize() {
 $("#chat-send").onclick = sendChat;
 $("#chat-close").onclick = closeChat;
 chatText.addEventListener("input", autosize);
+for (const ev of ["focus", "blur"]) chatText.addEventListener(ev, () => updateCenter()); // the send hint in the header
 chatText.addEventListener("keydown", (e) => {
     // Shift+Enter sends; plain Enter inserts a newline.
     if (e.key === "Enter" && e.shiftKey) {
