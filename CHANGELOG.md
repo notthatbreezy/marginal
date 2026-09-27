@@ -4,6 +4,13 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+- **Phases are the unit of the Command center.** A phase is a deliverable (what it builds, and the files it touches) with a stage: planned, implementing, in review, blocked (with what it waits on) or complete. The right-hand rail lists phases, with what each delivers, what it has changed so far and its pace; click one to show only its files on the map. Fronts become plumbing: `command_plan set {worktree}` watches the checkout the phases are built in, which is all the usual case needs, and worktrees are listed only when there are several (parallel sessions, stacked PRs).
+- `command_diff {phase:"p3"}` (and a walkthrough's `phase`) is what that phase delivered: from the phase before it, or the base, to its checkpoint, or its live work while in progress.
+- Re-planning fronts (`command_front {op:"plan"}`) replaces the set: planned fronts left out are dropped; working ones are kept and named in the result.
+- The orchestrator's instructions lead with phases and one worktree, and say fronts are for parallel work or stacked PRs only.
+
 ### Added
 
 - **Markdown export**: `export {path, heading?}` writes the doc (or one heading's part) to a .md file, and `read {format:"markdown"}` returns it: sections as nested headings, diagrams, call stacks and data lenses as text, code peeks with their code, and code links as repo paths. A header records the doc id and version, the repository and its base/head commits, and a sha256 of the body.

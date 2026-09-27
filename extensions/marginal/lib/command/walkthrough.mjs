@@ -89,11 +89,36 @@ export async function resolveRef(r, v, path, { state, repo, docId } = {}) {
     return null;
 }
 
+/**
+ * {phase:"p3"}: what phase p3 delivered, as a from/to pair: from the last phase before it that was delivered (or the
+ * plan base) to p3's checkpoint, or to its live work while it's still in progress.
+ */
+function phaseSpan(r, state, v, path) {
+    const issues = r.issues;
+    const id = r.id(v, path);
+    const ph = id && findPhase(state.plan, id);
+    if (id && !ph) return void issues.add(path, "unknown_id", `no phase "${id}"`, phaseIdsHint(state.plan));
+    if (!ph) return null;
+    if (ph.state.status === "pending") return void issues.add(path, "ref_unresolvable", `phase "${id}" hasn't started, so it has delivered nothing yet`, "move it to active first");
+    const i = state.plan.phases.indexOf(ph);
+    const prev = state.plan.phases.slice(0, i).reverse().find((p) => p.state.status === "done" && p.state.checkpoint?.sha);
+    const from = prev ? { phaseId: prev.id } : { ref: "base" };
+    if (ph.state.status === "done" && ph.state.checkpoint?.sha) return { from, to: { phaseId: id } };
+    const frontId = ph.state.frontIds?.find((f) => state.fronts.some((x) => x.id === f && x.worktree && !x.handedTo)) ?? state.fronts.find((f) => f.worktree && !f.handedTo)?.id;
+    if (!frontId) return void issues.add(path, "ref_unresolvable", `phase "${id}" is in progress but no worktree is being watched to read its work from`, 'pass worktree to command_plan {op:"set"}, or register one with command_front');
+    return { from, to: { ref: "live", frontId } };
+}
+
 // ---------- command_diff ----------
 export async function commandDiff(input, ctx) {
     const r = new Reader(new Issues());
     const state = readState(ctx.docId);
     const env = { state, repo: ctx.repo, docId: ctx.docId };
+    if (input.phase !== undefined) {
+        if (input.from !== undefined || input.to !== undefined) r.issues.add("phase", "type", "give phase, or from and to, not both");
+        else input = { ...input, ...(phaseSpan(r, state, input.phase, "phase") ?? {}) };
+        if (!r.issues.ok) return r.issues.result();
+    }
     const from = await resolveRef(r, input.from, "from", env);
     const to = await resolveRef(r, input.to, "to", env);
     const format = r.enumOf(input.format ?? "files", "format", ["files", "patch"]);
@@ -345,8 +370,13 @@ export async function commandWalkthrough(input, ctx) {
     };
 
     if (op === "show") {
-        const o = r.obj(input.walkthrough, "walkthrough", ["id", "title", "from", "to", "stops"]);
+        const o = r.obj(input.walkthrough, "walkthrough", ["id", "title", "from", "to", "phase", "stops"]);
         if (!o) return fail(null);
+        if (o.phase !== undefined) {
+            if (o.from !== undefined || o.to !== undefined) r.issues.add("walkthrough.phase", "type", "give phase, or from and to, not both");
+            else Object.assign(o, phaseSpan(r, state, o.phase, "walkthrough.phase") ?? {});
+            delete o.phase;
+        }
         const id = r.id(o.id, "walkthrough.id");
         const title = r.str(o.title, "walkthrough.title", { max: 200 });
         const env = { state, repo: ctx.repo, docId };

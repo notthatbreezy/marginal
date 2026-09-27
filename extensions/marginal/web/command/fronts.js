@@ -29,7 +29,7 @@ export function renderFronts(host, rows, opts) {
     const label = STAGES.filter((s) => counts[s]).map((s) => h("span", { class: `rc ${s}`, title: `${counts[s]} ${STAGE[s].count}` }, h("i"), counts[s]));
     const focused = document.activeElement?.closest?.(".front")?.dataset.front; // re-renders must not steal keyboard focus
     const [header, body] = [
-        h("div", { class: "rail-h" }, "Fronts", h("span", { class: "n" }, label.length ? label : "none yet")),
+        h("div", { class: "rail-h" }, opts.title ?? "Fronts", h("span", { class: "n" }, label.length ? label : "none yet")),
         rows.length
             ? h(
                   "ul",
@@ -100,12 +100,14 @@ export function renderTimeline(host, o) {
         return ev ? Date.parse(ev.at) : null;
     }
     const seg = phases.map((p, i) => {
-        const dur = p.state.status === "active" ? now - (starts[i] ?? now) : p.state.status === "done" ? Math.max(0, Date.parse(p.state.since) - (activeStart(p) ?? Date.parse(p.state.since))) : 0;
+        // How long it has been worked on: from when it started (kept across review/blocked) to now, or to completion.
+        const began = p.state.startedAt ? Date.parse(p.state.startedAt) : null;
+        const dur = ["active", "review", "blocked"].includes(p.state.status) ? now - (began ?? starts[i] ?? now) : p.state.status === "done" ? Math.max(0, Date.parse(p.state.since) - (began ?? activeStart(p) ?? Date.parse(p.state.since))) : 0;
         const flex = p.state.status === "pending" ? 1 : Math.max(1.4, Math.min(8, 1 + dur / 300_000));
-        const glyph = p.state.status === "done" ? "✓" : "";
+        const glyph = p.state.status === "done" ? "✓" : p.state.status === "blocked" ? "!" : "";
         return h(
             "button",
-            { class: `seg ${p.state.status === "pending" ? "" : p.state.status}`, "data-phase": p.id, style: `flex:${flex}`, title: `${p.title} · ${p.state.status}`, onclick: (e) => o.onPhase?.(p, e.currentTarget) },
+            { class: `seg ${p.state.status === "pending" ? "" : p.state.status}`, "data-phase": p.id, style: `flex:${flex}`, title: `${p.title} · ${{ pending: "planned", active: "implementing", review: "in review", blocked: "blocked", done: "complete" }[p.state.status] ?? p.state.status}${p.state.note ? ` — ${p.state.note}` : ""}`, onclick: (e) => o.onPhase?.(p, e.currentTarget) },
             h("span", { class: "gl" }, glyph),
             h("span", { class: "ttl" }, `${p.id.toUpperCase()} · ${p.title}`),
             dur ? h("span", { class: "dur" }, fmtDur(dur)) : null,

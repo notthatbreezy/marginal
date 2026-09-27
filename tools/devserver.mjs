@@ -1,6 +1,7 @@
 // Headless dev server for the Command tab: a temp "relay" repo with worktrees, a real plan + fronts driven through the
 // command actions, scripted edits, and the real loopback server. No Copilot session needed; nothing takes focus.
-// Usage: node tools/devserver.mjs [--edits] [--walk] [--revising] [--seconds=N]   → prints JSON {url, instance, docId, repo, fronts}
+// Usage: node tools/devserver.mjs [--single] [--edits] [--walk] [--revising] [--seconds=N]
+//   --single    every phase in one checkout (the usual case: no fronts, no Worktrees list)   → prints JSON {url, instance, docId, repo, fronts}
 //   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
 //   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
 //   --canned-chat  the Command chat answers with scripted, streamed replies (demos)
@@ -74,8 +75,12 @@ if (args.has("--empty")) {
     setTimeout(() => process.exit(0), seconds * 1000);
     await new Promise(() => {});
 }
+// --single: the usual case, every phase built in one checkout (no fronts to declare). Default: parallel worktrees.
+const single = args.has("--single");
+if (single) for (const k of Object.keys(wts)) if (k !== "runner") wts[k] = wts.runner;
 await call("command_plan", {
     op: "set",
+    ...(single ? { worktree: wts.runner } : {}),
     plan: {
         id: "retry",
         title: "Retry policy for job runner",
@@ -97,12 +102,14 @@ await call("command_plan", {
     },
 });
 // Every front the plan needs, declared up front; the later ones stay planned until their worktree exists.
-await call("command_front", { op: "plan", fronts: [{ id: "orchestrator", label: "orchestrator" }, { id: "runner", label: "runner-retry" }, { id: "triggers", label: "triggers-sched" }, { id: "tests", label: "tests" }, { id: "telemetry", label: "telemetry", stacksOn: "runner", note: "Starts once retries land (P3)" }, { id: "docs", label: "docs", stacksOn: "telemetry" }] });
-await call("command_front", { op: "register", id: "orchestrator", label: "orchestrator", worktree: repo });
-await call("command_front", { op: "register", id: "runner", label: "runner-retry", worktree: wts.runner });
-await call("command_front", { op: "register", id: "triggers", label: "triggers-sched", worktree: wts.triggers });
-await call("command_front", { op: "register", id: "tests", label: "tests", worktree: wts.tests });
-await call("command_plan", { op: "phase", phaseId: "p1", status: "active", frontIds: ["orchestrator"] });
+if (!single) await call("command_front", { op: "plan", fronts: [{ id: "orchestrator", label: "orchestrator" }, { id: "runner", label: "runner-retry" }, { id: "triggers", label: "triggers-sched" }, { id: "tests", label: "tests" }, { id: "telemetry", label: "telemetry", stacksOn: "runner", note: "Starts once retries land (P3)" }, { id: "docs", label: "docs", stacksOn: "telemetry" }] });
+if (!single) {
+    await call("command_front", { op: "register", id: "orchestrator", label: "orchestrator", worktree: repo });
+    await call("command_front", { op: "register", id: "runner", label: "runner-retry", worktree: wts.runner });
+    await call("command_front", { op: "register", id: "triggers", label: "triggers-sched", worktree: wts.triggers });
+    await call("command_front", { op: "register", id: "tests", label: "tests", worktree: wts.tests });
+}
+await call("command_plan", { op: "phase", phaseId: "p1", status: "implementing", ...(single ? {} : { frontIds: ["orchestrator"] }) });
 
 // Scripted edits. Phase 1 happened "earlier"; phase 2 is live.
 const edit = (wt, p, n, tag = "edit") => {
@@ -119,15 +126,21 @@ const shrink = (wt, p, n) => {
     const ls = readFileSync(f, "utf8").split("\n");
     writeFileSync(f, ls.slice(n).join("\n"));
 };
-edit(repo, "docs/runner.md", 18, "docs");
+edit(single ? wts.runner : repo, "docs/runner.md", 18, "docs");
 await new Promise((r) => setTimeout(r, 1200));
-await call("command_plan", { op: "phase", phaseId: "p1", status: "done", commit: git(repo, "rev-parse", "HEAD") });
-await call("command_front", { op: "status", id: "orchestrator", status: "complete" });
+if (single) await call("command_plan", { op: "phase", phaseId: "p1", status: "complete" });
+else {
+    await call("command_plan", { op: "phase", phaseId: "p1", status: "done", commit: git(repo, "rev-parse", "HEAD") });
+    await call("command_front", { op: "status", id: "orchestrator", status: "complete" });
+}
 await call("command_view", { op: "set", phaseId: "p2", view: { id: "p2-retry", title: "Retry policy", root: "src", pins: [{ path: "src/runner" }] } });
-await call("command_plan", { op: "phase", phaseId: "p2", status: "active", frontIds: ["runner", "triggers", "tests"] });
-await call("command_plan", { op: "step", stepId: "s-backoff", status: "active", frontId: "runner" });
-await call("command_plan", { op: "step", stepId: "s-sched", status: "active", frontId: "triggers" });
-await call("command_plan", { op: "step", stepId: "s-tests", status: "active", frontId: "tests" });
+await call("command_plan", { op: "phase", phaseId: "p2", status: "implementing", ...(single ? {} : { frontIds: ["runner", "triggers", "tests"] }) });
+if (single) await call("command_plan", { op: "step", stepId: "s-backoff", status: "active" });
+else {
+    await call("command_plan", { op: "step", stepId: "s-backoff", status: "active", frontId: "runner" });
+    await call("command_plan", { op: "step", stepId: "s-sched", status: "active", frontId: "triggers" });
+    await call("command_plan", { op: "step", stepId: "s-tests", status: "active", frontId: "tests" });
+}
 await call("command_status", { status: "working" });
 
 const script = [
@@ -148,8 +161,11 @@ for (const step of script) {
     step();
     await new Promise((r) => setTimeout(r, 250));
 }
-await call("command_front", { op: "status", id: "triggers", status: "blocked", note: "Needs a decision on cron-parse's public API" });
-await call("command_front", { op: "status", id: "tests", status: "review", note: "Sol Fast + Terra reviewing" });
+if (single) await call("command_plan", { op: "phase", phaseId: "p3", status: "blocked", note: "Waiting on the metrics schema decision" });
+else {
+    await call("command_front", { op: "status", id: "triggers", status: "blocked", note: "Needs a decision on cron-parse's public API" });
+    await call("command_front", { op: "status", id: "tests", status: "review", note: "Sol Fast + Terra reviewing" });
+}
 
 if (args.has("--walk") || args.has("--revising")) {
     const policy = `import type { RunError } from "../errors";

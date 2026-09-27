@@ -6,7 +6,7 @@ import { isAbsolute, resolve } from "node:path";
 import { gitOut } from "./gitx.mjs";
 import { Issues, listHint } from "./issues.mjs";
 import { locIndex } from "./loc.mjs";
-import { FRONT_COLORS, FRONT_STATUS, WORKING_STATUS, frontStatus, LIMITS, MISSION_STATUS, PHASE_STATUS, Reader, findPhase, findStep, frontIdsHint, parsePlan, parseViewSpec, phaseIdsHint, stepIdsHint } from "./model.mjs";
+import { FRONT_COLORS, FRONT_STATUS, WORKING_STATUS, frontStatus, LIMITS, MISSION_STATUS, PHASE_STATUS, phaseStatus, Reader, findPhase, findStep, frontIdsHint, parsePlan, parseViewSpec, phaseIdsHint, stepIdsHint } from "./model.mjs";
 import { claim, isOwner, readLease } from "./owner.mjs";
 import { refFor, snapshotWorktree } from "./snapshot.mjs";
 import { isPresentChange, offPlanMatcher, planPatterns } from "./patterns.mjs";
@@ -77,6 +77,22 @@ export async function commandPlan(input, ctx) {
         if (!baseRef && !base) issues.add("plan.base", "required", "this doc has no base commit", "pass plan.base (a ref or sha)");
         const prev = readState(docId).plan;
         const plan = parsePlan(issues, input.plan, { isTree: (p) => dirs.has(p), base, previous: prev?.id === input.plan?.id ? prev : null });
+        // worktree: the checkout the phases are built in. The canvas watches it; that's all a front is for, in the usual case.
+        let top = null;
+        if (input.worktree !== undefined) {
+            const w = r.str(input.worktree, "worktree", { max: 1000 });
+            if (w && !isAbsolute(w)) issues.add("worktree", "format", "worktree must be an absolute path");
+            else if (w && (!existsSync(w) || !statSync(w).isDirectory())) issues.add("worktree", "worktree_not_repo", `no such directory: ${w}`);
+            else if (w) {
+                top = await topLevel(w);
+                const [mine, theirs] = top ? await Promise.all([commonDir(repo.path), commonDir(top)]) : [];
+                if (!top) issues.add("worktree", "worktree_not_repo", `${w} is not inside a git worktree`);
+                else if (!mine || !theirs || !samePath(mine, theirs)) issues.add("worktree", "worktree_other_repo", `${top} belongs to a different repository than this doc (${repo.path})`);
+            }
+        }
+        // It will be registered after the plan is written, so check now that it can be (nothing is written otherwise).
+        const cur = readState(docId);
+        if (top && !cur.fronts.some((f) => samePath(f.worktree, top) && !f.handedTo) && cur.fronts.length >= LIMITS.fronts) issues.add("worktree", "too_many", `at most ${LIMITS.fronts} fronts, and this doc has ${cur.fronts.length}`, 'command_front {op:"remove", id} one first');
         if (!issues.ok) return issues.result();
         const c = claim(docId, ctx.sessionId);
         if (!c.ok) return notOwner(docId, "Command state");
@@ -84,9 +100,16 @@ export async function commandPlan(input, ctx) {
             s.plan = { ...plan, revision: (s.plan?.revision ?? 0) + 1 };
         });
         for (const f of next.fronts) startPolling(docId, f);
+        let watch = "";
+        if (top && !next.fronts.some((f) => samePath(f.worktree, top) && !f.handedTo)) {
+            const branch = (await gitOut(top, ["rev-parse", "--abbrev-ref", "HEAD"], { kind: "rev-parse" }))?.trim();
+            const id = next.fronts.some((f) => f.id === "work") ? `work-${next.fronts.length + 1}` : "work";
+            const reg = await commandFront({ op: "register", id, label: (branch && branch !== "HEAD" ? branch : "this worktree").slice(0, 60), worktree: top }, ctx);
+            watch = reg.ok ? `; watching ${top}` : `; couldn't watch ${top}: ${reg.issues?.[0]?.message ?? "unknown error"}`;
+        } else if (top) watch = `; already watching ${top}`;
         const steps = plan.phases.reduce((n, p) => n + p.steps.length, 0);
         const pats = planPatterns(plan).length;
-        return { ok: true, revision: next.revision, lease: c.renewed ? "renewed" : c.tookOver ? "taken over (previous owner was stale)" : "claimed", summary: `plan '${plan.id}' set: ${plan.phases.length} phases, ${steps} steps, ${pats} paths` };
+        return { ok: true, revision: readState(docId).revision, lease: c.renewed ? "renewed" : c.tookOver ? "taken over (previous owner was stale)" : "claimed", summary: `plan '${plan.id}' set: ${plan.phases.length} phases, ${steps} steps, ${pats} paths${watch}` };
     }
 
     if (!isOwner(docId, ctx.sessionId)) return notOwner(docId, "Command state");
@@ -99,7 +122,9 @@ export async function commandPlan(input, ctx) {
 
     if (op === "phase") {
         const phaseId = r.id(input.phaseId, "phaseId");
-        const status = r.enumOf(input.status, "status", PHASE_STATUS);
+        const status = r.enumOf(phaseStatus(input.status), "status", PHASE_STATUS);
+        const note = r.str(input.note, "note", { required: false, max: 240 });
+        if (status === "blocked" && !note) issues.add("note", "required", "a blocked phase needs a note saying what it waits on");
         const phase = phaseId && findPhase(state.plan, phaseId);
         if (phaseId && !phase) issues.add("phaseId", "unknown_id", `no phase "${phaseId}"`, phaseIdsHint(state.plan));
         let frontIds;
@@ -114,6 +139,9 @@ export async function commandPlan(input, ctx) {
             if (!commit) issues.add("commit", "ref_unresolvable", `cannot resolve ${JSON.stringify(input.commit)}`, "pass the sha you committed at this checkpoint");
         }
         if (!issues.ok) return issues.result();
+        // With one watched worktree, a phase is built there: no need to name it.
+        const working = state.fronts.filter((f) => f.worktree && !f.handedTo && WORKING_STATUS.has(f.status));
+        if (!frontIds && !(phase.state.frontIds ?? []).length && working.length === 1 && status !== "pending") frontIds = [working[0].id];
         // A done phase must carry a real, attributable checkpoint: resolve or create it BEFORE persisting anything.
         let checkpoint = null;
         if (status === "done") {
@@ -145,13 +173,17 @@ export async function commandPlan(input, ctx) {
         const next = writeState(docId, (s) => {
             const ph = findPhase(s.plan, phaseId);
             const fronts = frontIds ?? ph.state.frontIds ?? [];
+            // since: when this stage began; startedAt: when the phase was first worked on (kept across stages).
+            const since = ph.state.status === status ? ph.state.since : now();
+            const startedAt = ph.state.startedAt ?? (status === "pending" ? undefined : ph.state.since ?? now());
             if (status === "pending") ph.state = { status: "pending" };
-            else if (status === "active") ph.state = { status: "active", since: ph.state.status === "active" ? ph.state.since : now(), frontIds: fronts };
-            else ph.state = { status: "done", since: now(), frontIds: fronts, checkpoint };
+            else if (status === "done") ph.state = { status: "done", since: now(), frontIds: fronts, checkpoint, ...(startedAt ? { startedAt } : {}), ...(note ? { note } : {}) };
+            // Reopening a delivered phase keeps its checkpoint until it's delivered again.
+            else ph.state = { status, since, frontIds: fronts, ...(startedAt ? { startedAt } : {}), ...(note ? { note } : {}), ...(ph.state.checkpoint ? { checkpoint: ph.state.checkpoint } : {}) };
             s.plan.revision++;
         });
         for (const f of next.fronts) nudge(docId, f.id);
-        return { ok: true, revision: next.revision, summary: `phase '${phaseId}' → ${status}${checkpoint ? ` @ ${checkpoint.sha.slice(0, 8)} (${checkpoint.source})` : ""}` };
+        return { ok: true, revision: next.revision, summary: `phase '${phaseId}' → ${status}${checkpoint ? ` @ ${checkpoint.sha.slice(0, 8)} (${checkpoint.source})` : ""}${note ? ` (${note})` : ""}` };
     }
 
     // op === "step"
@@ -264,7 +296,13 @@ export async function commandFront(input, ctx) {
         const adding = ids.filter((id) => !state.fronts.some((f) => f.id === id)).length;
         if (state.fronts.length + adding > LIMITS.fronts) issues.add("fronts", "too_many", `at most ${LIMITS.fronts} fronts`);
         if (!issues.ok) return issues.result();
+        // The list is the whole set: planned fronts left out go; working ones (a worktree, and history) stay until removed.
+        const listed = new Set(ids);
+        const dropped = state.fronts.filter((f) => !listed.has(f.id) && !f.worktree).map((f) => f.id);
+        const kept = state.fronts.filter((f) => !listed.has(f.id) && f.worktree).map((f) => f.id);
         const next = writeState(docId, (s) => {
+            s.fronts = s.fronts.filter((f) => !dropped.includes(f.id));
+            for (const ph of s.plan?.phases ?? []) if (ph.state.frontIds) ph.state.frontIds = ph.state.frontIds.filter((f) => !dropped.includes(f));
             for (const it of items) {
                 const f = s.fronts.find((x) => x.id === it.id);
                 if (f) {
@@ -274,7 +312,12 @@ export async function commandFront(input, ctx) {
                 } else s.fronts.push({ id: it.id, label: it.label, ...(it.note ? { note: it.note } : {}), ...(it.stacksOn ? { stacksOn: it.stacksOn } : {}), color: colorFor(s), status: "planned", registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
             }
         });
-        return { ok: true, revision: next.revision, summary: `${items.length} front${items.length === 1 ? "" : "s"} planned (${adding} new); register each with a worktree when its work starts (a stacked layer may reuse the checkout of a complete layer below it)` };
+        return {
+            ok: true,
+            revision: next.revision,
+            summary: `${items.length} front${items.length === 1 ? "" : "s"} planned (${adding} new${dropped.length ? `; dropped planned ${dropped.join(", ")}` : ""}); register each with a worktree when its work starts`,
+            ...(kept.length ? { kept, note: `Not in this list but working (they have a worktree and history), so kept: ${kept.join(", ")}. command_front {op:"remove", id} drops one.` } : {}),
+        };
     }
 
     if (op === "register") {

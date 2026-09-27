@@ -547,6 +547,95 @@ test("advance moves a stack up one layer in one call; walkthrough ranges can nam
     git(repo, "worktree", "remove", "--force", wtC);
 });
 
+test("phases are the unit: one watched worktree, stages with notes, phase diffs, re-planning fronts replaces", async () => {
+    const wtP = join(tmp, "wt-phases");
+    git(repo, "worktree", "add", "-q", wtP, "-b", "phases-work", "main");
+    const pins = await gitm.resolvePins(repoRec.repositoryId, "main", "main");
+    const pdoc = await store.create({ title: "Phase-first", target: pins });
+    const base = { docId: pdoc.documentId, doc: store.getDoc(pdoc.documentId), repo: gitm.getRepository(repoRec.repositoryId) };
+    const cx = { ...base, sessionId: "session-A" };
+    const run = (name, input) => ACTIONS[name](input, cx);
+    const plan = { id: "pf", title: "Phase first", phases: [{ id: "p1", title: "Runner", expects: ["src/runner/"] }, { id: "p2", title: "Tests", expects: ["tests/"] }] };
+    // a bad worktree is refused with nothing set
+    const bad = await run("command_plan", { op: "set", worktree: "relative/path", plan });
+    assert.equal(bad.ok, false);
+    assert.equal(readState(pdoc.documentId).plan, null);
+    // plan + worktree: the worktree is watched; no fronts to declare
+    const set = await run("command_plan", { op: "set", worktree: wtP, plan });
+    assert.ok(set.ok, JSON.stringify(set));
+    assert.match(set.summary, /watching /);
+    let st = readState(pdoc.documentId);
+    assert.deepEqual(st.fronts.map((x) => [x.id, x.label]), [["work", "phases-work"]]);
+    // stages by the names people use; the one worktree is implied
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "implementing" })).ok);
+    st = readState(pdoc.documentId);
+    assert.equal(st.plan.phases[0].state.status, "active");
+    assert.deepEqual(st.plan.phases[0].state.frontIds, ["work"]);
+    const startedAt = st.plan.phases[0].state.startedAt;
+    assert.ok(startedAt);
+    writeFileSync(join(wtP, "src", "runner", "phase1.ts"), "export const one = 1;\n");
+    await until(() => eventsSince(pdoc.documentId, 0).some((e) => e.file === "src/runner/phase1.ts" && e.phaseIds?.includes("p1")));
+    // blocked needs a note; review still counts edits toward the phase
+    assert.equal((await run("command_plan", { op: "phase", phaseId: "p1", status: "blocked" })).issues[0].path, "note");
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "blocked", note: "waiting on API review" })).ok);
+    assert.equal(readState(pdoc.documentId).plan.phases[0].state.note, "waiting on API review");
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "review" })).ok);
+    assert.equal(readState(pdoc.documentId).plan.phases[0].state.startedAt, startedAt, "started once, across stages");
+    writeFileSync(join(wtP, "src", "runner", "phase1.ts"), "export const one = 1;\nexport const fix = 2;\n");
+    await until(() => eventsSince(pdoc.documentId, 0).filter((e) => e.file === "src/runner/phase1.ts").at(-1)?.totals.add === 2);
+    assert.ok(eventsSince(pdoc.documentId, 0).filter((e) => e.file === "src/runner/phase1.ts").at(-1).phaseIds.includes("p1"));
+    // what a phase delivered: live while in review, from the base (nothing delivered before it)
+    const d1 = await run("command_diff", { phase: "p1" });
+    assert.ok(d1.ok, JSON.stringify(d1));
+    assert.equal(d1.from.label, "base");
+    assert.deepEqual(d1.files.map((x) => x.path), ["src/runner/phase1.ts"]);
+    git(wtP, "add", "-A");
+    git(wtP, "commit", "-qm", "p1");
+    const c1 = git(wtP, "rev-parse", "HEAD");
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "complete", commit: c1 })).ok);
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p2", status: "implementing" })).ok);
+    writeFileSync(join(wtP, "tests", "phase2.test.ts"), "test('p2', () => {});\n");
+    await until(() => eventsSince(pdoc.documentId, 0).some((e) => e.file === "tests/phase2.test.ts"));
+    // p2's delivery starts where p1 was delivered; p1's is its own range
+    const d2 = await run("command_diff", { phase: "p2" });
+    assert.equal(d2.from.label, "P1");
+    assert.deepEqual(d2.files.map((x) => x.path), ["tests/phase2.test.ts"]);
+    assert.equal((await run("command_diff", { phase: "p1" })).to.label, "P1");
+    assert.equal((await run("command_diff", { phase: "p2", from: { ref: "base" } })).issues[0].path, "phase");
+    // reopening a delivered phase keeps its checkpoint (still usable as a ref) until it's delivered again
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "review" })).ok);
+    assert.equal(readState(pdoc.documentId).plan.phases[0].state.checkpoint.sha, c1);
+    assert.equal((await run("command_diff", { from: { phaseId: "p1" }, to: { phaseId: "p1" } })).issues?.[0]?.code === "ref_unresolvable", false);
+    assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "complete", commit: c1 })).ok);
+    // a plan whose worktree couldn't be watched isn't written at all
+    const { LIMITS } = await import("../extensions/marginal/lib/command/model.mjs");
+    const was = LIMITS.fronts;
+    LIMITS.fronts = readState(pdoc.documentId).fronts.length;
+    const wtQ = join(tmp, "wt-limit");
+    git(repo, "worktree", "add", "-q", wtQ, "-b", "limit-work", "main");
+    const before = readState(pdoc.documentId).revision;
+    const full = await run("command_plan", { op: "set", worktree: wtQ, plan: { ...plan, title: "Changed" } });
+    LIMITS.fronts = was;
+    assert.equal(full.ok, false);
+    assert.equal(full.issues[0].code, "too_many");
+    assert.equal(readState(pdoc.documentId).revision, before);
+    assert.equal(readState(pdoc.documentId).plan.title, "Phase first");
+    git(repo, "worktree", "remove", "--force", wtQ);
+    // a walkthrough of a phase
+    const w = await run("command_walkthrough", { op: "show", walkthrough: { id: "p2-walk", title: "P2", phase: "p2", stops: [{ id: "a", title: "A", explanation: "x", ranges: [{ file: "tests/phase2.test.ts", startLine: 1, endLine: 1 }] }] } });
+    assert.ok(w.ok, JSON.stringify(w));
+    // re-planning fronts replaces: planned ones left out are dropped, working ones kept and named
+    assert.ok((await run("command_front", { op: "plan", fronts: [{ id: "later", label: "later" }, { id: "extra", label: "extra" }] })).ok);
+    const re = await run("command_front", { op: "plan", fronts: [{ id: "later", label: "later" }] });
+    assert.ok(re.ok);
+    assert.match(re.summary, /dropped planned extra/);
+    assert.deepEqual(re.kept, ["work"]);
+    assert.deepEqual(readState(pdoc.documentId).fronts.map((x) => x.id).sort(), ["later", "work"]);
+    poller.stopAll(pdoc.documentId);
+    stopHeartbeat(pdoc.documentId);
+    git(repo, "worktree", "remove", "--force", wtP);
+});
+
 test("pollers dedupe: once per front in-process, zero in a non-owner process", async () => {
     const d = doc.documentId;
     const loops1 = poller.pollingFronts(d);

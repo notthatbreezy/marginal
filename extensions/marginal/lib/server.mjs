@@ -177,8 +177,8 @@ export async function startServer({ chat, instances, getSessionId }) {
                 [
                     "Set up the Command center for the implementation work this doc is about, so its Command tab can track it live:",
                     '1. Read instructions {topic:"command"}.',
-                    `2. Work out the plan from the doc content, the change ${t.base.slice(0, 8)}…${t.head.slice(0, 8)} in ${repo.name} (${repo.path}) and anything we've already discussed. Checkpoints (phases) → steps → expects (prefer directories and globs).`,
-                    '3. command_plan {op:"set"} (this claims the Command lease for this session), then command_front {op:"register"} for every worktree that will be edited — your own checkout and any child sessions\' worktrees. Mark the current phase active.',
+                    `2. Work out the plan from the doc content, the change ${t.base.slice(0, 8)}…${t.head.slice(0, 8)} in ${repo.name} (${repo.path}) and anything we've already discussed. Phases are deliverables (each with the files it touches) → steps → expects (prefer directories and globs).`,
+                    '3. command_plan {op:"set", worktree:<the checkout you build in>} (this claims the Command lease for this session and watches that worktree). Add fronts only for parallel sessions or stacked PRs. Mark the current phase implementing.',
                     "4. Optionally add a suggestedView per phase with command_view.",
                     "5. If the goal is genuinely unclear, ask me one short question in this chat instead of guessing.",
                 ].join("\n"),

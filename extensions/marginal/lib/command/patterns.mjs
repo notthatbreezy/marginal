@@ -137,7 +137,7 @@ export function offPlanMatcher(plan, frontId) {
 /** Active phases whose scope matches the path. */
 export function matchingActivePhases(plan, path) {
     if (!plan) return [];
-    return plan.phases.filter((ph) => ph.state.status === "active" && compilePatterns(phasePatterns(ph))(path)).map((ph) => ph.id);
+    return plan.phases.filter((ph) => (ph.state.status === "active" || ph.state.status === "review") && compilePatterns(phasePatterns(ph))(path)).map((ph) => ph.id);
 }
 
 // ---------- persisted UI prefs (prefs.json is written by any panel: parse it at the boundary) ----------

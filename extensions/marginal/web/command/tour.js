@@ -16,7 +16,7 @@ export function startCommandTour(o = {}) {
                 id: "welcome",
                 title: "The Command center",
                 body: () => [
-                    p("A live mission wall for a multi-step implementation. Your orchestrating Copilot session sets a plan of checkpoints, registers the worktrees doing the work as ", h("b", {}, "fronts"), ", and this tab shows where edits are landing as they happen."),
+                    p("A live mission wall for a multi-step implementation. Your orchestrating Copilot session sets a plan of ", h("b", {}, "phases"), " (each a deliverable), and this tab shows where edits are landing as they happen."),
                     p({ class: "guide-muted" }, "About a minute. Use ", kbd("→"), " and ", kbd("←"), " to move, ", kbd("Esc"), " to stop."),
                 ],
             },
@@ -56,12 +56,12 @@ export function startCommandTour(o = {}) {
             },
             { id: "dock", when: plan, target: ".cc .dock:not([hidden])", placement: "top", title: "Monitors", body: () => p("A monitor follows one folder: a feed of edits as they land (click a row for the file's current diff) or a table of every changed file. Close it with ✕.") },
             {
-                id: "fronts",
+                id: "phases",
                 when: plan,
                 target: ".cc .rail-fronts",
                 placement: "left",
-                title: "Fronts",
-                body: () => [p("One card per worktree: where it is in the plan, what it has changed, its recent pace, and anything it touched off-plan. A blocked front shows why."), ul(["Hover a card to preview its files on the map"], ["Click it to show only that front; click again for all"], ["The chat bubble adds the front to the Command chat"])],
+                title: "Phases",
+                body: () => [p("One card per phase: its stage (planned, implementing, in review, blocked with why, complete), what it delivers, what it has changed so far and its recent pace."), ul(["Hover a card to preview its files on the map"], ["Click it to show only that phase's files; click again for all"], ["The chat bubble adds the phase to the Command chat"]), p({ class: "guide-muted" }, "With several worktrees at once (parallel sessions, stacked PRs), a Worktrees list appears below.")],
             },
             {
                 id: "timeline",

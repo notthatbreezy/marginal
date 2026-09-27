@@ -6496,3 +6496,80 @@ del.sg-del {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ---------- Command rail: phases first; worktrees only when there are several ---------- */
+.cc .rail-phases,
+.cc .rail-worktrees {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.cc .rail-phases {
+    flex: 1 1 auto;
+}
+.cc .rail-worktrees {
+    flex: 0 1 auto;
+    max-height: 45%;
+    border-top: 1px solid var(--border);
+}
+.cc .rail-worktrees[hidden] {
+    display: none;
+}
+/* Phase rows reuse the front card; their colour is their stage. */
+.cc .phase-row.ps-implementing { --fc: var(--purple); }
+.cc .phase-row.ps-review { --fc: var(--blue); }
+.cc .phase-row.ps-blocked { --fc: var(--red); }
+.cc .phase-row.ps-planned { --fc: var(--muted); }
+.cc .phase-row.ps-complete { --fc: var(--green); }
+.cc .phase-row.ps-planned .fdot {
+    background: transparent !important;
+    box-shadow: inset 0 0 0 1.5px var(--fc);
+}
+.cc .phase-row.ps-planned .lbl,
+.cc .phase-row.ps-complete .lbl {
+    color: var(--muted);
+}
+.cc .phase-row .pid {
+    color: var(--muted);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.cc .phase-row .deliv {
+    margin: 3px 0 0 16px;
+    font-size: 11.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cc .phase-row .deliv code {
+    font-family: var(--mono);
+    font-size: 11px;
+}
+.cc .phase-row .note:not(.why) {
+    color: var(--muted);
+}
+.cc .phase-row .row3 .spark,
+.cc .phase-row .row3 svg polyline {
+    stroke: var(--fc);
+}
+/* Timeline: review and blocked phases */
+.cc .seg.review {
+    background: color-mix(in srgb, var(--blue) 12%, var(--bg));
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--blue) 60%, transparent);
+}
+.cc .seg.review .gl {
+    border-color: var(--blue);
+}
+.cc .seg.blocked {
+    background: var(--red-muted);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--red) 60%, transparent);
+}
+.cc .seg.blocked .gl {
+    border-color: var(--red);
+    background: var(--red);
+}

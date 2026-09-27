@@ -6,6 +6,7 @@ import { INSTANCE, api, bus, h, put, svc } from "../core.js";
 import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
 import { buckets, changesAt, velocity } from "./derive.js";
 import { renderFronts, renderTimeline } from "./fronts.js";
+import { PHASE_STAGE, renderPhases } from "./phases.js";
 import { renderMonitors } from "./monitors.js";
 import { buildTree, findNode } from "./squarify.js";
 import { createTreemap } from "./treemap.js";
@@ -47,6 +48,8 @@ const freshUi = () => ({
     windowKey: "auto",
     focusFront: null,
     hoverFront: null,
+    focusPhase: null,
+    hoverPhase: null,
     offOnly: false,
     layout: emptyLayout(), // root null = auto
     viewId: null, // the view the current layout came from (null = auto / custom)
@@ -68,7 +71,7 @@ export async function mountCommand(host, { documentId }) {
     cc.announced = { phases: "", offPlan: 0 };
     host.classList.add("cc-host");
     const root = h("div", { class: "cc" });
-    root.append(buildStrip(), buildMap(), h("aside", { class: "rail-fronts", "aria-label": "Fronts" }), h("section", { class: "timeline", "aria-label": "Checkpoints" }), h("div", { class: "sr-only", "aria-live": "polite", role: "status" }));
+    root.append(buildStrip(), buildMap(), h("aside", { class: "rail-fronts", "aria-label": "Phases" }, h("div", { class: "rail-phases" }), h("div", { class: "rail-worktrees", hidden: true })), h("section", { class: "timeline", "aria-label": "Phases timeline" }), h("div", { class: "sr-only", "aria-live": "polite", role: "status" }));
     put(host, root);
     cc.off.push(bus.on("command", onEvent));
     const onKey = (e) => keydown(e);
@@ -410,7 +413,7 @@ function zoomTo(path) {
 function matchers(plan) {
     const all = planPatterns(plan);
     const fp = compilePatterns(all);
-    const activePhases = (plan?.phases ?? []).filter((p) => p.state.status === "active");
+    const activePhases = (plan?.phases ?? []).filter((p) => p.state.status === "active" || p.state.status === "review");
     const act = compilePatterns(activePhases.flatMap(phasePatterns));
     const perPhase = activePhases.map((p) => [p, compilePatterns(phasePatterns(p))]);
     return {
@@ -423,6 +426,30 @@ function matchers(plan) {
 
 const isOff = (c) => !!c && [...c.fronts.values()].some((v) => v.offPlan);
 const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[a-z0-9]+$/i;
+
+/** Each phase with what's changed so far within what it delivers (its expects), and its pace over the last 30 min. */
+function phaseRows(st, changes, now) {
+    const N = 10;
+    const from = now - 30 * 60_000;
+    const span = (now - from) / N;
+    return st.plan.phases.map((ph) => {
+        const inside = compilePatterns(phasePatterns(ph));
+        const row = { phase: ph, stage: PHASE_STAGE[ph.state.status] ?? "planned", add: 0, del: 0, files: 0, series: new Array(N).fill(0) };
+        for (const [path, c] of changes) {
+            if (!inside(path)) continue;
+            row.add += c.add;
+            row.del += c.del;
+            row.files++;
+        }
+        for (const e of cc.events) {
+            const t = Date.parse(e.at);
+            if (t < from || e.initial || e.baseline || !e.phaseIds?.includes(ph.id)) continue;
+            const i = Math.min(N - 1, Math.floor((t - from) / span));
+            row.series[i] += Math.abs(e.delta?.add ?? 0) + Math.abs(e.delta?.del ?? 0);
+        }
+        return row;
+    });
+}
 
 function frontRows(st, changes) {
     const rows = st.fronts.map((front) => ({ front, add: 0, del: 0, files: 0, offPlan: 0, where: whereOf(st.plan, front.id) }));
@@ -441,11 +468,12 @@ function frontRows(st, changes) {
 
 function whereOf(plan, frontId) {
     // A front that hasn't started: which checkpoint it's planned for.
-    const planned = (plan?.phases ?? []).find((ph) => ph.state.status !== "done" && ph.state.status !== "active" && (ph.state.frontIds ?? []).includes(frontId));
-    const active = (plan?.phases ?? []).some((ph) => ph.state.status === "active" && (ph.state.frontIds ?? []).includes(frontId));
+    const inPlay = (ph) => ph.state.status === "active" || ph.state.status === "review";
+    const planned = (plan?.phases ?? []).find((ph) => ph.state.status !== "done" && !inPlay(ph) && (ph.state.frontIds ?? []).includes(frontId));
+    const active = (plan?.phases ?? []).some((ph) => inPlay(ph) && (ph.state.frontIds ?? []).includes(frontId));
     if (planned && !active) return { phase: `Planned for ${planned.id.toUpperCase()} · ${planned.title ?? planned.id}` };
     for (const ph of plan?.phases ?? []) {
-        if (ph.state.status !== "active") continue;
+        if (!inPlay(ph)) continue;
         const step = ph.steps.find((s) => s.state.status === "active" && s.state.frontId === frontId);
         if (step || ph.state.frontIds?.includes(frontId)) return { phase: `${ph.id.toUpperCase()} · ${ph.title}`, step: step?.title ?? null };
     }
@@ -497,13 +525,17 @@ function render() {
     const fronts = new Map(st.fronts.map((f) => [f.id, f]));
     const pins = new Map(L.pins.map((p) => [p, PIN_WEIGHT]));
     const onlyFront = cc.ui.hoverFront ?? cc.ui.focusFront;
+    const phaseOn = cc.ui.hoverPhase ?? cc.ui.focusPhase;
+    const phaseObj = phaseOn && st.plan.phases.find((p) => p.id === phaseOn);
+    const onlyPhase = phaseObj ? compilePatterns(phasePatterns(phaseObj)) : null;
     const vf = L.filters ?? {};
     const offOnly = cc.ui.offOnly || !!vf.offPlanOnly;
     const viewFronts = vf.frontIds?.length ? new Set(vf.frontIds) : null;
     const filter =
-        onlyFront || offOnly || viewFronts || vf.hideTests || vf.minChurn
+        onlyFront || onlyPhase || offOnly || viewFronts || vf.hideTests || vf.minChurn
             ? (path, c) => {
                   if (vf.hideTests && TEST_PATH.test(path)) return false;
+                  if (onlyPhase && !onlyPhase(path)) return false;
                   if (!c) return !(onlyFront || offOnly || viewFronts || vf.minChurn);
                   if (onlyFront && !c.fronts.has(onlyFront)) return false;
                   if (viewFronts && ![...c.fronts.keys()].some((id) => viewFronts.has(id))) return false;
@@ -524,7 +556,7 @@ function render() {
         filter,
         offPlan: (path, c) => isOff(c),
         decorateFile: decorateHunks,
-        tipExtra: (node, c) => (isOff(c) ? h("div", { class: "warn" }, "Off-plan: outside every active checkpoint this front is working on.") : null),
+        tipExtra: (node, c) => (isOff(c) ? h("div", { class: "warn" }, "Off-plan: outside what the phases being worked on deliver.") : null),
         badges: cc.walkLink?.files,
         stopOn: cc.walkLink?.stopOn,
         stopKey: cc.walkLink?.key,
@@ -532,7 +564,27 @@ function render() {
     });
     cc.sel.paint(); // tiles are rebuilt every render; re-apply the selection
     paintPinFind();
-    renderFronts(cc.host.querySelector(".rail-fronts"), frontRows(st, changes), {
+    renderPhases(cc.host.querySelector(".rail-phases"), phaseRows(st, changes, now), {
+        focusId: cc.ui.focusPhase,
+        chatIcon: ADD_CHAT_SVG,
+        onToggle: (id) => {
+            cc.ui.focusPhase = cc.ui.focusPhase === id ? null : id;
+            announce(cc.ui.focusPhase ? `Showing only ${id.toUpperCase()}'s files` : "Showing all phases");
+            schedule(true);
+        },
+        onHover: (id) => {
+            if (cc.ui.hoverPhase === id) return;
+            cc.ui.hoverPhase = id;
+            schedule(true);
+        },
+        onAddChat: svc.addToCommandChat ? (p) => svc.addToCommandChat([phaseItem(p)]) : null,
+    });
+    // Worktrees are plumbing: listed only when there are several (parallel sessions, stacked PRs).
+    const wt = cc.host.querySelector(".rail-worktrees");
+    wt.hidden = st.fronts.length < 2;
+    if (wt.hidden) put(wt);
+    else renderFronts(wt, frontRows(st, changes), {
+        title: "Worktrees",
         focusId: cc.ui.focusFront,
         series: sparkSeries(now),
         onToggle: (id) => {

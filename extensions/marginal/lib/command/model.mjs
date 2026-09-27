@@ -11,7 +11,17 @@ export const FRONT_STATUS_ALIASES = { active: "implementing", done: "complete" }
 export const frontStatus = (s) => FRONT_STATUS_ALIASES[s] ?? s;
 /** Stages that need a worktree (the canvas watches it). */
 export const WORKING_STATUS = new Set(["implementing", "review"]);
-export const PHASE_STATUS = ["pending", "active", "done"];
+/**
+ * A phase is a deliverable: what it builds (expects) and its stage. pending: planned; active: being implemented;
+ * review: built, being reviewed (fixes still count toward it); blocked: waiting, with a note saying on what; done:
+ * delivered, with a checkpoint commit.
+ */
+export const PHASE_STATUS = ["pending", "active", "review", "blocked", "done"];
+/** The names people use, accepted as input. */
+export const PHASE_STATUS_ALIASES = { planned: "pending", implementing: "active", "in-review": "review", in_review: "review", complete: "done", completed: "done" };
+export const phaseStatus = (s) => PHASE_STATUS_ALIASES[s] ?? s;
+/** Stages in which edits count toward the phase. */
+export const PHASE_IN_PLAY = new Set(["active", "review"]);
 export const MISSION_STATUS = ["working", "awaiting_operator", "complete"];
 export const FRONT_COLORS = 6; // palette size; colors resolved in CSS from tokens
 
