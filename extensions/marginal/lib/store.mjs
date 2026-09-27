@@ -212,7 +212,7 @@ function unitKind(unit, parent) {
     return parent.nodes.includes(unit) ? "flow_node" : "flow_edge";
 }
 
-async function applyEditInner(doc, edit) {
+async function applyEditInner(doc, edit, { dryRun = false } = {}) {
     if (!edit || typeof edit !== "object") throw new InputError("edit must be an object.");
     const draft = structuredClone(doc);
     const next = counter(draft);
@@ -378,6 +378,7 @@ async function applyEditInner(doc, edit) {
     const topBlock = topBlockOf(draft.content, blockId)[0];
     draft.version = doc.version + 1;
     draft.lastEdit = { type: edit.type, targetId, blockId, topBlockId: topBlock?.id, kind, ...(kind !== topBlock?.type && UNIT_TYPES[kind] ? { unit: targetId } : {}), ...(linkId ? { linkId } : {}), ...(fields ? { fields } : {}), at: new Date().toISOString() };
+    if (dryRun) return { draft };
     persist(draft, "edit");
     touchActivity(doc.id);
     const el = edit.type === "remove" ? null : locate(draft.content, targetId)?.node;
@@ -386,6 +387,20 @@ async function applyEditInner(doc, edit) {
 
 export function applyEdit(docId, edit) {
     return withLock(docId, () => applyEditInner(getDoc(docId), edit));
+}
+
+/** Check a batch of edits against the doc without saving anything (each sees the ones before it). */
+export async function checkEdits(docId, edits) {
+    let doc = getDoc(docId);
+    for (const [n, e] of edits.entries()) {
+        try {
+            ({ draft: doc } = await applyEditInner(doc, e, { dryRun: true }));
+        } catch (err) {
+            if (!(err instanceof InputError)) throw err;
+            throw new InputError(`${edits.length > 1 ? `edits[${n}]: ` : ""}${err.message}`);
+        }
+    }
+    return edits.length;
 }
 
 /**

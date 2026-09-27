@@ -1406,7 +1406,7 @@ function connect() {
 // Two modes share the popup: "board" (side-chat about the doc: one conversation from open to close; pointing at
 // something else refocuses the next message and keeps the history) and "command" (the Command tab's
 // persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
-const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
+const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), suggestions: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
 const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
 const chatLog = $("#chat-log");
 const chatText = $("#chat-text");
@@ -1440,6 +1440,7 @@ function endThread() {
     if (chat.threadId) api("/ask/end", { method: "POST", body: { threadId: chat.threadId } }).catch(() => {});
     Object.assign(chat, { threadId: null, awaiting: false, statusEl: null });
     chat.bubbles.clear();
+    chat.suggestions?.clear();
     chatLog.replaceChildren();
     fitHeight();
 }
@@ -1466,6 +1467,7 @@ function switchChatMode(mode) {
     $("#chat").setAttribute("aria-label", mode === "command" ? "Chat with the orchestrator" : "Chat with Copilot");
     $("#chat-feed").hidden = mode !== "command";
     renderChips();
+    renderChatMode();
 }
 
 /** Focus chips (Command chat): items are {key, kind, label, cls?, item} where item is a Focus payload entry (docs/command-center.md). */
@@ -1525,6 +1527,7 @@ function openChat(ctx) {
     $("#chat-fab").hidden = true;
     if (!peekEl.hidden) keepChatClear(peekEl.getBoundingClientRect().width);
     markAsking();
+    renderChatMode(); // the doc may have changed since (the mode is remembered per doc)
     fitHeight();
     focusChatInput();
 }
@@ -1713,7 +1716,7 @@ const chatBox = $("#chat");
 const MIN_W = 280;
 /** Never shorter than the drag bar + input box (which grows with its text), plus a sliver of messages once there are any. */
 const chatEmpty = () => !chatLog.childElementCount;
-const extraH = () => ["#chat-feed", "#chat-chips", "#chat-blocked"].reduce((n, s) => n + ($(s)?.hidden === false ? $(s).offsetHeight + 4 : 0), 0);
+const extraH = () => ["#chat-feed", "#chat-chips", "#chat-blocked", "#chat-mode"].reduce((n, s) => n + ($(s)?.hidden === false ? $(s).offsetHeight + 4 : 0), 0);
 const minChatHeight = () => Math.max(chatEmpty() ? 0 : 150, ($("#chat-bar").offsetHeight || 22) + ($(".chat-input").offsetHeight || 40) + 16 + extraH() + (chatEmpty() ? 0 : 48));
 function anchor() {
     const r = chatBox.getBoundingClientRect();
@@ -1828,7 +1831,8 @@ function onChatEvent(ev) {
         el.dataset.raw = ev.text;
         el.innerHTML = markdown(ev.text);
         scrollChat();
-    } else if (ev.kind === "retract") {
+    } else if (ev.kind === "proposal") showSuggestion(ev);
+    else if (ev.kind === "retract") {
         chat.bubbles.get(ev.messageId)?.remove();
         chat.bubbles.delete(ev.messageId);
     } else if (ev.kind === "done") {
@@ -1836,6 +1840,7 @@ function onChatEvent(ev) {
         const turn = chat.turn;
         if (turn) {
             if (turn.el) chatLog.append(turn.el); // under the final reply
+            if (turn.suggest) chatLog.append(turn.suggest);
             setTimeout(() => turn === chat.turn && (turn.open = false), 2500); // edits can land just after the reply
         }
     }
@@ -1863,7 +1868,8 @@ function recordChange(le) {
     if (!key) return;
     turn.changes.set(key, le);
     turn.el ??= h("div", { class: "chat-changes", role: "group", "aria-label": "Doc changes in this reply" });
-    chatLog.insertBefore(turn.el, chat.statusEl); // follows the reply as it streams
+    if (turn.anchor?.isConnected) turn.anchor.after(turn.el);
+    else chatLog.insertBefore(turn.el, chat.statusEl); // follows the reply as it streams
     // Labels read the updated doc, which loads a moment after the event.
     setTimeout(() => renderChanges(turn), 250);
     renderChanges(turn);
@@ -1903,13 +1909,79 @@ async function showChange(le) {
     toc?.reveal(el, { flash: el.matches(".block") ? el : (el.closest(".block") ?? el) });
 }
 
-async function sendChat() {
+// ---- Discuss / Edit: whether Copilot may change the doc while it answers (remembered per doc) ----
+const MAC_KEYS = /Mac|iPhone|iPad/.test(navigator.platform);
+const modeKey = () => `marginal.chat.mode.${state.documentId ?? "none"}`;
+function chatDiscuss() {
+    try {
+        return localStorage.getItem(modeKey()) === "discuss";
+    } catch {
+        return false;
+    }
+}
+function setChatDiscuss(on) {
+    try {
+        localStorage.setItem(modeKey(), on ? "discuss" : "edit");
+    } catch {}
+    renderChatMode();
+}
+function renderChatMode() {
+    const el = $("#chat-mode");
+    el.hidden = chat.mode !== "board";
+    if (el.hidden) return;
+    const d = chatDiscuss();
+    const seg = (on, label, tip) =>
+        h("button", { class: `cm-seg${d === on ? " on" : ""}`, role: "radio", "aria-checked": String(d === on), title: tip, onmousedown: (e) => e.preventDefault(), onclick: () => setChatDiscuss(on) }, label);
+    put(
+        el,
+        seg(true, "Discuss", "Answers only: Copilot won't change the doc. A change it suggests waits under its reply for you to apply."),
+        seg(false, "Edit", "Copilot may change the doc as it answers."),
+        h("span", { class: "cm-hint", title: `Send one message as ${d ? "Edit" : "Discuss"} without switching` }, h("kbd", {}, MAC_KEYS ? "⌘" : "Ctrl"), "+", h("kbd", {}, "Shift"), "+", h("kbd", {}, "Enter"), ` as ${d ? "Edit" : "Discuss"}`),
+    );
+}
+
+/** A change Copilot suggested in a Discuss turn: held until you apply it. */
+function showSuggestion(ev) {
+    const turn = chat.turn;
+    const count = `${ev.count} edit${ev.count === 1 ? "" : "s"}`;
+    let el = chat.suggestions.get(ev.proposalId);
+    if (!el) {
+        el = h("div", { class: "chat-suggest", role: "group", "aria-label": "Suggested doc change" });
+        chat.suggestions.set(ev.proposalId, el);
+        chatLog.insertBefore(el, chat.statusEl); // follows the reply as it streams
+        if (turn) turn.suggest = el;
+    }
+    const threadId = chat.threadId;
+    const act = async (what) => {
+        for (const b of el.querySelectorAll("button")) b.disabled = true;
+        // Edits landing now are listed right under the suggestion, like a reply's changes.
+        const t = what === "apply" && !chat.turn?.open ? (chat.turn = { open: true, changes: new Map(), el: null, anchor: el }) : null;
+        try {
+            await api(`/ask/${what}`, { method: "POST", body: { threadId, proposalId: ev.proposalId } });
+            put(el, h("span", { class: `cs-done ${what}` }, what === "apply" ? `✓ Applied the suggested change (${count})` : "Suggestion dismissed"));
+        } catch (e) {
+            put(el, h("span", { class: "cs-done err" }, e.message));
+        } finally {
+            if (t) setTimeout(() => (t.open = false), 2500);
+        }
+    };
+    put(
+        el,
+        h("span", { class: "cs-h" }, h("span", { class: "cs-ic", "aria-hidden": "true" }, "✎"), "Suggested change ", h("span", { class: "cs-n" }, `· ${count}`)),
+        h("button", { class: "cs-apply", title: "Make this change in the doc", onclick: () => act("apply") }, "Apply"),
+        h("button", { class: "cs-dismiss", title: "Leave the doc as it is", onclick: () => act("discard") }, "Dismiss"),
+    );
+    scrollChat();
+}
+
+async function sendChat({ flip = false } = {}) {
     const message = chatText.value.trim();
     if (!message || chat.awaiting) return;
+    const discuss = chat.mode === "board" && chatDiscuss() !== flip;
     const board = chat.mode === "board" && !chat.docked;
     // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
     if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), chat.statusEl);
-    chatLog.insertBefore(h("div", { class: "chat-msg me" }, message), chat.statusEl);
+    chatLog.insertBefore(h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message), chat.statusEl);
     chatText.value = "";
     autosize();
     scrollChat();
@@ -1926,7 +1998,7 @@ async function sendChat() {
             method: "POST",
             body: cmd
                 ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: docked?.context?.() }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined) },
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss },
         });
         chat.threadId = res.threadId;
         if (!cmd && chat.focusGen === gen) chat.quoteFresh = false; // unless the focus moved while this was sending
@@ -1974,10 +2046,10 @@ $("#chat-close").onclick = closeChat;
 chatText.addEventListener("input", autosize);
 for (const ev of ["focus", "blur"]) chatText.addEventListener(ev, () => updateCenter()); // the send hint in the header
 chatText.addEventListener("keydown", (e) => {
-    // Shift+Enter sends; plain Enter inserts a newline.
+    // Shift+Enter sends; plain Enter inserts a newline; Ctrl/⌘+Shift+Enter sends one message in the other mode.
     if (e.key === "Enter" && e.shiftKey) {
         e.preventDefault();
-        sendChat();
+        sendChat({ flip: chat.mode === "board" && (e.ctrlKey || e.metaKey) });
     }
 });
 // ---------------- paragraph controls in the margin ----------------

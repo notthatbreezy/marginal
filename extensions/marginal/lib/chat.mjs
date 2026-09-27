@@ -31,6 +31,8 @@ export function createChat(getSession) {
     const listeners = new Set();
     let current = null; // threadId owning the active turn
     let lastUserIds = new Set(); // ids of the most recently admitted user message
+    const metaByMessage = new Map(); // user message id -> { threadId, messageId, docId, discuss }
+    let currentMeta = null; // the message whose turn is running
 
     const emit = (threadId, event) => {
         const t = threads.get(threadId);
@@ -46,6 +48,7 @@ export function createChat(getSession) {
             case "user.message": {
                 const threadId = byMessage.get(ev.id) ?? (d.messageId && byMessage.get(d.messageId));
                 current = threadId ?? null;
+                currentMeta = metaByMessage.get(ev.id) ?? (d.messageId && metaByMessage.get(d.messageId)) ?? null;
                 lastUserIds = new Set([ev.id, d.messageId].filter(Boolean));
                 if (threadId) emit(threadId, { kind: "status", text: "Thinking" });
                 break;
@@ -74,22 +77,32 @@ export function createChat(getSession) {
             case "session.idle": {
                 if (current) emit(current, { kind: "done" });
                 current = null;
+                currentMeta = null;
+                lastUserIds = new Set(); // a send() resolving after this must not revive the finished turn
                 break;
             }
         }
     }
 
-    async function send({ instanceId, threadId, prompt, displayPrompt }) {
+    async function send({ instanceId, threadId, prompt, displayPrompt, docId = null, discuss = false }) {
         const session = getSession();
         if (!session) throw new InputError("Still connecting to Copilot. Try again in a moment.");
         if (threadId && !threads.has(threadId)) throw new InputError("That conversation has ended; start a new one.");
         const id = threadId ?? randomBytes(8).toString("hex");
-        if (!threads.has(id)) threads.set(id, { instanceId, messageIds: new Set() });
-        const messageId = await session.send({ prompt, displayPrompt, mode: "enqueue" });
-        threads.get(id).messageIds.add(messageId);
+        if (!threads.has(id)) threads.set(id, { instanceId, messageIds: new Set(), proposals: new Map(), notes: [] });
+        const t = threads.get(id);
+        // Things the user did since the last message (such as applying a held suggestion) lead the next one.
+        const notes = t.notes.splice(0);
+        const messageId = await session.send({ prompt: [...notes, prompt].join("\n\n"), displayPrompt, mode: "enqueue" });
+        t.messageIds.add(messageId);
         byMessage.set(messageId, id);
+        const meta = { threadId: id, messageId, docId, discuss: !!discuss };
+        metaByMessage.set(messageId, meta);
         // The user.message event can arrive before send() resolves; if it already did, this thread owns the turn.
-        if (lastUserIds.has(messageId)) current = id;
+        if (lastUserIds.has(messageId)) {
+            current = id;
+            currentMeta = meta;
+        }
         emit(id, { kind: "status", text: current === id ? "Thinking" : "Queued — Copilot will reply after its current work" });
         return { threadId: id, messageId };
     }
@@ -97,15 +110,47 @@ export function createChat(getSession) {
     function end(threadId) {
         const t = threads.get(threadId);
         if (!t) return;
-        for (const m of t.messageIds) byMessage.delete(m);
+        for (const m of t.messageIds) {
+            byMessage.delete(m);
+            metaByMessage.delete(m);
+        }
         threads.delete(threadId);
         if (current === threadId) current = null;
     }
+
+    /** The running turn, if the user asked it in Discuss mode about this doc (answer only: the doc isn't to change). */
+    // Closing the popup mid-reply doesn't lift it: the user still asked for an answer, not changes.
+    const discussing = (docId) => (currentMeta?.discuss && currentMeta.docId === docId ? currentMeta : null);
+    /** Edits already held in this turn (later ones may build on them). */
+    const heldEdits = (meta) => threads.get(meta.threadId)?.proposals.get(meta.messageId)?.edits ?? [];
+
+    /** Keep edits Copilot tried to make in a Discuss turn as one suggestion under its reply. */
+    function hold(meta, edits) {
+        const t = threads.get(meta.threadId);
+        if (!t) return 0;
+        const p = t.proposals.get(meta.messageId) ?? { docId: meta.docId, edits: [] };
+        p.edits.push(...edits);
+        t.proposals.set(meta.messageId, p);
+        emit(meta.threadId, { kind: "proposal", proposalId: meta.messageId, count: p.edits.length });
+        return p.edits.length;
+    }
+    /** Hand a held suggestion over to be applied (or dropped); it can only be taken once. */
+    function takeProposal(threadId, proposalId) {
+        const p = threads.get(threadId)?.proposals.get(proposalId);
+        if (p) threads.get(threadId).proposals.delete(proposalId);
+        return p ?? null;
+    }
+    const note = (threadId, text) => threads.get(threadId)?.notes.push(text);
 
     return {
         onEvent,
         send,
         end,
+        discussing,
+        heldEdits,
+        hold,
+        takeProposal,
+        note,
         subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)),
         /** The side-chat thread that owns the current turn (null = the user's own main-chat work). */
         activeThread: () => current,

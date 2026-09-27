@@ -4,6 +4,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **Discuss / Edit** in the doc chat. A switch under the input, remembered for each doc, says whether Copilot may change the doc while it answers (Edit, as before) or should only answer (Discuss). Discuss is enforced by the canvas, not just asked for: while Copilot answers a Discuss message, its doc changes are refused, and edits it tries to make are checked and held as one suggestion under its reply, with **Apply** and **Dismiss**. Applying lands the edits like any Copilot edit (listed under the suggestion) and tells Copilot on your next message. Ctrl/⌘+Shift+Enter sends one message in the other mode without moving the switch; Discuss messages are marked as such.
+
 ### Fixed
 
 - The Command tab's fronts list can be scrolled again: it no longer jumps back to the top while you scroll, as the work updates, or when the pointer rests on a front.

@@ -293,8 +293,29 @@ export async function startServer({ chat, instances, getSessionId }) {
             return send(res, 200, { ended: true });
         }
 
+        // A suggestion Copilot made in a Discuss turn: apply it as it was checked, or drop it.
+        if (parts[1] === "ask" && (parts[2] === "apply" || parts[2] === "discard") && method === "POST") {
+            const { threadId, proposalId } = await readBody(req);
+            const p = typeof threadId === "string" && typeof proposalId === "string" ? chat.takeProposal(threadId, proposalId) : null;
+            if (!p) throw new InputError("That suggestion is no longer available.");
+            if (parts[2] === "discard") return send(res, 200, { discarded: true });
+            let done = 0;
+            try {
+                for (const e of p.edits) {
+                    await store.applyEdit(p.docId, e);
+                    done++;
+                }
+            } catch (err) {
+                if (!(err instanceof InputError)) throw err;
+                chat.note(threadId, `[The user applied your suggested change, but only ${done} of ${p.edits.length} edits still fit the doc: ${err.message}]`);
+                throw new InputError(`${done ? `Applied ${done} of ${p.edits.length}; the rest` : "It"} no longer fits the doc (it changed since). Ask Copilot to redo it.`);
+            }
+            chat.note(threadId, "[The user applied the change you suggested in your last reply; it is in the doc now.]");
+            return send(res, 200, { applied: done });
+        }
+
         if (parts[1] === "ask" && method === "POST") {
-            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind } = await readBody(req);
+            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind, discuss } = await readBody(req);
             if (typeof message !== "string" || !message.trim()) throw new InputError("message is required.");
             const instanceId = url.searchParams.get("instance") ?? "";
             const doc = documentId ? store.getDoc(documentId) : null;
@@ -318,13 +339,19 @@ export async function startServer({ chat, instances, getSessionId }) {
             // Inspecting a diagram (and the docked Command walkthrough) says where the reader is on every message, since they move between steps.
             if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
             lines.push(message.trim().slice(0, 8000));
-            if (kind === "inspect")
+            if (discuss)
+                lines.push(
+                    kind === "inspect"
+                        ? "(Discuss mode: the user is inspecting that diagram and wants an answer in the chat popup, not doc changes; what they change may depend on your answer. Reply briefly there. If notes on the step would help, you may still add them with edit as usual: they aren't applied but held as a suggestion the user can apply with one click, so mention it in a line.)"
+                        : "(Discuss mode: the user wants an answer in the chat popup, not doc changes; what they decide to change may depend on your answer. Keep it short and conversational. Don't change the doc. If your answer points to a specific change worth making, you may still send it with edit as usual: it isn't applied but held as a suggestion the user can apply with one click, so mention it in a line. Other doc-changing actions are refused.)",
+                );
+            else if (kind === "inspect")
                 lines.push(
                     "(The user is inspecting that diagram: a side panel lists every step with its explanation, code and notes, beside the diagram. When they ask for more explanation, an example, or what something looks like, add it to the step as notes: edit {type:\"update\", targetId:<the step/node/frame id>, changes:{notes:[...existing, {title?, text?, source? | code?}]}}. Use source for a real example from the code (read it first) and code for an illustrative sketch. The panel updates in place. Reply briefly in the chat popup.)",
                 );
             else lines.push("(The user reads your reply in a small chat popup on the doc: keep it short and conversational. Make any changes with the Marginal canvas actions; they appear live.)");
             const where = doc ? `On doc “${doc.title}”${kind === "inspect" ? ` · inspecting${blockId ? ` ${blockId}` : ""}` : blockId ? ` (${blockId})` : ""}` : "From the doc";
-            const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}` });
+            const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}${discuss ? " · discuss only" : ""}`, docId: doc?.id ?? null, discuss: !!discuss && !!doc });
             return send(res, 200, result);
         }
 

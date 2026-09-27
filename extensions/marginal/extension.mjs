@@ -51,6 +51,12 @@ function docIdFor(input, ctx) {
     return id;
 }
 
+/** Doc changes other than edits (which are held as a suggestion) are refused while the user is only discussing. */
+function notDiscussing(docId) {
+    if (chat.discussing(docId)) throw new InputError("The user asked this in Discuss mode: answer in the chat and don't change the doc. Say what you'd change; they can switch to Edit or ask you to go ahead.");
+    return docId;
+}
+
 async function show(ctx, documentId) {
     if (documentId) store.getDoc(documentId);
     const entry = instances.get(ctx.instanceId) ?? {};
@@ -185,6 +191,17 @@ const actions = [
             const id = docIdFor(i, ctx);
             const edits = i.edits ?? (i.edit ? [i.edit] : []);
             if (!edits.length) throw new InputError("Pass edit or edits.");
+            const discussing = chat.discussing(id);
+            if (discussing) {
+                await store.checkEdits(id, [...chat.heldEdits(discussing), ...edits]);
+                const held = chat.hold(discussing, edits);
+                if (!held) notDiscussing(id); // the conversation was closed: nowhere to offer it, so refuse
+                return {
+                    applied: false,
+                    held,
+                    note: `Not applied: the user asked this in Discuss mode (answer in the chat; don't change the doc). The edit${edits.length === 1 ? " was" : "s were"} checked and held as a suggestion (${held} edit${held === 1 ? "" : "s"} so far) that the user can apply with one click under your reply. Don't retry or work around it; say in a sentence what the suggestion would change.`,
+                };
+            }
             const results = [];
             for (const [n, e] of edits.entries()) {
                 try {
@@ -255,14 +272,14 @@ const actions = [
         name: "lens",
         description: "Group changed files for the Diff tab: op insert {title, paths, collapsed?, afterId?}, update {targetId, title?, paths?, collapsed?}, remove {targetId}, list. paths are files or 'dir/' prefixes. Returns still-uncategorized files.",
         inputSchema: { type: "object", properties: { documentId: docId, op: { type: "string", enum: ["insert", "update", "remove", "list"] }, targetId: { type: "string" }, title: { type: "string" }, paths: { type: "array", items: { type: "string" } }, collapsed: { type: "boolean" }, afterId: { type: "string" } }, required: ["op"] },
-        handler: wrap((i, ctx) => store.lensEdit(docIdFor(i, ctx), i)),
+        handler: wrap((i, ctx) => (i.op === "list" ? store.lensEdit(docIdFor(i, ctx), i) : store.lensEdit(notDiscussing(docIdFor(i, ctx)), i))),
     },
     {
         name: "set_target",
         description: "Repin a doc to new commits (e.g. after new pushes). Content is kept; the result lists sources that no longer resolve so you can repair them.",
         inputSchema: { type: "object", properties: { documentId: docId, target: targetSchema, pullRequestUrl: { type: "string" } }, required: ["target"] },
         handler: wrap(async (i, ctx) => {
-            const id = docIdFor(i, ctx);
+            const id = notDiscussing(docIdFor(i, ctx));
             const pr = i.pullRequestUrl ? { url: git.parsePullRequestUrl(i.pullRequestUrl).url } : undefined;
             return store.setTarget(id, await resolveTargetInput(i.target), pr);
         }),
@@ -271,7 +288,7 @@ const actions = [
         name: "rename",
         description: "Rename a doc.",
         inputSchema: { type: "object", properties: { documentId: docId, title: { type: "string" } }, required: ["title"] },
-        handler: wrap((i, ctx) => store.rename(docIdFor(i, ctx), i.title)),
+        handler: wrap((i, ctx) => store.rename(notDiscussing(docIdFor(i, ctx)), i.title)),
     },
     {
         name: "history",
@@ -283,13 +300,13 @@ const actions = [
         name: "restore",
         description: "Restore a doc's content to an earlier version (saved as a new version).",
         inputSchema: { type: "object", properties: { documentId: docId, version: { type: "integer" } }, required: ["version"] },
-        handler: wrap((i, ctx) => store.restore(docIdFor(i, ctx), i.version)),
+        handler: wrap((i, ctx) => store.restore(notDiscussing(docIdFor(i, ctx)), i.version)),
     },
     {
         name: "delete",
         description: "Permanently delete a doc. Only when the user asks.",
         inputSchema: { type: "object", properties: { documentId: { type: "string" } }, required: ["documentId"] },
-        handler: wrap((i) => store.remove(i.documentId)),
+        handler: wrap((i) => store.remove(notDiscussing(i.documentId))),
     },
     ...commandActions({ resolveDoc: docIdFor, getSessionId: () => session?.sessionId }),
 ];
