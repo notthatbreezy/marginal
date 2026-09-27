@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 ### Added
 
 - Docs have a **Contents** card: sections, plus the diagrams, code peeks, callouts and headings inside them. It opens on its own when there's room beside the doc, minimizes to a pill, and closes; the header button brings it back.
