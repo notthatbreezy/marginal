@@ -356,17 +356,19 @@ const headlessTool = {
     description: `Marginal docs without an open panel: run any Marginal canvas action by name with its input (pass documentId). Actions: ${actions.map((a) => a.name).filter((n) => !HEADLESS_SKIP.has(n)).join(", ")}. Same inputs and results as invoke_canvas_action on the Marginal canvas; call {action:"instructions"} first. To show a doc to the user, open the Marginal canvas instead.`,
     parameters: { type: "object", properties: { action: { type: "string", description: "Action name, e.g. read, edit, changes, export, list, create" }, input: { type: "object", description: "The action's input (include documentId)" } }, required: ["action"] },
     skipPermission: true,
+    // A thrown error reaches the agent only as "Tool execution failed", so failures are returned with their message.
     handler: async ({ action, input } = {}) => {
+        const fail = (message) => ({ textResultForLlm: message, resultType: "failure" });
         const act = actions.find((a) => a.name === action);
-        if (!act) throw new Error(`Unknown Marginal action ${JSON.stringify(action)}. Actions: ${actions.map((a) => a.name).join(", ")}.`);
-        if (HEADLESS_SKIP.has(action)) throw new Error("show needs a panel: open the Marginal canvas with {documentId}.");
+        if (!act) return fail(`Unknown Marginal action ${JSON.stringify(action)}. Actions: ${actions.map((a) => a.name).join(", ")}.`);
+        if (HEADLESS_SKIP.has(action)) return fail("show needs a panel: open the Marginal canvas with {documentId}.");
         const inp = { ...(input && typeof input === "object" ? input : {}) };
         if (action === "create" && inp.show === undefined) inp.show = false; // nothing to show it in
-        if (action === "create" && inp.show) throw new Error("create with show needs a panel: open the Marginal canvas, or pass show:false.");
+        if (action === "create" && inp.show) return fail("create with show needs a panel: open the Marginal canvas, or pass show:false.");
         try {
             return await act.handler({ input: inp, instanceId: null, sessionId: session?.sessionId });
         } catch (e) {
-            throw new Error(e?.message ?? String(e));
+            return fail(e?.message ?? String(e));
         }
     },
 };

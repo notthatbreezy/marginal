@@ -14,12 +14,21 @@ import { readLease } from "./command/owner.mjs";
 import { activity } from "./command/index.mjs";
 import { revisingStatus } from "./command/walkthrough.mjs";
 import { eventsSince, lastSeq, onCommand, readPrefs, readState, refreshLog, watchCommand, writePrefs } from "./command/state.mjs";
+import { readProgress, summarizeProgress } from "./command/progress.mjs";
+
 import * as store from "./store.mjs";
 import { readSettings, writeSettings } from "./settings.mjs";
 
 const webDir = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".wasm": "application/wasm" };
 const MAX_BODY = 256 * 1024;
+const progressView = (docId) => {
+    try {
+        return summarizeProgress(readProgress(docId), readState(docId).plan);
+    } catch {
+        return null;
+    }
+};
 
 function send(res, status, body, type = "application/json; charset=utf-8") {
     res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -133,9 +142,13 @@ export async function startServer({ chat, instances, getSessionId }) {
 
     // Command center: one SSE event type with a `kind`; live change events travel as deltas, never as doc versions.
     onCommand((event) => {
+        let ev = event;
         for (const c of clients) {
             const shown = instances.get(c.instanceId)?.documentId ?? null;
-            if (event.documentId === shown) push(c, { type: "command", ...event });
+            if (event.documentId !== shown) continue;
+            // Progress written by another process arrives without its summary; read it once for every panel.
+            if (ev.kind === "progress" && ev.progress === undefined) ev = { ...ev, progress: progressView(ev.documentId) };
+            push(c, { type: "command", ...ev });
         }
     });
 
@@ -155,7 +168,7 @@ export async function startServer({ chat, instances, getSessionId }) {
         const what = sub[0];
         if (what === "state" && req.method === "GET") {
             const lease = readLease(doc.id);
-            return send(res, 200, { state: readState(doc.id), prefs: readPrefs(doc.id), lease, isOwnerHere: !!lease?.live && lease.sessionId === getSessionId?.(), revising: revisingStatus(doc.id), seq: lastSeq(doc.id), repository: repo.name, target: doc.target });
+            return send(res, 200, { state: readState(doc.id), prefs: readPrefs(doc.id), lease, isOwnerHere: !!lease?.live && lease.sessionId === getSessionId?.(), revising: revisingStatus(doc.id), seq: lastSeq(doc.id), repository: repo.name, target: doc.target, progress: progressView(doc.id) });
         }
         if (what === "events" && req.method === "GET") {
             const since = Number(url.searchParams.get("since") ?? 0) || 0;

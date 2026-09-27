@@ -211,6 +211,18 @@ export function readBuckets(docId) {
 // ---------- cross-process live updates ----------
 const lastRevision = new Map();
 const lastLease = new Map();
+const lastProgress = new Map(); // docId -> progress.json mtime this process last wrote or announced
+const progressMtime = (docId) => {
+    try {
+        return statSync(file(docId, "progress.json")).mtimeMs;
+    } catch {
+        return 0;
+    }
+};
+/** The owner wrote progress.json itself (and announced it): the watcher needn't announce it again. */
+export function noteProgressWritten(docId) {
+    lastProgress.set(docId, progressMtime(docId));
+}
 const watchers = new Map();
 const leaseText = (docId) => {
     try {
@@ -243,6 +255,12 @@ export function watchCommand(docId) {
         }
         const added = refreshLog(docId);
         if (added.length) emitCommand({ documentId: docId, kind: "events", events: added, seq: lastSeq(docId) });
+        // Another process (the owner) updated progress: listeners read and summarize it.
+        const pm = progressMtime(docId);
+        if (pm && pm !== lastProgress.get(docId)) {
+            lastProgress.set(docId, pm);
+            emitCommand({ documentId: docId, kind: "progress" });
+        }
     };
     try {
         const w = watch(commandDir(docId), () => {
@@ -257,6 +275,7 @@ export function watchCommand(docId) {
         watchers.set(docId, setInterval(check, 1500).unref());
     }
     lastRevision.set(docId, readState(docId).revision);
+    lastProgress.set(docId, progressMtime(docId));
 }
 
 /** Stop watching one document (or all). Needed before its directory is deleted: Windows keeps watched dirs busy. */

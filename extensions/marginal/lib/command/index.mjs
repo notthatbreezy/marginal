@@ -6,6 +6,7 @@ import { getRepository } from "../git.mjs";
 import { paths } from "../paths.mjs";
 import * as store from "../store.mjs";
 import { ACTIONS } from "./actions.mjs";
+import { attachProgress } from "./collector.mjs";
 import { Issues } from "./issues.mjs";
 import { adoptIfMine, heldHere, isOwner, readLease, stopHeartbeat } from "./owner.mjs";
 import { ACTIVITY_MAX, activityOf, reduceMission, tickMission } from "./mission.mjs";
@@ -84,6 +85,7 @@ export function attachMission(session, { isChatTurn = () => false } = {}) {
                 });
         }
     };
+    const progress = attachProgress(session);
     const off = session.on((ev) => {
         try {
             apply((m, allDone) => reduceMission(m, ev, { allDone }));
@@ -100,6 +102,7 @@ export function attachMission(session, { isChatTurn = () => false } = {}) {
     return () => {
         off?.();
         clearInterval(t);
+        progress.stop();
     };
 }
 
