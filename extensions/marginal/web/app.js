@@ -2125,10 +2125,11 @@ async function sendChat({ flip = false } = {}) {
         const res = await api(`/ask?instance=${encodeURIComponent(INSTANCE)}`, {
             method: "POST",
             body: cmd
-                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: docked?.context?.() }
+                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: chat.nextContext ?? docked?.context?.() }
                 : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss },
         });
         chat.threadId = res.threadId;
+        chat.nextContext = null;
         if (!cmd && chat.focusGen === gen) chat.quoteFresh = false; // unless the focus moved while this was sending
         if (cmd && chat.quote) {
             chat.quote = chat.quoteLabel = null; // a quote rides along with one message; focus chips stay
@@ -3157,6 +3158,17 @@ Object.assign(svc, {
         chat.threadId = threadId;
         chatLog.insertBefore(h("div", { class: "chat-msg me" }, message), chat.statusEl);
         scrollChat();
+    },
+    /** Command tab → chat: send a message for the user (a button that asks the orchestrator for something), with
+     *  context for the orchestrator that the chat doesn't show. The chat opens, so any follow-up questions land there. */
+    sendCommandChat: (message, { context } = {}) => {
+        openChat({ mode: "command" });
+        if (chat.blocked || chat.awaiting) return false;
+        chatText.value = message;
+        autosize();
+        chat.nextContext = context ?? null;
+        sendChat();
+        return true;
     },
     /** Command tab → chat: add focus items and/or a quote, opening the persistent Command chat. */
     addToCommandChat: (focus, extra = {}) => openChat({ mode: "command", focus, ...extra }),

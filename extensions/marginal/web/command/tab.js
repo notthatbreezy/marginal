@@ -1005,6 +1005,37 @@ function closeMenu() {
     cc.ui.menu = null;
 }
 
+/**
+ * The list's call to action: ask the orchestrator for a walkthrough of what's new since the latest review (or of
+ * everything so far, before any review). The Command chat opens, so its reply and any questions show there.
+ */
+function walkNextButton(st, reviewed, latestId) {
+    const last = latestId && st.walkthroughs.find((w) => w.id === latestId);
+    const blocked = chatBlockedReason();
+    const label = last ? "Walk me through what's new since my last review" : "Walk me through the work so far";
+    const context = last
+        ? `The user clicked "${label}" in the walkthrough list. Their latest reviewed walkthrough is "${last.title}" (id ${last.id}), which ended at ${last.pins.head.slice(0, 10)}. Make a new walkthrough with its own id: command_diff then command_walkthrough {op:"show"} from {ref:"reviewed"} to the latest done phase's checkpoint, or {ref:"live", frontId} for work still in progress. If nothing changed since, say so; if the range is unclear, ask here.`
+        : `The user clicked "${label}" in the walkthrough list (nothing reviewed yet). Make a walkthrough with its own id: command_diff then command_walkthrough {op:"show"} from {ref:"base"} to the latest done phase's checkpoint, or {ref:"live", frontId} for work still in progress. If the range is unclear, ask here.`;
+    return h(
+        "div",
+        { class: "wm-foot" },
+        h(
+            "button",
+            {
+                class: "wm-next",
+                disabled: !!blocked,
+                title: blocked ?? (last ? `Asks the orchestrator for a walkthrough from where “${last.title}” ended to now. The Command chat opens for its reply.` : "Asks the orchestrator for a walkthrough from the plan's base to now. The Command chat opens for its reply."),
+                onclick: () => {
+                    closeMenu();
+                    if (svc.sendCommandChat?.(last ? "Walk me through what's new since my last review." : "Walk me through the work so far.", { context })) announce("Asked the orchestrator for a walkthrough");
+                },
+            },
+            h("span", { class: "wm-next-t" }, label),
+            last ? h("span", { class: "wm-next-s" }, `from the end of “${last.title}”`) : null,
+        ),
+    );
+}
+
 /** Every walkthrough of this work, newest first: open one, mark it reviewed (or not). */
 function openWalkMenu(anchor, st) {
     closeMenu();
@@ -1046,7 +1077,7 @@ function openWalkMenu(anchor, st) {
                 ),
             );
         }),
-        h("div", { class: "wm-foot" }, "Ask for “a walkthrough since my last review” to cover only what's new."),
+        walkNextButton(st, reviewed, latest),
     );
     const r = anchor.getBoundingClientRect();
     const hr = cc.host.getBoundingClientRect();

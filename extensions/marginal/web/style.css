@@ -4039,11 +4039,31 @@ svg .muted {
     background: var(--green-muted);
 }
 .cc .wm-foot {
-    padding: 6px 8px 4px;
+    padding: 6px 0 0;
     border-top: 1px solid var(--cc-hair);
     margin-top: 4px;
+}
+.cc .walk-menu .wm-next {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    color: var(--blue);
+    font-weight: 600;
+}
+.cc .walk-menu .wm-next:hover:not(:disabled) {
+    background: var(--blue-muted, var(--surface-2));
+}
+.cc .walk-menu .wm-next:disabled {
+    color: var(--muted);
+    cursor: default;
+}
+.cc .walk-menu .wm-next-s {
     color: var(--muted);
     font-size: 11.5px;
+    font-weight: 400;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .cc .walk .reviewed {
     display: inline-flex;
