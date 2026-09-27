@@ -3980,10 +3980,12 @@ svg .muted {
     max-height: min(60vh, 520px);
     overflow-y: auto;
 }
-.cc .walk-menu .grow {
+.cc .walk-menu .grow,
+.cc .pin-menu .grow {
     flex: 1;
 }
-.cc .walk-menu .wm-n {
+.cc .walk-menu .wm-n,
+.cc .pin-menu .wm-n {
     color: var(--muted);
     font-weight: 400;
 }
