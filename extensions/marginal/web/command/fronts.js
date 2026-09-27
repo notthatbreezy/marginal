@@ -37,23 +37,29 @@ export function renderFronts(host, rows, opts) {
                   { class: "fronts" },
                   rows.map((r) => {
                       const f = r.front;
+                      // A planned front has nothing on the map yet, so it can't be picked to filter it.
+                      const idle = !f.worktree;
+                      const below = f.stacksOn && rows.find((x) => x.front.id === f.stacksOn)?.front;
+                      const heir = f.handedTo && rows.find((x) => x.front.id === f.handedTo)?.front;
                       const li = h(
                           "li",
                           {
-                              class: `front f${f.color + 1} s-${r.stage}${opts.focusId && opts.focusId !== f.id ? " dimmed" : ""}${opts.focusId === f.id ? " focused" : ""}`,
-                              tabindex: "0",
-                              "aria-pressed": String(opts.focusId === f.id),
-                              title: opts.focusId === f.id ? "Showing only this front on the map (click to show all)" : "Click to show only this front on the map",
+                              class: `front f${f.color + 1} s-${r.stage}${idle ? " idle" : ""}${opts.focusId && opts.focusId !== f.id ? " dimmed" : ""}${opts.focusId === f.id ? " focused" : ""}`,
+                              tabindex: idle ? null : "0",
+                              "aria-pressed": idle ? null : String(opts.focusId === f.id),
+                              "aria-disabled": idle ? "true" : null,
+                              title: idle ? "Planned: shows on the map once its worktree is registered" : opts.focusId === f.id ? "Showing only this front on the map (click to show all)" : "Click to show only this front on the map",
                               "data-front": f.id,
-                              onclick: (e) => !e.target.closest(".addchat") && opts.onToggle(f.id),
-                              onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), opts.onToggle(f.id)),
-                              onmouseenter: () => opts.onHover(f.id),
-                              onmouseleave: () => opts.onHover(null),
+                              onclick: (e) => !idle && !e.target.closest(".addchat") && opts.onToggle(f.id),
+                              onkeydown: (e) => !idle && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), opts.onToggle(f.id)),
+                              onmouseenter: () => !idle && opts.onHover(f.id),
+                              onmouseleave: () => !idle && opts.onHover(null),
                           },
                           h("div", { class: "row1" }, h("span", { class: "fdot" }), h("span", { class: "lbl" }, f.label), h("span", { class: `st ${r.stage}`, title: f.statusSince ? `Since ${new Date(f.statusSince).toLocaleString()}` : null }, STAGE[r.stage].badge())),
                           r.where.phase || r.where.step ? h("div", { class: "where" }, r.where.phase ? h("b", {}, r.where.phase) : null, r.where.phase && r.where.step ? h("br") : null, r.where.step ?? null) : null,
+                          below || heir ? h("div", { class: "stack" }, below ? h("span", { title: `A stacked layer: its changes are measured from "${below.label}"` }, "▴ on ", h("b", {}, below.label)) : null, below && heir ? " · " : null, heir ? h("span", { title: `Its worktree now belongs to "${heir.label}"; these totals are where it finished` }, "handed to ", h("b", {}, heir.label)) : null) : null,
                           f.note ? h("div", { class: `note${r.stage === "blocked" ? " why" : ""}` }, f.note) : null,
-                          f.baseDrift ? h("div", { class: "drift", title: "This worktree's HEAD no longer contains the plan base (rebased or merged); changes are measured from their merge-base." }, "⚠ base moved") : null,
+                          f.baseDrift ? h("div", { class: "drift", title: f.stacksOn ? "This worktree no longer contains the layer below's latest commit (it moved on, or this one was rebased); changes are measured from their merge-base." : "This worktree's HEAD no longer contains the plan base (rebased or merged); changes are measured from their merge-base." }, "⚠ base moved") : null,
                           // A planned front has no worktree yet, so nothing to count.
                           r.stage === "planned" && !f.worktree
                               ? h("div", { class: "row3 muted" }, "No worktree yet")

@@ -5851,6 +5851,22 @@ body.prose-editing #center > :not(#edit-hint) {
     font-size: 11.5px;
     color: var(--muted);
 }
+/* Planned fronts have nothing on the map to filter to. */
+.cc .front.idle {
+    cursor: default;
+}
+.cc .front.idle:hover {
+    background: none;
+}
+.cc .front .stack {
+    margin: 3px 0 0 16px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+.cc .front .stack b {
+    font-weight: 600;
+    color: var(--fg);
+}
 
 .cc .rail-h .n {
     display: inline-flex;

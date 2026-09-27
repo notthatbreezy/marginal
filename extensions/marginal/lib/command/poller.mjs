@@ -132,7 +132,21 @@ export function totalsFromLog(docId, frontId, sinceSeq = 0) {
     return m;
 }
 
-/** Resolve the diff base for a front: plan.base while it is an ancestor of HEAD, else their merge-base (drift). */
+/**
+ * What a front's changes are measured from: its own base (given, or frozen when it took a checkout over), else the
+ * layer it stacks on (that front's HEAD, or the last HEAD seen there once its worktree is gone), else the plan base.
+ */
+export async function wantedBase(state, front) {
+    if (front.base) return front.base;
+    const lower = front.stacksOn && state.fronts.find((f) => f.id === front.stacksOn);
+    if (lower) {
+        const head = lower.worktree && !lower.handedTo ? (await gitOut(lower.worktree, ["rev-parse", "HEAD"], { kind: "rev-parse" }))?.trim() : null;
+        if (head || lower.lastHead) return head || lower.lastHead;
+    }
+    return state.plan.base;
+}
+
+/** Resolve the diff base for a front: its wanted base while it is an ancestor of HEAD, else their merge-base (drift). */
 async function effectiveBase(worktree, planBase) {
     const head = (await gitOut(worktree, ["rev-parse", "HEAD"], { kind: "rev-parse" }))?.trim();
     if (!head) return null;
@@ -153,7 +167,7 @@ const holdsLease = (docId) => {
 };
 
 export function startPolling(docId, front, { cadence = CADENCE } = {}) {
-    if (!front?.worktree) return null; // a planned front has nothing to watch yet
+    if (!front?.worktree || front.handedTo) return null; // planned: nothing to watch yet; handed over: the next layer watches it
     const key = `${docId}\0${front.id}`;
     if (loops.has(key)) return loops.get(key);
     const loop = { docId, frontId: front.id, prev: null, base: null, running: false, again: false, stopped: false, timer: null, lastChange: 0, delay: cadence.fast, finalDone: false };
@@ -200,16 +214,16 @@ export async function pollOnce(loop) {
     if (!holdsLease(loop.docId)) return stopAll(loop.docId);
     const state = readState(loop.docId);
     const front = state.fronts.find((f) => f.id === loop.frontId);
-    if (!front || !state.plan || !front.worktree) return stopPolling(loop.docId, loop.frontId);
+    if (!front || !state.plan || !front.worktree || front.handedTo) return stopPolling(loop.docId, loop.frontId);
     if (front.status === "complete" && loop.finalDone) return;
-    const info = await effectiveBase(front.worktree, state.plan.base);
+    const info = await effectiveBase(front.worktree, await wantedBase(state, front));
     if (!info) return;
     const next = await observe(front.worktree, info.base);
     if (!next || loop.stopped || !holdsLease(loop.docId)) return; // ownership may have moved during the git calls
-    if (!!front.baseDrift !== info.drift || front.effectiveBase !== info.base)
+    if (!!front.baseDrift !== info.drift || front.effectiveBase !== info.base || front.lastHead !== info.head)
         writeState(loop.docId, (s) => {
             const f = s.fronts.find((x) => x.id === front.id);
-            if (f) Object.assign(f, { baseDrift: info.drift, effectiveBase: info.base });
+            if (f) Object.assign(f, { baseDrift: info.drift, effectiveBase: info.base, lastHead: info.head });
         });
     // A new base (plan re-set, or the worktree rebased) re-baselines: totals change without anyone editing.
     const knownBase = loop.base ?? front.effectiveBase ?? null;

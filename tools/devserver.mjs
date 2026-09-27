@@ -97,7 +97,7 @@ await call("command_plan", {
     },
 });
 // Every front the plan needs, declared up front; the later ones stay planned until their worktree exists.
-await call("command_front", { op: "plan", fronts: [{ id: "orchestrator", label: "orchestrator" }, { id: "runner", label: "runner-retry" }, { id: "triggers", label: "triggers-sched" }, { id: "tests", label: "tests" }, { id: "telemetry", label: "telemetry", note: "Starts once retries land (P3)" }, { id: "docs", label: "docs" }] });
+await call("command_front", { op: "plan", fronts: [{ id: "orchestrator", label: "orchestrator" }, { id: "runner", label: "runner-retry" }, { id: "triggers", label: "triggers-sched" }, { id: "tests", label: "tests" }, { id: "telemetry", label: "telemetry", stacksOn: "runner", note: "Starts once retries land (P3)" }, { id: "docs", label: "docs", stacksOn: "telemetry" }] });
 await call("command_front", { op: "register", id: "orchestrator", label: "orchestrator", worktree: repo });
 await call("command_front", { op: "register", id: "runner", label: "runner-retry", worktree: wts.runner });
 await call("command_front", { op: "register", id: "triggers", label: "triggers-sched", worktree: wts.triggers });

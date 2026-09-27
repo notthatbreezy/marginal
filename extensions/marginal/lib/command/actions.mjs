@@ -31,6 +31,19 @@ async function resolveCommit(repoPath, ref) {
     return out ? out.trim() : null;
 }
 
+/** A front id whose stacksOn chain loops back on itself, if any. */
+function stackLoop(fronts) {
+    const on = new Map(fronts.map((f) => [f.id, f.stacksOn]));
+    for (const f of fronts) {
+        const seen = new Set();
+        for (let at = f.id; at; at = on.get(at)) {
+            if (seen.has(at)) return f.id;
+            seen.add(at);
+        }
+    }
+    return null;
+}
+
 function notOwner(docId, what) {
     const lease = readLease(docId);
     const issues = new Issues();
@@ -180,9 +193,19 @@ export async function commandFront(input, ctx) {
     if (op === "plan") {
         const list = r.arr(input.fronts, "fronts") ?? [];
         if (!list.length) issues.add("fronts", "required", "fronts must list at least one {id, label}");
-        const items = list.map((x, i) => ({ id: r.id(x?.id, `fronts[${i}].id`), label: r.str(x?.label, `fronts[${i}].label`, { max: 60 }), note: r.str(x?.note, `fronts[${i}].note`, { required: false, max: 240 }) }));
+        const items = list.map((x, i) => ({ id: r.id(x?.id, `fronts[${i}].id`), label: r.str(x?.label, `fronts[${i}].label`, { max: 60 }), note: r.str(x?.note, `fronts[${i}].note`, { required: false, max: 240 }), stacksOn: x?.stacksOn === undefined ? undefined : r.id(x.stacksOn, `fronts[${i}].stacksOn`) }));
         const ids = items.map((x) => x.id).filter(Boolean);
         if (new Set(ids).size !== ids.length) issues.add("fronts", "duplicate_id", "each planned front needs its own id");
+        const known = new Set([...ids, ...state.fronts.map((f) => f.id)]);
+        items.forEach((it, i) => {
+            if (it.stacksOn && it.stacksOn === it.id) issues.add(`fronts[${i}].stacksOn`, "format", "a front can't stack on itself");
+            else if (it.stacksOn && !known.has(it.stacksOn)) issues.add(`fronts[${i}].stacksOn`, "unknown_id", `no front "${it.stacksOn}" (in this list or already declared)`, frontIdsHint(state.fronts));
+        });
+        if (issues.ok) {
+            const merged = state.fronts.map((f) => ({ id: f.id, stacksOn: items.find((x) => x.id === f.id)?.stacksOn ?? f.stacksOn })).concat(items.filter((x) => !state.fronts.some((f) => f.id === x.id)));
+            const loop = stackLoop(merged);
+            if (loop) issues.add("fronts", "format", `stacksOn loops back on itself at "${loop}"`, "each layer stacks on the one below it, down to a front with no stacksOn (it diffs against the plan base)");
+        }
         const adding = ids.filter((id) => !state.fronts.some((f) => f.id === id)).length;
         if (state.fronts.length + adding > LIMITS.fronts) issues.add("fronts", "too_many", `at most ${LIMITS.fronts} fronts`);
         if (!issues.ok) return issues.result();
@@ -192,10 +215,11 @@ export async function commandFront(input, ctx) {
                 if (f) {
                     f.label = it.label;
                     if (it.note !== undefined) f.note = it.note;
-                } else s.fronts.push({ id: it.id, label: it.label, ...(it.note ? { note: it.note } : {}), color: colorFor(s), status: "planned", registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
+                    if (it.stacksOn !== undefined) f.stacksOn = it.stacksOn;
+                } else s.fronts.push({ id: it.id, label: it.label, ...(it.note ? { note: it.note } : {}), ...(it.stacksOn ? { stacksOn: it.stacksOn } : {}), color: colorFor(s), status: "planned", registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
             }
         });
-        return { ok: true, revision: next.revision, summary: `${items.length} front${items.length === 1 ? "" : "s"} planned (${adding} new); register each with a worktree when its work starts` };
+        return { ok: true, revision: next.revision, summary: `${items.length} front${items.length === 1 ? "" : "s"} planned (${adding} new); register each with a worktree when its work starts (a stacked layer may reuse the checkout of a complete layer below it)` };
     }
 
     if (op === "register") {
@@ -205,7 +229,14 @@ export async function commandFront(input, ctx) {
         const sessionId = r.str(input.sessionId, "sessionId", { required: false, max: 200 });
         const wanted = input.status === undefined ? undefined : r.enumOf(frontStatus(input.status), "status", FRONT_STATUS);
         const note = r.str(input.note, "note", { required: false, max: 240 });
+        const stacksOn = input.stacksOn === undefined ? undefined : r.id(input.stacksOn, "stacksOn");
+        const baseIn = r.str(input.base, "base", { required: false, max: 200 });
         const priorFront = id && state.fronts.find((f) => f.id === id);
+        if (stacksOn && stacksOn === id) issues.add("stacksOn", "format", "a front can't stack on itself");
+        else if (stacksOn && !state.fronts.some((f) => f.id === stacksOn)) issues.add("stacksOn", "unknown_id", `no front "${stacksOn}"`, frontIdsHint(state.fronts));
+        else if (stacksOn && id && stackLoop(state.fronts.filter((f) => f.id !== id).concat({ id, stacksOn }))) issues.add("stacksOn", "format", `"${id}" can't stack on "${stacksOn}": that loops back to "${id}"`);
+        const base = baseIn ? await resolveCommit(repo.path, baseIn) : null;
+        if (baseIn && !base) issues.add("base", "ref_unresolvable", `cannot resolve ${JSON.stringify(baseIn)} in the repository`, "pass a branch, tag or commit sha, or stacksOn:<front id> to diff against the layer below");
         if (!worktree && !priorFront?.worktree && WORKING_STATUS.has(wanted)) issues.add("worktree", "required", `a front needs a worktree to be ${wanted}`, 'pass worktree, or register it as status "planned" for now');
         let top = null;
         if (worktree) {
@@ -221,30 +252,58 @@ export async function commandFront(input, ctx) {
             }
         }
         const existing = id && state.fronts.find((f) => f.id === id);
+        // One checkout, layer after layer: a complete front hands its worktree to the next one.
+        let handoff = null;
         if (top && issues.ok) {
-            const dup = state.fronts.find((f) => samePath(f.worktree, top) && f.id !== id);
-            if (dup) issues.add("worktree", "duplicate_worktree", `${top} is already registered as front "${dup.id}"`, `edits can't be told apart in one worktree; register it once and name it for both, or remove "${dup.id}" first`);
+            const dup = state.fronts.find((f) => samePath(f.worktree, top) && f.id !== id && !f.handedTo);
+            if (dup?.status === "complete") handoff = dup;
+            else if (dup) issues.add("worktree", "duplicate_worktree", `${top} is already registered as front "${dup.id}" (${dup.status})`, `edits can't be told apart in one worktree while both are working. For a stack worked in one checkout: commit "${dup.id}", mark it complete, then register this front there (it takes the worktree over and diffs from that commit). Otherwise use a worktree per front, or remove "${dup.id}" first`);
             if (existing?.worktree && !samePath(existing.worktree, top)) issues.add("id", "duplicate_id", `front "${id}" is already registered for ${existing.worktree}`, `choose another id, or remove "${id}" first`);
         }
         if (!existing && state.fronts.length >= LIMITS.fronts) issues.add("id", "too_many", `at most ${LIMITS.fronts} fronts`);
         if (!issues.ok) return issues.result();
+        // Taking over a checkout: this front's changes start at the commit the layer below finished on.
+        const takeoverHead = handoff ? (await gitOut(top, ["rev-parse", "HEAD"], { kind: "rev-parse" }))?.trim() : null;
+        if (handoff && !takeoverHead) {
+            issues.add("worktree", "worktree_not_repo", `could not read HEAD in ${top}`);
+            return issues.result();
+        }
+        // The git calls above yield: re-check who holds the worktree against the state as it is now (no await from here to the write).
+        if (top) {
+            const fresh = readState(docId);
+            const holder = fresh.fronts.find((f) => samePath(f.worktree, top) && f.id !== id && !f.handedTo);
+            if ((holder?.id ?? null) !== (handoff?.id ?? null) || (holder && holder.status !== "complete")) {
+                issues.add("worktree", "duplicate_worktree", `${top} changed hands while this registration ran`, 'command_front {op:"list"} and try again');
+                return issues.result();
+            }
+        }
+        if (handoff) stopPolling(docId, handoff.id);
         const next = writeState(docId, (s) => {
+            if (handoff) {
+                const d = s.fronts.find((x) => x.id === handoff.id);
+                if (d) Object.assign(d, { handedTo: id, finalHead: takeoverHead });
+            }
+            const stack = {
+                ...(stacksOn !== undefined ? { stacksOn } : handoff && !priorFront?.stacksOn ? { stacksOn: handoff.id } : {}),
+                ...(base || takeoverHead ? { base: base || takeoverHead } : {}),
+            };
             const f = s.fronts.find((x) => x.id === id);
             // A worktree arriving for a planned front starts its work (unless a stage was given).
             const stage = wanted ?? (top && (!f || f.status === "planned") ? "implementing" : (f?.status ?? "planned"));
             if (f) {
                 const moved = f.status !== stage;
-                Object.assign(f, { label, sessionId: sessionId ?? f.sessionId, status: stage, ...(top ? { worktree: top } : {}), ...(moved ? { statusSince: now() } : {}) });
+                Object.assign(f, { label, sessionId: sessionId ?? f.sessionId, status: stage, ...stack, ...(top ? { worktree: top } : {}), ...(moved ? { statusSince: now() } : {}) });
                 if (note !== undefined) f.note = note;
                 if (top && !existing.worktree) f.sinceSeq = lastSeq(docId);
             } else {
                 // sinceSeq starts a new incarnation: a re-used id never inherits an earlier registration's baseline.
-                s.fronts.push({ id, label, ...(top ? { worktree: top } : {}), ...(sessionId ? { sessionId } : {}), ...(note ? { note } : {}), color: colorFor(s), status: stage, registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
+                s.fronts.push({ id, label, ...stack, ...(top ? { worktree: top } : {}), ...(sessionId ? { sessionId } : {}), ...(note ? { note } : {}), color: colorFor(s), status: stage, registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
             }
         });
         const saved = next.fronts.find((f) => f.id === id);
         if (next.plan && saved.worktree) startPolling(docId, saved);
-        return { ok: true, revision: next.revision, summary: `front '${id}' ${existing ? "updated" : "registered"} as ${saved.status}${saved.worktree ? ` at ${saved.worktree}${next.plan ? "; polling" : "; polling starts once a plan is set"}` : " (no worktree yet)"}` };
+        const on = saved.base ? ` from ${saved.base.slice(0, 10)}` : saved.stacksOn ? ` on top of "${saved.stacksOn}"` : "";
+        return { ok: true, revision: next.revision, summary: `front '${id}' ${existing ? "updated" : "registered"} as ${saved.status}${handoff ? ` (took the worktree over from "${handoff.id}")` : ""}${saved.worktree ? ` at ${saved.worktree}${on}${next.plan ? "; polling" : "; polling starts once a plan is set"}` : " (no worktree yet)"}` };
     }
 
     const id = r.id(input.id, "id");
@@ -254,7 +313,8 @@ export async function commandFront(input, ctx) {
     if (op === "status") {
         const status = r.enumOf(frontStatus(input.status), "status", FRONT_STATUS);
         const note = r.str(input.note, "note", { required: false, max: 240 });
-        if (front && WORKING_STATUS.has(status) && !front.worktree) issues.add("status", "worktree_required", `front "${id}" has no worktree yet`, "register it with its worktree; that starts it as implementing");
+        if (front && WORKING_STATUS.has(status) && !front.worktree) issues.add("status", "worktree_required", `front "${id}" has no worktree yet`, "register it with its worktree; that starts it as implementing. Until then it can be planned, blocked (say what it waits on) or complete");
+        else if (front && WORKING_STATUS.has(status) && front.handedTo) issues.add("status", "worktree_required", `front "${id}" handed its worktree to "${front.handedTo}"`, `register "${id}" with a worktree of its own to work on it again (git worktree add on its branch)`);
         if (!issues.ok) return issues.result();
         const next = writeState(docId, (s) => {
             const f = s.fronts.find((x) => x.id === id);

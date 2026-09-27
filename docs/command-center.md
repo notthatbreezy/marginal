@@ -10,7 +10,7 @@ The Command tab of a doc with a repository target tracks a multi-step implementa
 | **Phase** (checkpoint) | `{id, title, expects[], steps[], suggestedView?}` with state `pending` → `active` → `done`. A `done` phase always carries a checkpoint: a commit you name, or a hidden snapshot. |
 | **Step** | A smaller unit inside a phase, optionally attributed to one front. |
 | **Expects** | Repository-relative files, `dir/` prefixes or globs (`src/**/*.ts`). Together they form the plan's footprint. |
-| **Front** | One registered worktree. Its edits are attributed to it by `git diff` against the plan base, or against the merge-base once the worktree's branch has moved past the base (shown as "base moved"). |
+| **Front** | One registered worktree (or, while planned, none yet). Its edits are attributed to it by `git diff` against its base, or against the merge-base once the worktree's branch has moved past the base (shown as "base moved"). The base is the plan base, unless the front is a stacked layer (`stacksOn`: the HEAD of the front below it) or was given one (`base`). A complete front can hand its worktree to the next layer of a stack, which then diffs from the commit it took over. |
 | **Off-plan** | A file a front changed that matches none of the phases or steps it is associated with (active or done). With no association, the whole plan footprint counts. |
 | **View** | `{id, title, root?, pins?, monitors?, filters?}`: a map layout. Paths are concrete (no globs). |
 | **Walkthrough** | A pinned `{base, head}` commit pair plus stops. Each stop is one idea with ranges from that diff. |
@@ -22,7 +22,7 @@ Every `command_*` action validates its whole input first. On any problem it retu
 | Action | Ops |
 |---|---|
 | `command_plan` | `set {plan}` claims the lease and replaces the plan (states of surviving ids are kept) · `phase {phaseId, status, frontIds?, commit?}` · `step {stepId, status, frontId?}` · `read` |
-| `command_front` | `plan {fronts: [{id, label, note?}]}` (declare every front up front, as planned) · `register {id, label, worktree, status?, note?}` (a planned front becomes implementing) · `status {id, status: planned\|implementing\|review\|blocked\|complete, note?}` · `remove {id}` · `list` |
+| `command_front` | `plan {fronts: [{id, label, note?, stacksOn?}]}` (declare every front up front, as planned; no worktree needed) · `register {id, label, worktree, stacksOn?, base?, status?, note?}` (a planned front becomes implementing; registering a complete front's worktree takes it over) · `status {id, status: planned\|implementing\|review\|blocked\|complete, note?}` · `remove {id}` · `list` |
 | `command_view` | `set {view, phaseId?}` (with `phaseId` it becomes that phase's suggestion) · `apply {id}` · `remove {id}` · `list` |
 | `command_status` | `{status: working\|awaiting_operator\|complete, prompt?}`. This is a fallback; the lamp normally follows the session's own events. |
 | `command_diff` | `{from, to, format?: files\|patch, paths?, context?, maxBytes?}` over checkpoint refs: `{phaseId}` · `{sha}` · `{ref:"base"}` · `{ref:"live", frontId}` (a snapshot of that worktree now) |

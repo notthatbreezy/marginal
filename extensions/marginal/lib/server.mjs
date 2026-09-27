@@ -174,7 +174,7 @@ export async function startServer({ chat, instances, getSessionId }) {
                     "4. Optionally add a suggestedView per phase with command_view.",
                     "5. If the goal is genuinely unclear, ask me one short question in this chat instead of guessing.",
                 ].join("\n"),
-                st.fronts.length ? `Fronts already registered: ${st.fronts.map((f) => `${f.id} (${f.worktree ?? "planned, no worktree yet"})`).join(", ")}.` : null,
+                st.fronts.length ? `Fronts already registered: ${st.fronts.map((f) => `${f.id} (${f.worktree ?? "planned, no worktree yet"}${f.stacksOn ? `, stacked on ${f.stacksOn}` : ""}${f.handedTo ? `, worktree handed to ${f.handedTo}` : ""})`).join(", ")}.` : null,
                 "(Reply in the Command chat popup: one or two sentences summarising the plan you set.)",
             ].filter(Boolean);
             const result = await chat.send({ instanceId: url.searchParams.get("instance") ?? "", prompt: lines.join("\n\n"), displayPrompt: `Initialize the command center${goal ? `: ${goal.slice(0, 300)}` : ""}\n\nCommand center on “${doc.title}”` });
@@ -191,8 +191,10 @@ export async function startServer({ chat, instances, getSessionId }) {
             if (!front || !st.plan) throw new InputError("Unknown front.");
             const base = front.effectiveBase ?? st.plan.base;
             const file = url.searchParams.get("file") ?? "";
-            if (what === "hunks") return send(res, 200, { rows: await fileHunks(front.worktree, base, file) });
-            const [f] = parsePatch(await filePatch(front.worktree, base, file, Number(url.searchParams.get("context") ?? 3)));
+            // A front that handed its checkout on is shown as it finished, not with the next layer's work.
+            const head = front.handedTo ? (front.finalHead ?? null) : null;
+            if (what === "hunks") return send(res, 200, { rows: await fileHunks(front.worktree, base, file, head) });
+            const [f] = parsePatch(await filePatch(front.worktree, base, file, Number(url.searchParams.get("context") ?? 3), head));
             return send(res, 200, f ?? { path: file, hunks: [] });
         }
         return send(res, 404, { error: "not found" });

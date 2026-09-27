@@ -32,10 +32,11 @@ export function groupHunks(hunks) {
     return rows;
 }
 
-export async function fileHunks(worktree, base, file) {
+/** `head` (a commit) diffs base..head instead of base..the working tree (a front that finished and handed its checkout on). */
+export async function fileHunks(worktree, base, file, head = null) {
     const n = normalizeRepoPath(file);
     if (n.error) throw new Error(n.message);
-    const out = await gitOut(worktree, ["diff", "-U0", "--no-ext-diff", "--no-color", base, "--", n.path], { kind: "diff-hunks" });
+    const out = await gitOut(worktree, ["diff", "-U0", "--no-ext-diff", "--no-color", base, ...(head ? [head] : []), "--", n.path], { kind: "diff-hunks" });
     return out === null ? [] : groupHunks(parseHunks(out)); // new files have no function context worth listing;
 }
 
@@ -48,10 +49,10 @@ async function untrackedPatch(worktree, path, context) {
 }
 
 /** Unified patch for one file in one front's worktree (monitor diff-feed rows). */
-export async function filePatch(worktree, base, file, context = 3) {
+export async function filePatch(worktree, base, file, context = 3, head = null) {
     const n = normalizeRepoPath(file);
     if (n.error) throw new Error(n.message);
     const ctx = Math.max(0, Math.min(20, context));
-    const out = (await gitOut(worktree, ["diff", `-U${ctx}`, "--no-ext-diff", "--no-color", base, "--", n.path], { kind: "diff-patch" })) ?? "";
-    return out || untrackedPatch(worktree, n.path, ctx);
+    const out = (await gitOut(worktree, ["diff", `-U${ctx}`, "--no-ext-diff", "--no-color", base, ...(head ? [head] : []), "--", n.path], { kind: "diff-patch" })) ?? "";
+    return out || (head ? "" : untrackedPatch(worktree, n.path, ctx));
 }

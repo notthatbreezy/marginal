@@ -415,6 +415,72 @@ test("a new plan base re-baselines totals as initial observations, not edits", a
     assert.deepEqual(evs.find((e) => e.file === "src/runner/backoff.ts").totals, { add: 0, del: 0 });
 });
 
+test("stacked fronts: each layer diffs from the one below; a complete layer hands its checkout to the next", async () => {
+    const d = doc.documentId;
+    const wtA = join(tmp, "wt-layer1");
+    const wtB = join(tmp, "wt-layer2");
+    // Declared up front: layer 2 has no branch or worktree yet, and still plans fine.
+    const planned = await call("command_front", { op: "plan", fronts: [{ id: "l1", label: "layer 1" }, { id: "l2", label: "layer 2", stacksOn: "l1" }, { id: "l3", label: "layer 3", stacksOn: "l2" }] });
+    assert.ok(planned.ok, JSON.stringify(planned));
+    const loop = await call("command_front", { op: "plan", fronts: [{ id: "l1", label: "layer 1", stacksOn: "l3" }] });
+    assert.equal(loop.ok, false);
+    assert.equal(loop.issues[0].code, "format");
+    assert.equal((await call("command_front", { op: "plan", fronts: [{ id: "l4", label: "x", stacksOn: "nope" }] })).issues[0].code, "unknown_id");
+    const badBase = await call("command_front", { op: "register", id: "l2", label: "layer 2", base: "no-such-ref" });
+    assert.equal(badBase.issues[0].code, "ref_unresolvable");
+
+    git(repo, "worktree", "add", "-q", wtA, "-b", "layer1", "main");
+    writeFileSync(join(wtA, "src", "runner", "layer1.ts"), "export const one = 1;\n");
+    git(wtA, "add", "-A");
+    git(wtA, "commit", "-qm", "layer 1");
+    git(repo, "worktree", "add", "-q", wtB, "-b", "layer2", "layer1");
+    writeFileSync(join(wtB, "src", "runner", "layer2.ts"), "export const two = 2;\n");
+    assert.ok((await call("command_front", { op: "register", id: "l1", label: "layer 1", worktree: wtA })).ok);
+    const r2 = await call("command_front", { op: "register", id: "l2", label: "layer 2", worktree: wtB });
+    assert.ok(r2.ok, JSON.stringify(r2));
+    assert.match(r2.summary, /on top of "l1"/);
+    await until(() => eventsSince(d, 0).some((e) => e.frontId === "l2" && e.file === "src/runner/layer2.ts") && eventsSince(d, 0).some((e) => e.frontId === "l1" && e.file === "src/runner/layer1.ts"));
+    await new Promise((r) => setTimeout(r, 600));
+    const l2Files = new Set(eventsSince(d, 0).filter((e) => e.frontId === "l2").map((e) => e.file));
+    assert.deepEqual([...l2Files], ["src/runner/layer2.ts"], "layer 2 doesn't claim layer 1's files");
+    assert.equal(readState(d).fronts.find((x) => x.id === "l2").effectiveBase, git(wtA, "rev-parse", "HEAD"));
+
+    // One checkout, layer after layer: taken over only once the layer below is complete.
+    git(wtB, "add", "-A");
+    git(wtB, "commit", "-qm", "layer 2");
+    const early = await call("command_front", { op: "register", id: "l3", label: "layer 3", worktree: wtB });
+    assert.equal(early.issues[0].code, "duplicate_worktree");
+    assert.match(early.issues[0].hint, /mark it complete/);
+    assert.ok((await call("command_front", { op: "status", id: "l2", status: "complete" })).ok);
+    const l2Head = git(wtB, "rev-parse", "HEAD");
+    const r3 = await call("command_front", { op: "register", id: "l3", label: "layer 3", worktree: wtB });
+    assert.ok(r3.ok, JSON.stringify(r3));
+    assert.match(r3.summary, /took the worktree over from "l2"/);
+    const st = readState(d);
+    assert.equal(st.fronts.find((x) => x.id === "l2").handedTo, "l3");
+    assert.equal(st.fronts.find((x) => x.id === "l3").base, l2Head);
+    assert.equal(st.fronts.find((x) => x.id === "l3").status, "implementing");
+    assert.ok(!poller.pollingFronts(d).includes("l2"), "the handed-over front stops polling");
+    const back = await call("command_front", { op: "status", id: "l2", status: "implementing" });
+    assert.equal(back.issues[0].code, "worktree_required");
+    const seq = eventsSince(d, 0).at(-1).seq;
+    writeFileSync(join(wtB, "src", "runner", "layer3.ts"), "export const three = 3;\n");
+    await until(() => eventsSince(d, seq).some((e) => e.file === "src/runner/layer3.ts"));
+    await new Promise((r) => setTimeout(r, 600));
+    const after = eventsSince(d, seq);
+    assert.ok(after.every((e) => e.frontId !== "l2"), "nothing new lands on the layer that handed over");
+    assert.deepEqual([...new Set(after.filter((e) => e.frontId === "l3").map((e) => e.file))], ["src/runner/layer3.ts"], "layer 3 starts where layer 2 finished");
+    // Layer 2 is shown as it finished: its own file, and none of layer 3's work in the shared checkout.
+    const { fileHunks } = await import("../extensions/marginal/lib/command/hunks.mjs");
+    const l2 = readState(d).fronts.find((x) => x.id === "l2");
+    assert.equal(l2.finalHead, l2Head);
+    assert.equal((await fileHunks(wtB, l2.effectiveBase, "src/runner/layer3.ts", l2.finalHead)).length, 0);
+    assert.ok((await fileHunks(wtB, l2.effectiveBase, "src/runner/layer2.ts", l2.finalHead)).length > 0);
+    for (const id of ["l1", "l2", "l3"]) assert.ok((await call("command_front", { op: "remove", id })).ok);
+    git(repo, "worktree", "remove", "--force", wtA);
+    git(repo, "worktree", "remove", "--force", wtB);
+});
+
 test("pollers dedupe: once per front in-process, zero in a non-owner process", async () => {
     const d = doc.documentId;
     const loops1 = poller.pollingFronts(d);
