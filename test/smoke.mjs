@@ -223,6 +223,36 @@ await test("step notes: steps and frames take verified notes; frames update in p
     await rejects(() => store.applyEdit(doc.documentId, { type: "remove", targetId: frameId }), /frames can only be updated/i);
 });
 
+await test("prose edits: exact lines, one version by the user, refused when the text moved on", async () => {
+    const d = doc.documentId;
+    const ins = await store.applyEdit(d, { type: "insert", content: { type: "markdown", markdown: "First para\nstill first.\n\n- one\n- two\n  - nested\n\n## Head" } });
+    const id = ins.targetId;
+    const v0 = store.getDoc(d).version;
+    const r = await store.editProse(d, [
+        { blockId: id, from: 0, to: 1, before: "First para\nstill first.", after: "First **bold** para.\n\nA new paragraph." },
+        { blockId: id, from: 4, to: 5, before: "- two\n  - nested", after: "- deux [code](review-source:head/src/api.ts#L1-L2)\n  - nested" },
+    ]);
+    const after = store.getDoc(d);
+    const md = after.content.find((b) => b.id === id).markdown;
+    assert.equal(md, "First **bold** para.\n\nA new paragraph.\n\n- one\n- deux [code](review-source:head/src/api.ts#L1-L2)\n  - nested\n\n## Head");
+    assert.equal(after.version, v0 + 1);
+    assert.equal(after.lastEdit.by, "user");
+    assert.deepEqual(r.blocks, [id]);
+    // Deleting a unit removes its lines (blank runs collapse).
+    await store.editProse(d, [{ blockId: id, from: 2, to: 2, before: "A new paragraph.", after: "" }]);
+    assert.equal(store.getDoc(d).content.find((b) => b.id === id).markdown, "First **bold** para.\n\n- one\n- deux [code](review-source:head/src/api.ts#L1-L2)\n  - nested\n\n## Head");
+    // Stale text, bad links, missing files, non-prose blocks and empty blocks are refused and change nothing.
+    const v1 = store.getDoc(d).version;
+    await rejects(() => store.editProse(d, [{ blockId: id, from: 0, to: 0, before: "First para", after: "x" }]), /changed this text/);
+    await rejects(() => store.editProse(d, [{ blockId: id, from: 0, to: 0, before: "First **bold** para.", after: "[x](ftp://nope)" }]), /Unsupported link/);
+    await rejects(() => store.editProse(d, [{ blockId: id, from: 0, to: 0, before: "First **bold** para.", after: "[x](review-source:head/src/nope.ts#L1)" }]), /nope|not exist|does not/i);
+    await rejects(() => store.editProse(d, [{ blockId: seqId, from: 0, to: 0, before: "", after: "x" }]), /not a Markdown block/);
+    const all = store.getDoc(d).content.find((b) => b.id === id).markdown.split("\n");
+    await rejects(() => store.editProse(d, [{ blockId: id, from: 0, to: all.length - 1, before: all.join("\n"), after: "" }]), /can't be left empty/);
+    assert.equal(store.getDoc(d).version, v1);
+    await store.applyEdit(d, { type: "remove", targetId: id });
+});
+
 await test("database_lens relationship checks", async () => {
     const lens = (field) => ({
         type: "database_lens",

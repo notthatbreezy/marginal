@@ -5449,3 +5449,221 @@ body.peek-push #peek {
     color: var(--muted);
     font-size: 13px;
 }
+
+/* ---------- prose editing: the text being edited, the margin toolbar, the link popover ---------- */
+:root {
+    --edit-edge: color-mix(in srgb, var(--green) 45%, var(--bg));
+    --edit-fill: color-mix(in srgb, var(--green) 5%, var(--bg));
+}
+.md [data-l].editing {
+    background: var(--edit-fill);
+    outline: 1px dashed var(--edit-edge);
+    outline-offset: 0;
+    cursor: text;
+    caret-color: var(--green);
+}
+.md [data-l].editing.edit-focus,
+.md [data-l].editing:focus {
+    outline: 1.5px solid var(--edit-edge);
+}
+.md [data-l].editing [contenteditable="false"] {
+    opacity: 0.55;
+    cursor: default;
+}
+.md [data-l].editing a {
+    cursor: text;
+}
+body.prose-editing #gutter,
+body.prose-editing #ask-float {
+    display: none !important;
+}
+body.prose-editing #center > :not(#edit-hint) {
+    display: none !important;
+}
+#edit-hint {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 11px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--green) 11%, transparent);
+    color: var(--fg);
+    font-size: 12px;
+    white-space: nowrap;
+}
+#edit-hint kbd {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--bg);
+}
+.eh-dot {
+    width: 7px;
+    height: 7px;
+    margin-right: 5px;
+    border-radius: 50%;
+    background: var(--green);
+}
+#editbar {
+    position: fixed;
+    z-index: 22;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+    animation: fadein 0.12s ease-out;
+}
+#editbar button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+}
+#editbar button:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+#editbar button.on {
+    background: var(--blue-muted);
+    color: var(--blue);
+}
+#editbar .eb-ok {
+    color: var(--green);
+}
+#editbar .eb-ok:hover {
+    background: var(--green-muted);
+    color: var(--green);
+}
+#editbar .eb-no {
+    color: var(--red);
+}
+#editbar .eb-no:hover {
+    background: var(--red-muted);
+    color: var(--red);
+}
+.eb-sep {
+    height: 1px;
+    margin: 1px 4px;
+    background: var(--border);
+}
+/* Distance between the tools and Discard, so a slip doesn't throw the edit away. */
+.eb-gap {
+    height: 18px;
+}
+#editbar.saving .eb-ok {
+    opacity: 0.45;
+    cursor: progress;
+}
+#editlink {
+    position: fixed;
+    z-index: 23;
+    width: 320px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.06);
+    animation: fadein 0.12s ease-out;
+}
+.el-in {
+    width: 100%;
+    height: 30px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    outline: none;
+}
+.el-in:focus {
+    border-color: color-mix(in srgb, var(--focus) 55%, var(--border));
+}
+.el-note {
+    min-height: 0;
+    margin-top: 4px;
+    color: var(--red);
+    font-size: 11.5px;
+}
+.el-note:empty {
+    display: none;
+}
+.el-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+}
+.el-row button {
+    height: 26px;
+    padding: 0 11px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+.el-apply {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: var(--color-white, #fff);
+}
+.el-remove {
+    margin-right: auto;
+    color: var(--red);
+}
+
+/* Doc changes made while answering: a quiet row under the reply; each one scrolls there on click. */
+.chat-changes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: -4px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+.chat-changes .cc-h {
+    margin-right: 2px;
+}
+.chat-changes .chg {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11.5px;
+    line-height: 18px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.chat-changes button.chg:hover {
+    border-color: color-mix(in srgb, var(--blue) 45%, var(--border));
+    color: var(--blue);
+}
+.chat-changes .chg-ic {
+    display: grid;
+    flex: none;
+}
+.chat-changes .chg.gone {
+    text-decoration: line-through;
+    border-style: dashed;
+}
+.chat-changes .chg.more {
+    border: none;
+}

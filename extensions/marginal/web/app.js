@@ -3,6 +3,7 @@ import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdo
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
 import { createToc } from "./toc.js";
 import { createTables } from "./tables.js";
+import { createProseEditor, editableKind } from "./edit.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 
@@ -20,6 +21,9 @@ const state = {
 const sourceCache = new Map();
 let toc = null; // Contents card + Ctrl/⌘-J jump palette (created at boot, below)
 let tables = null; // table width modes + column resizing (created at boot, below)
+let prose = null; // in-place prose editing (created at boot, below)
+let pendingRefresh = false; // the doc changed while the reader was editing: re-render when they finish
+let pendingShow = null; // Copilot opened another doc while the reader was editing
 
 
 // ---------------- source fetch + code listing ----------------
@@ -366,6 +370,8 @@ document.addEventListener("keydown", (e) => {
 const hasBase = (src) => !!((src.pins ?? state.doc?.target)?.base && (src.pins ?? state.doc?.target)?.base !== (src.pins ?? state.doc?.target)?.head);
 
 document.addEventListener("click", (e) => {
+    // Links being edited are text to change, not places to go.
+    if (e.target.closest('[contenteditable="true"] a')) return e.preventDefault();
     const a = e.target.closest("a.src");
     if (a) {
         e.preventDefault();
@@ -1013,19 +1019,27 @@ function renderBoard() {
             ),
         );
     const prevScroll = main.scrollTop;
+    const prevHeight = main.querySelector(":scope > .doc")?.offsetHeight ?? 0;
+    // Anchor: the first block on screen keeps its place, even if something above it grew or shrank.
+    const mTop = main.getBoundingClientRect().top;
+    const anchorEl = [...main.querySelectorAll(".block[data-id]:not(.b-section)")].find((el) => el.getBoundingClientRect().bottom > mTop + 1);
+    const anchor = anchorEl && { id: anchorEl.dataset.id, top: anchorEl.getBoundingClientRect().top - mTop };
     animate = animate ?? null;
     for (const b of doc.content) container.append(renderBlock(b));
+    // Code views load a moment after a re-render; hold the old height meanwhile so the reader's place isn't clamped.
+    if (prevHeight) {
+        container.style.minHeight = `${prevHeight}px`;
+        setTimeout(() => (container.style.minHeight = ""), 2000);
+    }
     main.replaceChildren(container);
     tables?.enhance(); // before restoring the scroll: wide tables change the page height
     main.scrollTop = prevScroll;
+    const again = anchor && main.querySelector(`.block[data-id="${CSS.escape(anchor.id)}"]`);
+    if (again) main.scrollTop += again.getBoundingClientRect().top - main.getBoundingClientRect().top - anchor.top;
     toc?.rebuild();
-    if (animate?.scrollTo) {
-        const el = animate.scrollTo;
-        toc?.fresh(el);
-        const r = el.getBoundingClientRect();
-        const mr = main.getBoundingClientRect();
-        if (r.bottom < mr.top + 40 || r.top > mr.bottom - 40) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    // A live edit flashes where it is but never moves the page: the reader may be reading elsewhere. The chat reply
+    // that made it lists it, and the Contents card marks it, for when they want to go look.
+    if (animate?.scrollTo) toc?.fresh(animate.scrollTo);
     animate = null;
     markAsking(); // keep the discussed paragraph marked across live re-renders
     paintPicks();
@@ -1107,6 +1121,7 @@ async function renderHistory() {
         if (v.reason === "rename") return `Renamed to “${v.title}”`;
         if (v.reason === "repin") return "Repinned to new commits";
         if (v.reason?.startsWith("restore:")) return `Restored version ${v.reason.split(":")[1]}`;
+        if (v.lastEdit?.by === "user") return h("span", {}, "You edited text", " ", h("span", { class: "m-id" }, (v.lastEdit.blocks ?? [v.lastEdit.targetId]).join(", ")));
         if (v.lastEdit) return h("span", {}, `${verb[v.lastEdit.type] ?? v.lastEdit.type} ${noun(v.lastEdit.kind)}`.trim(), " ", h("span", { class: "m-id" }, v.lastEdit.targetId ?? ""));
         return v.reason ?? "";
     };
@@ -1206,12 +1221,19 @@ function showDoc(documentId) {
     loadDoc();
 }
 
+const finishEditingFirst = () => {
+    if (!prose?.active()) return false;
+    toast("Finish editing first: Shift+Enter saves, Esc cancels");
+    return true;
+};
 $("#home").onclick = async () => {
+    if (finishEditingFirst()) return;
     state.catalog = await api("/catalog");
     showDoc(null);
 };
 for (const btn of document.querySelectorAll("#tabs button"))
     btn.onclick = () => {
+        if (finishEditingFirst()) return;
         state.tab = btn.dataset.tab;
         if (state.tab !== "board") state.viewVersion = state.viewVersion;
         render();
@@ -1220,6 +1242,11 @@ for (const btn of document.querySelectorAll("#tabs button"))
 // ---------------- live updates ----------------
 let refreshTimer = null;
 function scheduleRefresh() {
+    // Never re-render under the reader's cursor: changes wait until they finish editing.
+    if (prose?.active()) {
+        pendingRefresh = true;
+        return;
+    }
     // Coalesce bursts of edits; each version still animates its own lastEdit when it is the newest.
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => {
@@ -1232,6 +1259,11 @@ function connect() {
     es.onmessage = async (msg) => {
         const ev = JSON.parse(msg.data);
         if (ev.type === "show") {
+            if (prose?.active() && ev.documentId !== state.documentId && state.booted) {
+                pendingShow = ev;
+                toast("Copilot opened another doc; it will show when you finish editing");
+                return;
+            }
             if (ev.documentId !== state.documentId || !state.booted) {
                 const first = !state.booted;
                 state.booted = true;
@@ -1245,6 +1277,7 @@ function connect() {
                 loadDoc();
             }
         } else if (ev.type === "version" && ev.documentId === state.documentId) {
+            if (ev.lastEdit && ev.lastEdit.by !== "user" && ev.reason === "edit") recordChange(ev.lastEdit);
             if (state.tab === "board") scheduleRefresh();
             else if (state.viewVersion === null) {
                 const data = await api(`/docs/${encodeURIComponent(state.documentId)}`);
@@ -1548,6 +1581,7 @@ function closeChat() {
         return;
     }
     endThread();
+    chat.turn = null;
     chat.blockId = chat.unit = chat.picks = chat.quote = chat.ref = chat.askRows = chat.askRange = null;
     markAsking();
     syncChatFab();
@@ -1698,7 +1732,76 @@ function onChatEvent(ev) {
     } else if (ev.kind === "retract") {
         chat.bubbles.get(ev.messageId)?.remove();
         chat.bubbles.delete(ev.messageId);
-    } else if (ev.kind === "done") setStatus(null);
+    } else if (ev.kind === "done") {
+        setStatus(null);
+        const turn = chat.turn;
+        if (turn) {
+            if (turn.el) chatLog.append(turn.el); // under the final reply
+            setTimeout(() => turn === chat.turn && (turn.open = false), 2500); // edits can land just after the reply
+        }
+    }
+}
+
+// ---- changes Copilot made while answering: listed under the reply, one click away ----
+const CHANGE_NOUN = { step: "step", flow_node: "flow node", flow_edge: "flow edge", frame: "frame", markdown: "text", section: "section", callout: "callout", code: "code", code_peek: "code peek", sequence: "sequence", flow_diagram: "flow", call_stack_diff: "call stack", database_lens: "data lens", image: "image", trace_quote: "quote" };
+function changeEl(le) {
+    const q = (id) => id && (document.querySelector(`#main [data-unit="${CSS.escape(id)}"]`) ?? document.querySelector(`#main .block[data-id="${CSS.escape(id)}"]`));
+    return q(le.targetId) ?? q(le.blockId) ?? q(le.topBlockId);
+}
+function changeLabel(le) {
+    const verb = le.type === "insert" ? "Added" : le.type === "remove" ? "Removed" : le.fields?.includes("notes") ? "Added notes to" : "Changed";
+    const noun = CHANGE_NOUN[le.kind] ?? "part";
+    const b = findBlock(state.doc?.content, le.targetId);
+    const el = le.type === "remove" ? null : changeEl(le);
+    const title = b?.title ?? b?.caption ?? el?.querySelector?.("text.lbl, .fn, .shape + text")?.textContent?.replace(/^\d+\s+/, "");
+    const where = el ? sectionOf(el.matches(".block") ? el : el.closest(".block") ?? el) : null;
+    return `${verb} ${noun}${title ? ` “${excerpt(title, 30)}”` : where ? ` in ${where}` : ""}`;
+}
+function recordChange(le) {
+    const turn = chat.turn;
+    if (!turn?.open || $("#chat").hidden) return;
+    const key = le.targetId ?? le.blockId;
+    if (!key) return;
+    turn.changes.set(key, le);
+    turn.el ??= h("div", { class: "chat-changes", role: "group", "aria-label": "Doc changes in this reply" });
+    chatLog.insertBefore(turn.el, chat.statusEl); // follows the reply as it streams
+    // Labels read the updated doc, which loads a moment after the event.
+    setTimeout(() => renderChanges(turn), 250);
+    renderChanges(turn);
+}
+function renderChanges(turn) {
+    if (!turn.el) return;
+    const all = [...turn.changes.values()];
+    const shown = all.slice(0, 6);
+    put(
+        turn.el,
+        h("span", { class: "cc-h" }, "Changed"),
+        shown.map((le) =>
+            le.type === "remove"
+                ? h("span", { class: "chg gone", title: "Removed from the doc" }, changeLabel(le))
+                : h(
+                      "button",
+                      { class: "chg", title: "Show in the doc", onclick: () => showChange(le) },
+                      h("span", { class: "chg-ic", "aria-hidden": "true", html: '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+                      changeLabel(le),
+                  ),
+        ),
+        all.length > shown.length ? h("span", { class: "chg more" }, `+${all.length - shown.length} more`) : null,
+    );
+    scrollChat();
+}
+async function showChange(le) {
+    if (prose?.active()) return toast("Finish editing first: Shift+Enter saves, Esc cancels");
+    if (state.tab !== "board" || state.viewVersion !== null) {
+        state.tab = "board";
+        state.viewVersion = null;
+        await loadDoc();
+    }
+    // Notes on a diagram step are read in Inspect.
+    if (le.fields?.includes("notes") && ["step", "flow_node", "frame"].includes(le.kind) && le.blockId) return openInspect(le.blockId, le.targetId);
+    const el = changeEl(le);
+    if (!el) return toast("That part is no longer in the doc.");
+    toc?.reveal(el, { flash: el.matches(".block") ? el : (el.closest(".block") ?? el) });
 }
 
 async function sendChat() {
@@ -1714,6 +1817,8 @@ async function sendChat() {
     chat.awaiting = true;
     $("#chat-send").disabled = true;
     const gen = chat.focusGen;
+    // Doc edits Copilot makes while answering are listed under its reply.
+    chat.turn = chat.mode === "board" ? { open: true, changes: new Map(), el: null } : null;
     try {
         const first = !chat.threadId;
         const cmd = chat.mode === "command";
@@ -1783,6 +1888,26 @@ const gComment = $("#g-comment");
 const gCopy = $("#g-copy");
 const gutterState = { unit: null, selection: null }; // unit: element with data-l; selection: selected text
 const gWidth = $("#g-width");
+const gEdit = $("#g-edit");
+/** The units the pencil would edit: the selection's prose, or the hovered unit. */
+function editTargets() {
+    if (state.viewVersion !== null || state.tab !== "board") return [];
+    if (picks.size) return picks.keys().map(elOf).filter((el) => editableKind(el));
+    const el = gutterState.unit ?? gutterState.placedFor;
+    return editableKind(el) ? [el] : [];
+}
+function startEditing(els, opts) {
+    if (!els.length || !prose) return;
+    const sel = getSelection();
+    const range = opts?.keepSelection && sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    hideGutter();
+    clearPicks();
+    prose.start(els, { selection: range });
+}
+gEdit.onclick = (e) => {
+    if (withModifier(e)) return pickFromGutter(e);
+    startEditing(editTargets(), { keepSelection: !!gutterState.selection });
+};
 gWidth.onclick = (e) => {
     e.stopPropagation();
     const t = gutterState.unit ?? gutterState.placedFor;
@@ -1843,12 +1968,14 @@ function setGutterTitles(el) {
     if (picks.size) {
         gComment.title = `Comment on ${picks.size} selected`;
         gCopy.title = `Copy ${picks.size} selected`;
+        gEdit.title = "Edit the selected text";
         return;
     }
     const prose = !!el?.dataset.l;
     const code = !!el?.matches(".b-code, .b-code_peek");
     gComment.title = prose ? "Comment on this paragraph" : "Comment on this";
     gCopy.title = prose ? "Copy Markdown" : code ? "Copy code" : "Copy as text";
+    gEdit.title = "Edit this text";
 }
 
 function setUnit(el) {
@@ -1882,6 +2009,7 @@ function gutterToNearestPick(y) {
 function hideGutter() {
     tables?.closeMenu();
     gutter.hidden = true;
+    gEdit.hidden = true;
     gutterState.unit?.classList.remove("unit-hover");
     gutterState.unit = null;
     gutterState.selection = null;
@@ -1923,6 +2051,7 @@ document.addEventListener(
     (e) => {
         lastPointer = { x: e.clientX, y: e.clientY };
         if (gutterState.selection || e.buttons) return; // hold still while selecting or dragging
+        if (prose?.active()) return; // the edit toolbar owns the margin
         if (tables?.isGrip(e.target) || tables?.menuOpen()) return; // a column border or the width menu keeps its table
         const el = unitAt(e.target) ?? (e.target.closest?.("#gutter") ? null : unitNearMargin(e.clientX, e.clientY));
         if (el) setUnit(el);
@@ -1976,6 +2105,7 @@ function updateGutterMode() {
     const target = gutterState.unit ?? gutterState.placedFor;
     const pickMode = modHeld && !!target?.isConnected && !gutterState.selection;
     gComment.hidden = gCopy.hidden = pickMode;
+    gEdit.hidden = pickMode || !editTargets().length;
     gWidth.hidden = pickMode || !!gutterState.selection || !target?.matches?.("table");
     if (gWidth.hidden) tables?.closeMenu();
     gPick.hidden = !pickMode;
@@ -2070,7 +2200,9 @@ const picks = createSelection({
     actions: {
         comment: () => multiComment(),
         copy: async () => flashBar((await copyText(pickedText())) ? "Copied" : "Copy failed"),
+        edit: () => startEditing(editTargets()),
     },
+    enabled: (name) => name !== "edit" || editTargets().length > 0,
     onChange: () => afterPicks(),
 });
 function afterPicks() {
@@ -2114,13 +2246,14 @@ for (const host of [$("#main"), $("#peek")]) {
     host.addEventListener(
         "mousedown",
         (e) => {
-            if (withModifier(e) && unitAt(e.target)) e.preventDefault();
+            if (!prose?.active() && withModifier(e) && unitAt(e.target)) e.preventDefault();
         },
         true,
     );
     host.addEventListener(
         "click",
         (e) => {
+            if (prose?.active()) return; // clicks place the caret while editing
             const el = unitAt(e.target);
             if (withModifier(e) && el) {
                 e.preventDefault();
@@ -2153,7 +2286,7 @@ function multiComment() {
 
 
 document.addEventListener("mouseup", (e) => {
-    if (e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv, #toc, #jump")) return;
+    if (prose?.active() || e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv, #toc, #jump, #editbar, #editlink")) return;
     setTimeout(() => {
         const sel = getSelection();
         const text = sel?.toString().trim();
@@ -2630,6 +2763,34 @@ toc = createToc({
         await render();
     },
     blocked: () => !!document.querySelector(".stepper"),
+});
+
+prose = createProseEditor({
+    main: $("#main"),
+    sourceOf: (id) => findBlock(state.doc?.content, id)?.markdown ?? null,
+    save: async (edits) => {
+        await api(`/docs/${encodeURIComponent(state.documentId)}/prose`, { method: "POST", body: { edits } });
+        pendingRefresh = true; // show the saved version (with its flash) as soon as editing ends
+    },
+    toast,
+    onChange: (on) => {
+        if (on) return;
+        if (pendingShow) {
+            const ev = pendingShow;
+            pendingShow = null;
+            pendingRefresh = false;
+            state.documentId = ev.documentId;
+            state.viewVersion = null;
+            state.tab = "board";
+            state.lastSeenVersion = null;
+            clearPicks();
+            return loadDoc();
+        }
+        if (pendingRefresh) {
+            pendingRefresh = false;
+            loadDoc(true);
+        }
+    },
 });
 
 tables = createTables({

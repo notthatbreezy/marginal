@@ -97,6 +97,13 @@ async function sourceSlice(doc, source) {
 
 export async function startServer({ chat, instances, getSessionId }) {
     const token = randomBytes(18).toString("base64url");
+    const userEdits = new Map(); // docId -> Set of block ids the reader edited since the last chat message
+    const editedNote = (doc) => {
+        const ids = doc && userEdits.get(doc.id);
+        if (!ids?.size) return null;
+        userEdits.delete(doc.id);
+        return `[Since your last message, the user edited these Markdown blocks directly: ${[...ids].join(", ")}. Read them before changing them; don't restore earlier wording.]`;
+    };
     const clients = new Set(); // { res, instanceId }
 
     function push(client, event) {
@@ -199,6 +206,8 @@ export async function startServer({ chat, instances, getSessionId }) {
         const lines = [`[Command center chat${threadId ? " follow-up" : ""} on "${doc.title}" (documentId: ${doc.id}), tab: command]`];
         if (typeof quote === "string" && quote.trim()) lines.push(quote.trim().slice(0, 4000).split("\n").map((l) => `> ${l}`).join("\n"));
         if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
+        const edited = editedNote(doc);
+        if (edited) lines.push(edited);
         lines.push(message.trim().slice(0, 8000));
         if (f.items.length || f.replayAt) lines.push("Focus (what the user is pointing at on the Command map):\n```json\n" + JSON.stringify(f, null, 1).slice(0, 6000) + "\n```");
         lines.push('(The user reads your reply in the Command chat popup: keep it short. For "walk me through…" use command_diff then command_walkthrough {op:"show"}; for questions about a stop prefer command_walkthrough {op:"edit"}. Views: command_view.)');
@@ -295,6 +304,8 @@ export async function startServer({ chat, instances, getSessionId }) {
                         .map((l) => `> ${l}`)
                         .join("\n"),
                 );
+            const edited = editedNote(doc);
+            if (edited) lines.push(edited);
             // Inspecting a diagram (and the docked Command walkthrough) says where the reader is on every message, since they move between steps.
             if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
             lines.push(message.trim().slice(0, 8000));
@@ -349,6 +360,15 @@ export async function startServer({ chat, instances, getSessionId }) {
                 return send(res, 200, await store.rename(doc.id, title));
             }
             if (sub === "delete" && method === "POST") return send(res, 200, await store.remove(doc.id));
+            if (sub === "prose" && method === "POST") {
+                const { edits } = await readBody(req);
+                const result = await store.editProse(doc.id, edits);
+                // The next chat message tells Copilot what the reader changed, so it doesn't work from a stale memory.
+                const seen = userEdits.get(doc.id) ?? new Set();
+                for (const id of result.blocks) seen.add(id);
+                userEdits.set(doc.id, seen);
+                return send(res, 200, result);
+            }
         }
         return send(res, 404, { error: "not found" });
     }

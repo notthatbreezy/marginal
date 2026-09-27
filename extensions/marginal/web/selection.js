@@ -80,7 +80,7 @@ export function createSelection(o) {
         run(name) {
             o.actions[name]?.(ordered());
         },
-        can: (name) => !!o.actions[name],
+        can: (name) => !!o.actions[name] && (o.enabled?.(name, ordered()) ?? true),
     };
     return api;
 }
@@ -93,6 +93,8 @@ export function syncBar() {
     $("#multi-count").textContent = `${current?.size ?? 0} selected`;
     const chat = $("#multi-chat");
     if (chat) chat.hidden = !current?.can("chat");
+    const ed = $("#multi-edit");
+    if (ed) ed.hidden = !current?.can("edit");
     for (const fn of multibar.onSync) fn(current);
 }
 export function flashBar(text) {
@@ -103,6 +105,7 @@ for (const [id, name] of [
     ["#multi-comment", "comment"],
     ["#multi-copy", "copy"],
     ["#multi-chat", "chat"],
+    ["#multi-edit", "edit"],
 ])
     $(id)?.addEventListener("click", () => current?.run(name));
 $("#multi-clear")?.addEventListener("click", () => current?.clear());

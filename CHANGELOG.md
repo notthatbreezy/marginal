@@ -4,12 +4,17 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **Edit prose in place.** A pencil under Comment and Copy (and **Edit** in the top bar for a Ctrl/Shift-click selection, contiguous or not) opens paragraphs, headings, list items and quotes for editing, outlined in green. The margin swaps to Save, Bold, Italic, Link and, set apart at the bottom, Discard; **Shift+Enter** saves, **Esc** cancels. Links take a URL, a `#heading` or a repo path (a code link). The live doc waits while you edit; a save is refused if Copilot changed the same text meanwhile. History shows your versions as yours, and Copilot's next chat message names the blocks you edited. Diagrams, code and tables aren't editable.
+
 ### Fixed
 
 - Comment (margin, top bar or selection button) always leaves the caret in the chat input, whether the chat was already open or not, so you can start typing right away.
 
 ### Changed
 
+- Copilot's live edits no longer scroll the page to where they happened. The changed part still flashes, the page keeps your place (even when text above you grows), and the doc chat lists the changes under the reply that made them: click one to go there, or to open a changed diagram step in Inspect.
 - Contents follows the doc's real nesting instead of flattening everything below the top level into one list. A **Levels** control (1, 2, 3, All; remembered) sets how deep it opens, each group folds with its ▸ (Alt-click folds or opens everything inside), folded groups show how many entries they hold, and jumping with Ctrl/⌘-J opens the groups above the target. The card is capped at about 60% of the window height and scrolls.
 
 ## [0.2.0] - 2026-09-27

@@ -388,6 +388,53 @@ export function applyEdit(docId, edit) {
     return withLock(docId, () => applyEditInner(getDoc(docId), edit));
 }
 
+/**
+ * The reader edited prose in the panel. Each edit replaces lines [from, to] of a Markdown block with new Markdown
+ * ("" deletes them), but only if those lines still read exactly `before`: an edit made against text Copilot has
+ * since changed is refused, never merged. All edits land as one version, attributed to the reader.
+ */
+export function editProse(docId, edits) {
+    return withLock(docId, async () => {
+        const doc = getDoc(docId);
+        if (!Array.isArray(edits) || !edits.length || edits.length > 200) throw new InputError("edits must be a non-empty list.");
+        const draft = structuredClone(doc);
+        const byBlock = new Map();
+        for (const e of edits) {
+            if (!e || typeof e.blockId !== "string" || !Number.isInteger(e.from) || !Number.isInteger(e.to) || e.from < 0 || e.to < e.from || typeof e.before !== "string" || typeof e.after !== "string") throw new InputError("Each edit needs blockId, from, to, before and after.");
+            if (e.after.length > 20000) throw new InputError("That edit is too long.");
+            const hit = locate(draft.content, e.blockId);
+            if (!hit || hit.kind === "unit" || hit.kind === "frame" || hit.node.type !== "markdown") throw new InputError(`${e.blockId} is not a Markdown block, so it can't be edited as prose.`);
+            if (!byBlock.has(e.blockId)) byBlock.set(e.blockId, { hit, list: [] });
+            byBlock.get(e.blockId).list.push(e);
+        }
+        const changed = [];
+        for (const [blockId, { hit, list }] of byBlock) {
+            const lines = hit.node.markdown.replace(/\r\n/g, "\n").split("\n");
+            list.sort((x, y) => y.from - x.from);
+            for (let k = 1; k < list.length; k++) if (list[k].to >= list[k - 1].from) throw new InputError("Two edits overlap in the same block.");
+            for (const e of list) {
+                if (e.to >= lines.length || lines.slice(e.from, e.to + 1).join("\n") !== e.before.replace(/\r\n/g, "\n"))
+                    throw new InputError(`Copilot changed this text (${blockId}) while you were editing, so your edit wasn't saved. Copy your text, cancel, and edit the new version.`);
+                const repl = e.after.replace(/\r\n/g, "\n");
+                lines.splice(e.from, e.to - e.from + 1, ...(repl.trim() ? repl.split("\n") : []));
+            }
+            const markdown = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+            if (!markdown) throw new InputError("A text block can't be left empty; delete the words but keep something, or ask Copilot to remove it.");
+            const parsed = parseBlock({ ...hit.node, markdown }, blockId);
+            parsed.id = hit.node.id;
+            hit.list[hit.index] = parsed;
+            await verifySources(draft, parsed);
+            changed.push(blockId);
+        }
+        const topBlock = topBlockOf(draft.content, changed[0])[0];
+        draft.version = doc.version + 1;
+        draft.lastEdit = { type: "update", targetId: changed[0], blockId: changed[0], topBlockId: topBlock?.id, kind: "markdown", fields: ["markdown"], by: "user", ...(changed.length > 1 ? { blocks: changed } : {}), at: new Date().toISOString() };
+        persist(draft, "edit");
+        touchActivity(doc.id);
+        return { documentId: doc.id, version: draft.version, blocks: changed };
+    });
+}
+
 export function rename(docId, title) {
     return withLock(docId, async () => {
         const doc = structuredClone(getDoc(docId));
