@@ -355,6 +355,36 @@ function togglePin(path) {
     announce(cc.ui.layout.pins.includes(path) ? `Pinned ${path}` : `Unpinned ${path}`);
 }
 
+function clearPins() {
+    const n = cc.ui.layout.pins.length;
+    userLayout((l) => {
+        l.pins = [];
+    });
+    cc.ui.findPin = null;
+    announce(`Unpinned ${n} area${n === 1 ? "" : "s"}`);
+}
+/** Where a pin is on the map: outlined while its chip is hovered, flashed when the chip is clicked. */
+function paintPinFind() {
+    const f = cc.ui.findPin;
+    for (const el of cc.host.querySelectorAll(".tn.pin-find")) if (el.dataset.path !== f?.path) el.classList.remove("pin-find", "pin-flash");
+    if (!f) return;
+    if (f.until && Date.now() > f.until) return void (cc.ui.findPin = null);
+    const el = cc.tm.elFor(f.path);
+    el?.classList.add("pin-find");
+    el?.classList.toggle("pin-flash", !!f.until);
+}
+function findPin(path, { flash = false } = {}) {
+    if (!path) {
+        if (!cc.ui.findPin?.until) cc.ui.findPin = null;
+        return paintPinFind();
+    }
+    // Not on the map at this zoom: zoom out to the pinned area's folder so it can be seen.
+    if (flash && !cc.tm.elFor(path)) zoomTo(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+    cc.ui.findPin = { path, until: flash ? Date.now() + 1800 : 0 };
+    paintPinFind();
+    if (flash) setTimeout(() => cc.ui.findPin?.path === path && ((cc.ui.findPin = null), paintPinFind()), 1850);
+}
+
 function toggleMonitor(path) {
     userLayout((l) => {
         if (l.monitors.some((m) => m.path === path)) l.monitors = l.monitors.filter((m) => m.path !== path);
@@ -494,6 +524,7 @@ function render() {
         inChat: cc.inChat,
     });
     cc.sel.paint(); // tiles are rebuilt every render; re-apply the selection
+    paintPinFind();
     renderFronts(cc.host.querySelector(".rail-fronts"), frontRows(st, changes), {
         focusId: cc.ui.focusFront,
         series: sparkSeries(now),
@@ -760,8 +791,30 @@ function renderMapHead(st, root, auto = false) {
 
     const L = cc.ui.layout;
     const legend = cc.host.querySelector(".legend");
-    const pinsLegend = L.pins.length ? h("span", { class: "pins-legend", title: "Pinned areas are drawn larger (press P over a tile to pin or unpin)" }, h("span", { class: "pin-ic" }, "◆"), `Pinned: ${L.pins.map((p) => p.split("/").pop() + (findNode(cc.tree, p)?.dir ? "/" : "")).join(", ")} ×${PIN_WEIGHT}`) : null;
-    put(legend, pinsLegend ?? [h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active checkpoint"), h("span", {}, h("i", { class: "lg op" }), "Off-plan")]);
+    // Rebuilt only when the pins change: the map re-renders often, and a rebuild would eat clicks and hovers on the chips.
+    const pinKey = JSON.stringify(L.pins);
+    if (legend.dataset.key !== pinKey || !legend.childElementCount) {
+        legend.dataset.key = pinKey;
+        const name = (p) => (p ? p.split("/").pop() : cc.data?.repository ?? "repo") + (findNode(cc.tree, p)?.dir ? "/" : "");
+        const pinsLegend = L.pins.length
+            ? h(
+                  "span",
+                  { class: "pins-legend" },
+                  h("span", { class: "pin-ic", title: `Pinned areas are drawn ${PIN_WEIGHT}× larger (P over a tile pins or unpins it)` }, "◆"),
+                  h("span", { class: "pl-h" }, "Pinned"),
+                  L.pins.map((p) =>
+                      h(
+                          "span",
+                          { class: "pin-chip", onmouseenter: () => findPin(p), onmouseleave: () => findPin(null) },
+                          h("button", { class: "pc-name", title: `${p || "(the whole repo)"}\nClick to show it on the map`, onclick: () => findPin(p, { flash: true }) }, name(p)),
+                          h("button", { class: "pc-x", title: `Unpin ${p}`, "aria-label": `Unpin ${p}`, onclick: () => (findPin(null), togglePin(p)) }, "×"),
+                      ),
+                  ),
+                  L.pins.length > 1 ? h("button", { class: "pc-clear", title: "Unpin every pinned area", onclick: clearPins }, "Clear all") : null,
+              )
+            : null;
+        put(legend, pinsLegend ?? [h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active checkpoint"), h("span", {}, h("i", { class: "lg op" }), "Off-plan")]);
+    }
 
     const ctl = cc.host.querySelector(".view-ctl");
     // Rebuilt only when what it shows changes: a 4 Hz rebuild could swallow a click between mousedown and mouseup.

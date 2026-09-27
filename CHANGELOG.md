@@ -4,6 +4,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+- Pins on the Command map are chips in the map's header instead of a line of names: hover one to outline its tile, click it to find it (the map zooms out if it's off screen, and the tile flashes), × unpins it, and **Clear all** unpins every one, including pins that came with a view.
+
 ## [0.5.0] - 2026-09-27
 
 ### Added

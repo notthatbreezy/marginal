@@ -3575,6 +3575,75 @@ svg .muted {
 .cc .pins-legend .pin-ic {
     color: var(--blue);
 }
+.cc .pins-legend {
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+}
+.cc .legend .pin-chip {
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    max-width: 180px;
+}
+.cc .pin-chip button {
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.cc .pin-chip .pc-name {
+    padding: 0 2px 0 8px;
+    line-height: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cc .pin-chip .pc-x {
+    padding: 0 7px 0 3px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 18px;
+}
+.cc .pin-chip .pc-x:hover {
+    color: var(--red);
+}
+.cc .pin-chip:hover {
+    border-color: color-mix(in srgb, var(--blue) 55%, var(--border));
+}
+.cc .pins-legend .pc-clear {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+.cc .pins-legend .pc-clear:hover {
+    color: var(--fg);
+}
+/* The tile a pin chip points at. */
+.cc .tn.pin-find {
+    outline: 2px solid var(--blue);
+    outline-offset: -2px;
+    z-index: 3;
+}
+.cc .tn.pin-flash {
+    animation: pin-flash 0.6s ease-in-out 3;
+}
+@keyframes pin-flash {
+    50% {
+        outline-color: transparent;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .cc .tn.pin-flash {
+        animation: none;
+    }
+}
 .cc .view-ctl {
     display: flex;
     align-items: center;
