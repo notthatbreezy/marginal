@@ -100,10 +100,18 @@ export async function startServer({ chat, instances, getSessionId }) {
     const token = randomBytes(18).toString("base64url");
     const userEdits = new Map(); // docId -> Set of block ids the reader edited since the last chat message
     const editedNote = (doc) => {
-        const ids = doc && userEdits.get(doc.id);
-        if (!ids?.size) return null;
+        const rec = doc && userEdits.get(doc.id);
+        if (!rec?.ids.size) return null;
         userEdits.delete(doc.id);
-        return `[Since your last message, the user edited these Markdown blocks directly: ${[...ids].join(", ")}. Read them before changing them; don't restore earlier wording.]`;
+        const ids = [...rec.ids].join(", ");
+        // Small in-place edits travel with the message; bigger ones are one cheap call away.
+        let diff = "";
+        try {
+            const ch = store.changesSince(doc.id, rec.since);
+            const text = ch.changed.filter((x) => x.diff).map((x) => `${x.id}:\n${x.diff}`).join("\n\n");
+            if (text && text.length <= 1500) diff = `\n${text}`;
+        } catch {}
+        return `[Since your last message, the user edited these Markdown blocks directly: ${ids} (doc v${rec.since} → v${store.getDoc(doc.id).version}). ${diff ? "What they changed:" : `changes {sinceVersion:${rec.since}} shows what they changed.`} Build on their wording; don't restore the old text, and pass baseVersion on edits to those blocks.${diff}]`;
     };
     const clients = new Set(); // { res, instanceId }
 
@@ -412,8 +420,8 @@ export async function startServer({ chat, instances, getSessionId }) {
                 const { edits } = await readBody(req);
                 const result = await store.editProse(doc.id, edits);
                 // The next chat message tells Copilot what the reader changed, so it doesn't work from a stale memory.
-                const seen = userEdits.get(doc.id) ?? new Set();
-                for (const id of result.blocks) seen.add(id);
+                const seen = userEdits.get(doc.id) ?? { ids: new Set(), since: Math.max(1, store.getDoc(doc.id).version - 1) };
+                for (const id of result.blocks) seen.ids.add(id);
                 userEdits.set(doc.id, seen);
                 return send(res, 200, result);
             }

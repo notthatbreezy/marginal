@@ -4,8 +4,19 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **Patch edits** for the agent: `patch {targetId, ops}` changes part of a long block's text (`{find, replace}`, or `{lines:[from, to], text, expect?}` against `read {targetId, lines:true}`) instead of resending the whole block.
+- **`baseVersion`** on any edit: it's refused, with nothing saved, if its target changed since that version (for example, you edited it in place), and the error says by whom. Edits to other parts of the doc still go through.
+- **`changes {sinceVersion}`**: what changed since a version (each element added, removed, moved or modified, Markdown with a line diff, and whose version it was), so the agent needn't re-read the doc. When you edit prose in place, Copilot's next chat message now carries the diff itself when it's small.
+- **`command_front {op:"advance"}`**: one call moves a stack up a layer (the phase done at its commit, the layer complete, the next layer registered on it in the same checkout, the next phase started), checked up front; if a later step fails, the result says what was already applied.
+- **Symbol-anchored walkthrough ranges**: `{file, symbol:"nextDelay"}` (or `"Runner.run"`) resolves to that declaration's lines, with its leading comment. A miss lists what is declared there. The result's notes say what each symbol resolved to and flag ranges that show none of their file's changes, with the nearest changed lines.
+
 ### Changed
 
+- Friendlier schema: a child that is only Markdown may leave out `type` (anything else gets "missing type" with an example), `update` ignores an unchanged `id`/`type` in `changes`, and plan `expects` accept `{path}` / `{glob}` objects as well as strings.
+- Your in-place prose saves follow their text when Copilot changed other lines of the same block meanwhile (a patch above them shifts line numbers); only text that itself changed is refused.
+- The agent is told that right after an extension reload a canvas action can briefly fail with "provider … not connected", and to retry rather than reopen the canvas.
 - A Command walkthrough now takes over the wall: it spans about two thirds of the width, with a roomier stop list, and the left keeps just the map (still zooming and badging each stop's files). The instruments, timeline, monitors, legend and view controls return when it closes.
 - The Command map's header no longer runs into itself: long folder names in the breadcrumbs end in an ellipsis (the tooltip has the full name), and the legend and view controls wrap below when there's no room.
 - Pins on the Command map are chips in the map's header instead of a line of names: hover one to outline its tile, click it to find it (the map zooms out if it's off screen, and the tile flashes), × unpins it, and **Clear all** unpins every one, including pins that came with a view.

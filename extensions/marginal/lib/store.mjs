@@ -265,6 +265,8 @@ async function applyEditInner(doc, edit, { dryRun = false } = {}) {
             if (hit.kind === "frame" && edit.type !== "update") throw new InputError("Call-stack frames can only be updated in place (e.g. to add notes); update the call_stack_diff's base/head to restructure it.");
             const changes = edit.changes;
             if (!changes || typeof changes !== "object" || Array.isArray(changes)) throw new InputError("update needs a changes object.");
+            // Restating the element's own id or type is harmless: drop it rather than refuse the edit.
+            for (const key of ["id", "type"]) if (key in changes && changes[key] === hit.node[key]) delete changes[key];
             for (const key of ["id", "type", "children", "steps", "nodes", "edges"])
                 if (key in changes) throw new InputError(`update cannot change ${key}; use insert/move/remove on children, or replace.`);
             const merged = { ...hit.node };
@@ -386,7 +388,157 @@ async function applyEditInner(doc, edit, { dryRun = false } = {}) {
 }
 
 export function applyEdit(docId, edit) {
-    return withLock(docId, () => applyEditInner(getDoc(docId), edit));
+    return withLock(docId, async () => {
+        const doc = getDoc(docId);
+        guardBase(doc, edit);
+        return applyEditInner(doc, edit.type === "patch" ? patchToUpdate(doc, edit) : edit);
+    });
+}
+
+// An element's content and where it sits (its parent and the sibling before it), so a move since then counts too.
+const elementJson = (doc, id) => {
+    const hit = locate(doc.content, id);
+    return hit ? JSON.stringify({ node: hit.node, parent: hit.parent?.id ?? null, prev: hit.list?.[hit.index - 1]?.id ?? null }) : null;
+};
+/** baseVersion: the doc version the edit was written against. Refused only if its target changed since then. */
+function guardBase(doc, edit) {
+    if (!edit || typeof edit !== "object" || edit.baseVersion === undefined) return;
+    if (!Number.isInteger(edit.baseVersion) || edit.baseVersion < 0 || edit.baseVersion > doc.version) throw new InputError(`baseVersion must be a version of this doc (0–${doc.version}).`);
+    const id = edit.targetId;
+    if (!id || edit.baseVersion === doc.version) return;
+    const then = elementJson(getVersion(doc.id, edit.baseVersion), id);
+    if (then !== elementJson(doc, id)) {
+        const who = history(doc.id).filter((v) => v.version > edit.baseVersion && (v.lastEdit?.targetId === id || v.lastEdit?.blockId === id || v.lastEdit?.edits?.some?.((e) => e.blockId === id)));
+        const by = [...new Set(who.map((v) => (v.lastEdit?.by === "user" ? "the user" : "Copilot")))].join(" and ") || "someone";
+        throw new InputError(`${id} changed since version ${edit.baseVersion} (by ${by}; the doc is at v${doc.version}). Nothing was saved: read it again (read {targetId:"${id}"} or changes {sinceVersion:${edit.baseVersion}}) and redo the edit against v${doc.version}.`);
+    }
+}
+
+/**
+ * patch: change part of a text field without resending it. ops run against the field's text as it is now:
+ *   {find, replace, all?}  exact text; must occur once (or all:true for every occurrence)
+ *   {lines:[from, to], text, expect?}  replace lines from..to (1-based, inclusive; text "" deletes them); expect, if
+ *   given, must equal those lines now. Line numbers are the text's before any op; line ops run first, then finds.
+ */
+function patchToUpdate(doc, edit) {
+    const allowed = new Set(["type", "targetId", "field", "ops", "baseVersion"]);
+    for (const k of Object.keys(edit)) if (!allowed.has(k)) throw new InputError(`patch: unknown field "${k}" (allowed: ${[...allowed].join(", ")})`);
+    const hit = locate(doc.content, edit.targetId ?? "");
+    if (!hit) throw new InputError(`Unknown targetId: ${edit.targetId}`);
+    const field = edit.field ?? "markdown";
+    const cur = hit.node[field];
+    if (typeof cur !== "string") throw new InputError(`patch: ${edit.targetId} has no text field "${field}"${typeof hit.node.markdown === "string" ? ' (it has "markdown")' : ""}; text fields here: ${Object.entries(hit.node).filter(([, v]) => typeof v === "string" && !["id", "type"].includes(v)).map(([k]) => k).join(", ") || "none"}.`);
+    const ops = edit.ops;
+    if (!Array.isArray(ops) || !ops.length || ops.length > 100) throw new InputError("patch needs ops: a list of {find, replace} or {lines:[from, to], text}.");
+    let lines = cur.split("\n");
+    const lineOps = [];
+    const finds = [];
+    ops.forEach((op, i) => {
+        const at = `ops[${i}]`;
+        if (!op || typeof op !== "object") throw new InputError(`${at} must be an object.`);
+        if (op.lines !== undefined) {
+            const [from, to = from] = Array.isArray(op.lines) ? op.lines : [];
+            if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from - 1 || to > lines.length) throw new InputError(`${at}.lines must be [from, to] within 1–${lines.length} (to = from − 1 inserts before from).`);
+            if (typeof op.text !== "string") throw new InputError(`${at}.text must be a string ("" deletes the lines).`);
+            if (op.expect !== undefined && lines.slice(from - 1, to).join("\n") !== op.expect) throw new InputError(`${at}: lines ${from}–${to} no longer read as expected; now:\n${lines.slice(from - 1, to).join("\n").slice(0, 600)}`);
+            lineOps.push({ from, to, text: op.text, at });
+        } else if (typeof op.find === "string") {
+            if (!op.find) throw new InputError(`${at}.find is empty.`);
+            if (typeof op.replace !== "string") throw new InputError(`${at}.replace must be a string.`);
+            finds.push({ ...op, at });
+        } else throw new InputError(`${at} needs find/replace or lines/text.`);
+    });
+    // Replacements cover lines from..to; an insertion (to = from − 1) is the gap before line from. Two ops conflict
+    // when replacements share a line, an insertion falls inside a replacement, or two insertions share a gap.
+    const isIns = (op) => op.to < op.from;
+    const clash = (a, b) =>
+        isIns(a) && isIns(b) ? a.from === b.from : isIns(a) ? b.from < a.from && a.from <= b.to : isIns(b) ? a.from < b.from && b.from <= a.to : a.from <= b.to && b.from <= a.to;
+    lineOps.forEach((a, k) => lineOps.slice(k + 1).forEach((b) => clash(a, b) && (() => { throw new InputError(`${a.at} and ${b.at} overlap.`); })()));
+    // Bottom-up, so earlier line numbers stay valid; at the same line the replacement goes first, the insertion lands before it.
+    const sorted = [...lineOps].sort((a, b) => b.from - a.from || Number(isIns(a)) - Number(isIns(b)));
+    for (const op of sorted) lines.splice(op.from - 1, op.to - op.from + 1, ...(op.text === "" ? [] : op.text.split("\n")));
+    let text = lines.join("\n");
+    for (const op of finds) {
+        const count = text.split(op.find).length - 1;
+        if (!count) throw new InputError(`${op.at}: "${op.find.slice(0, 80)}" isn't in ${edit.targetId}.${field} (it may have changed; read it again).`);
+        if (count > 1 && !op.all) throw new InputError(`${op.at}: "${op.find.slice(0, 80)}" occurs ${count} times; add surrounding text to make it unique, or pass all:true.`);
+        text = op.all ? text.split(op.find).join(op.replace) : text.replace(op.find, () => op.replace);
+    }
+    if (text === cur) throw new InputError("patch changes nothing.");
+    return { type: "update", targetId: edit.targetId, changes: { [field]: text } };
+}
+
+/** What changed since a version: every element added, removed or modified (Markdown with a line diff), and by whom. */
+export function changesSince(docId, sinceVersion, { maxBytes = 30000 } = {}) {
+    const doc = getDoc(docId);
+    if (!Number.isInteger(sinceVersion) || sinceVersion < 0 || sinceVersion > doc.version) throw new InputError(`sinceVersion must be a version of this doc (0–${doc.version}).`);
+    const then = getVersion(docId, sinceVersion);
+    const index = (content) => {
+        const m = new Map();
+        const walk = (list, parentId) => {
+            list?.forEach((b, i) => {
+                m.set(b.id, { node: b, parentId, kind: b.type, siblings: list, i });
+                for (const us of [b.steps, b.nodes, b.edges]) us?.forEach((u, k) => m.set(u.id, { node: u, parentId: b.id, kind: "unit", siblings: us, i: k }));
+                if (b.children) walk(b.children, b.id);
+            });
+        };
+        walk(content, null);
+        return m;
+    };
+    const A = index(then.content);
+    const B = index(doc.content);
+    // Reordered within its parent: the nearest earlier sibling present in both versions differs.
+    const prevKept = (x, other) => {
+        for (let k = x.i - 1; k >= 0; k--) if (other.has(x.siblings[k].id)) return x.siblings[k].id;
+        return null;
+    };
+    const strip = (n) => JSON.stringify({ ...n, children: undefined, steps: undefined, nodes: undefined, edges: undefined });
+    const changed = [];
+    for (const [id, b] of B) {
+        const a = A.get(id);
+        if (!a) changed.push({ id, change: "added", type: b.node.type ?? b.kind, parentId: b.parentId });
+        else if (strip(a.node) !== strip(b.node) || a.parentId !== b.parentId || prevKept(a, B) !== prevKept(b, A)) {
+            const fields = [...new Set([...Object.keys(a.node), ...Object.keys(b.node)])].filter((k) => !["children", "steps", "nodes", "edges"].includes(k) && JSON.stringify(a.node[k]) !== JSON.stringify(b.node[k]));
+            const moved = a.parentId !== b.parentId || prevKept(a, B) !== prevKept(b, A);
+            const c = { id, change: moved ? (fields.length ? "moved+modified" : "moved") : "modified", type: b.node.type ?? b.kind, fields };
+            if (typeof a.node.markdown === "string" && typeof b.node.markdown === "string" && a.node.markdown !== b.node.markdown) c.diff = lineDiff(a.node.markdown, b.node.markdown);
+            changed.push(c);
+        }
+    }
+    for (const [id, a] of A) if (!B.has(id)) changed.push({ id, change: "removed", type: a.node.type ?? a.kind });
+    const versions = history(docId).filter((v) => v.version > sinceVersion).map((v) => ({ version: v.version, by: v.lastEdit?.by === "user" ? "user" : "copilot", reason: v.reason, targetId: v.lastEdit?.targetId ?? null }));
+    let out = { documentId: docId, fromVersion: sinceVersion, toVersion: doc.version, versions, changed, ...(then.title !== doc.title ? { title: { from: then.title, to: doc.title } } : {}) };
+    if (JSON.stringify(out).length > maxBytes) out = { ...out, changed: changed.map(({ diff, ...c }) => c), note: "diffs left out (too large); read the changed elements by id" };
+    return out;
+}
+
+/** A compact line diff: "@@ line N" headers, "- old" / "+ new" lines, and one line of context either side. */
+export function lineDiff(a, b) {
+    const A = a.split("\n");
+    const B = b.split("\n");
+    const n = A.length;
+    const m = B.length;
+    if (n * m > 1_000_000) return `(${n} → ${m} lines; too large to diff)`;
+    const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const ops = [];
+    let i = 0;
+    let j = 0;
+    while (i < n || j < m) {
+        if (i < n && j < m && A[i] === B[j]) ops.push({ t: " ", s: A[i++], line: ++j });
+        else if (i < n && (j >= m || dp[i + 1][j] >= dp[i][j + 1])) ops.push({ t: "-", s: A[i++], line: j + 1 }); // removals first
+        else ops.push({ t: "+", s: B[j++], line: j });
+    }
+    const keep = ops.map((o, k) => o.t !== " " || ops[k - 1]?.t !== " " || ops[k + 1]?.t !== " ");
+    const out = [];
+    let gap = true;
+    ops.forEach((o, k) => {
+        if (!keep[k]) return void (gap = true);
+        if (gap) out.push(`@@ line ${o.line}`);
+        gap = false;
+        out.push(`${o.t} ${o.s}`);
+    });
+    return out.join("\n");
 }
 
 /** The doc as it would be after a batch of edits (nothing saved), and what each edit touched. */
@@ -394,7 +546,7 @@ export async function previewEdits(docId, edits) {
     let doc = getDoc(docId);
     const changes = [];
     for (const e of edits) {
-        ({ draft: doc } = await applyEditInner(doc, e, { dryRun: true }));
+        ({ draft: doc } = await applyEditInner(doc, e?.type === "patch" ? patchToUpdate(doc, e) : e, { dryRun: true }));
         changes.push(doc.lastEdit);
     }
     return { doc, changes, baseVersion: getDoc(docId).version };
@@ -405,7 +557,8 @@ export async function checkEdits(docId, edits) {
     let doc = getDoc(docId);
     for (const [n, e] of edits.entries()) {
         try {
-            ({ draft: doc } = await applyEditInner(doc, e, { dryRun: true }));
+            guardBase(getDoc(docId), e);
+            ({ draft: doc } = await applyEditInner(doc, e?.type === "patch" ? patchToUpdate(doc, e) : e, { dryRun: true }));
         } catch (err) {
             if (!(err instanceof InputError)) throw err;
             throw new InputError(`${edits.length > 1 ? `edits[${n}]: ` : ""}${err.message}`);
@@ -436,6 +589,16 @@ export function editProse(docId, edits) {
         const changed = [];
         for (const [blockId, { hit, list }] of byBlock) {
             const lines = hit.node.markdown.replace(/\r\n/g, "\n").split("\n");
+            // Copilot may have changed other lines meanwhile (a patch above shifts line numbers): follow the text if it
+            // only moved, i.e. it occurs exactly once elsewhere. Text that itself changed is still refused below.
+            for (const e of list) {
+                const want = e.before.replace(/\r\n/g, "\n");
+                if (e.to < lines.length && lines.slice(e.from, e.to + 1).join("\n") === want) continue;
+                const len = e.to - e.from + 1;
+                const at = [];
+                for (let k = 0; k + len <= lines.length && at.length < 2; k++) if (lines.slice(k, k + len).join("\n") === want) at.push(k);
+                if (at.length === 1) Object.assign(e, { from: at[0], to: at[0] + len - 1 });
+            }
             list.sort((x, y) => y.from - x.from);
             for (let k = 1; k < list.length; k++) if (list[k].to >= list[k - 1].from) throw new InputError("Two edits overlap in the same block.");
             for (const e of list) {

@@ -221,6 +221,9 @@ export const UNIT_TYPES = { step: "sequence", flow_node: "flow_diagram", flow_ed
 
 const blockValidator = (v, p) => {
     if (!v || typeof v !== "object") fail(p, "expected a block object");
+    // A child that is only Markdown can leave out its type; anything else must say what it is.
+    if (v.type === undefined && typeof v.markdown === "string") v = { type: "markdown", ...v };
+    if (v.type === undefined) fail(`${p}.type`, `missing type (every block and child needs one, e.g. {"type":"markdown","markdown":"…"}; known: ${BLOCK_TYPES.join(", ")})`);
     const schema = schemas[v.type];
     if (!schema) fail(`${p}.type`, `unknown block type ${JSON.stringify(v.type)} (known: ${BLOCK_TYPES.join(", ")})`);
     return schema(v, p);

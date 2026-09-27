@@ -481,6 +481,57 @@ test("stacked fronts: each layer diffs from the one below; a complete layer hand
     git(repo, "worktree", "remove", "--force", wtB);
 });
 
+test("advance moves a stack up one layer in one call; walkthrough ranges can name a symbol", async () => {
+    const d = doc.documentId;
+    const wtC = join(tmp, "wt-adv");
+    git(repo, "worktree", "add", "-q", wtC, "-b", "adv1", "main");
+    writeFileSync(join(wtC, "src", "runner", "adv.ts"), ["import { x } from './x';", "", "/** Delay before the next attempt. */", "export function nextDelay(attempt: number): number | null {", "    if (attempt > 3) {", "        return null;", "    }", "    return attempt * 2;", "}", ""].join("\n"));
+    writeFileSync(join(wtC, "src", "runner", "executor.ts"), readFileSync(join(wtC, "src", "runner", "executor.ts"), "utf8") + "tail();\n");
+    git(wtC, "add", "-A");
+    git(wtC, "commit", "-qm", "adv layer 1");
+    const sha = git(wtC, "rev-parse", "HEAD");
+    assert.ok((await call("command_front", { op: "plan", fronts: [{ id: "a1", label: "adv 1" }, { id: "a2", label: "adv 2", stacksOn: "a1" }] })).ok);
+    assert.ok((await call("command_front", { op: "register", id: "a1", label: "adv 1", worktree: wtC })).ok);
+    // Checked up front: bad input changes nothing.
+    const before = JSON.stringify(readState(d).fronts);
+    const bad = await call("command_front", { op: "advance", from: "a1", to: "a2", phaseId: "nope", extra: 1 });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(bad.issues.map((i) => i.code).sort(), ["format", "unknown_id"]);
+    assert.equal(JSON.stringify(readState(d).fronts), before);
+    // One call: phase done at the commit, a1 complete, a2 registered on a1 in the same checkout, next phase started.
+    const adv = await call("command_front", { op: "advance", from: "a1", to: "a2", phaseId: "p2", commit: sha, nextPhaseId: "p1" });
+    assert.ok(adv.ok, JSON.stringify(adv));
+    assert.match(adv.summary, /phase 'p2' → done @ .*front 'a1' → complete.*front 'a2' (registered|updated).*took the worktree over from "a1".*phase 'p1' → active/);
+    const st = readState(d);
+    const [a1, a2] = ["a1", "a2"].map((id) => st.fronts.find((x) => x.id === id));
+    assert.equal(a1.status, "complete");
+    assert.equal(a1.handedTo, "a2");
+    assert.equal(a2.status, "implementing");
+    assert.equal(a2.stacksOn, "a1");
+    assert.equal(a2.base, sha);
+    assert.equal(st.plan.phases.find((p) => p.id === "p2").state.checkpoint.sha, sha);
+    assert.deepEqual(st.plan.phases.find((p) => p.id === "p1").state.frontIds, ["a2"]);
+    // Symbols stand in for line numbers; misses name what is declared there; off-change ranges get a note.
+    const from = { ref: "base" };
+    const to = { sha };
+    const miss = await call("command_walkthrough", { op: "show", walkthrough: { id: "sym", title: "Symbols", from, to, stops: [{ id: "a", title: "A", explanation: "x", ranges: [{ file: "src/runner/adv.ts", symbol: "nextDelayy" }] }] } });
+    assert.equal(miss.ok, false);
+    assert.equal(miss.issues[0].code, "ref_unresolvable");
+    assert.match(miss.issues[0].hint, /nextDelay/);
+    const show = await call("command_walkthrough", { op: "show", walkthrough: { id: "sym", title: "Symbols", from, to, stops: [{ id: "a", title: "A", explanation: "x", ranges: [{ file: "src/runner/adv.ts", symbol: "nextDelay" }] }, { id: "b", title: "B", explanation: "y", ranges: [{ file: "src/runner/executor.ts", startLine: 1, endLine: 3 }] }] } });
+    assert.ok(show.ok, JSON.stringify(show));
+    const w = readState(d).walkthroughs.find((x) => x.id === "sym");
+    assert.deepEqual([w.stops[0].ranges[0].startLine, w.stops[0].ranges[0].endLine], [3, 9], "the declaration with its doc comment");
+    assert.ok(show.notes.some((n) => /"nextDelay" → lines 3–9/.test(n)));
+    assert.ok(show.notes.some((n) => /executor\.ts:1–3\) shows none of that file's changes .*nearest change: lines 41–41/.test(n)), JSON.stringify(show.notes));
+    assert.ok((await call("command_walkthrough", { op: "close", id: "sym" })).ok);
+    const { resolveSymbol } = await import("../extensions/marginal/lib/command/walkthrough.mjs");
+    assert.deepEqual(resolveSymbol(["export function value$next() {", "  return 1;", "}"], "value$next"), { startLine: 1, endLine: 3 });
+    assert.equal((await call("command_front", { op: "advance", from: "a2", to: "a3", label: "x", phaseId: "p1", nextPhaseId: "p1" })).issues[0].path, "nextPhaseId");
+    for (const id of ["a1", "a2"]) assert.ok((await call("command_front", { op: "remove", id })).ok);
+    git(repo, "worktree", "remove", "--force", wtC);
+});
+
 test("pollers dedupe: once per front in-process, zero in a non-owner process", async () => {
     const d = doc.documentId;
     const loops1 = poller.pollingFronts(d);

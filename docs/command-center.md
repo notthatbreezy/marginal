@@ -22,11 +22,11 @@ Every `command_*` action validates its whole input first. On any problem it retu
 | Action | Ops |
 |---|---|
 | `command_plan` | `set {plan}` claims the lease and replaces the plan (states of surviving ids are kept) · `phase {phaseId, status, frontIds?, commit?}` · `step {stepId, status, frontId?}` · `read` |
-| `command_front` | `plan {fronts: [{id, label, note?, stacksOn?}]}` (declare every front up front, as planned; no worktree needed) · `register {id, label, worktree, stacksOn?, base?, status?, note?}` (a planned front becomes implementing; registering a complete front's worktree takes it over) · `status {id, status: planned\|implementing\|review\|blocked\|complete, note?}` · `remove {id}` · `list` |
+| `command_front` | `plan {fronts: [{id, label, note?, stacksOn?}]}` (declare every front up front, as planned; no worktree needed) · `register {id, label, worktree, stacksOn?, base?, status?, note?}` (a planned front becomes implementing; registering a complete front's worktree takes it over) · `status {id, status: planned\|implementing\|review\|blocked\|complete, note?}` · `remove {id}` · `list` · `advance {from, to, label?, worktree?, phaseId?, commit?, nextPhaseId?}` (one call up a stack: phase done, layer complete, next layer registered on it, next phase active) |
 | `command_view` | `set {view, phaseId?}` (with `phaseId` it becomes that phase's suggestion) · `apply {id}` · `remove {id}` · `list` |
 | `command_status` | `{status: working\|awaiting_operator\|complete, prompt?}`. This is a fallback; the lamp normally follows the session's own events. |
 | `command_diff` | `{from, to, format?: files\|patch, paths?, context?, maxBytes?}` over checkpoint refs: `{phaseId}` · `{sha}` · `{ref:"base"}` · `{ref:"live", frontId}` (a snapshot of that worktree now) |
-| `command_walkthrough` | `show {walkthrough}` · `edit {id, baseRevision, edits[]}` with `update_stop`, `insert_stop`, `remove_stop` and `focus_stop` · `close {id}` · `read {id?}` |
+| `command_walkthrough` | `show {walkthrough}` · `edit {id, baseRevision, edits[]}` with `update_stop`, `insert_stop`, `remove_stop` and `focus_stop` · `close {id}` · `read {id?}`. A stop range is `{file, side?, startLine, endLine}` or `{file, side?, symbol}` (a declaration, resolved to its lines); results carry notes for resolved symbols and for ranges that miss the file's changes |
 | `command_read` | `{include?: plan, fronts, stats, offplan, focus, views, mission, walkthrough}` |
 
 The `instructions` action's `command` topic gives the agent the same protocol in prose.

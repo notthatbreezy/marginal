@@ -174,13 +174,68 @@ export async function commandPlan(input, ctx) {
     return { ok: true, revision: next.revision, summary: `step '${stepId}' → ${status}` };
 }
 
+// ---------- command_front {op:"advance"}: one call from one stacked layer to the next ----------
+/**
+ * {from, to, label?, worktree?, phaseId?, commit?, nextPhaseId?}: mark phaseId done (at commit, or a snapshot),
+ * mark "from" complete, register "to" stacked on it (in "from"'s worktree unless another is given, which hands the
+ * checkout over), and start nextPhaseId with "to". Everything is checked first; if a later step still fails, the
+ * result says which steps were applied.
+ */
+async function advanceStack(input, ctx) {
+    const r = new Reader(new Issues());
+    const issues = r.issues;
+    const { docId } = ctx;
+    if (!isOwner(docId, ctx.sessionId)) return notOwner(docId, "Command state");
+    const state = readState(docId);
+    for (const k of Object.keys(input)) if (!["op", "from", "to", "label", "worktree", "phaseId", "commit", "nextPhaseId", "note"].includes(k)) issues.add(k, "format", `unknown field "${k}"`, "advance takes from, to, label?, worktree?, phaseId?, commit?, nextPhaseId?, note?");
+    const fromId = r.id(input.from, "from");
+    const toId = r.id(input.to, "to");
+    const from = fromId && state.fronts.find((f) => f.id === fromId);
+    const to = toId && state.fronts.find((f) => f.id === toId);
+    if (fromId && !from) issues.add("from", "unknown_id", `no front "${fromId}"`, frontIdsHint(state.fronts));
+    if (fromId && fromId === toId) issues.add("to", "format", "from and to must be different fronts");
+    const label = r.str(input.label ?? to?.label, "label", { max: 60, required: !to });
+    const worktree = input.worktree === undefined ? from?.worktree : r.str(input.worktree, "worktree", { max: 1000 });
+    if (from && !worktree) issues.add("worktree", "required", `front "${fromId}" has no worktree to hand on`, "pass worktree for the next layer");
+    for (const k of ["phaseId", "nextPhaseId"]) {
+        if (input[k] === undefined) continue;
+        const id = r.id(input[k], k);
+        if (id && !findPhase(state.plan, id)) issues.add(k, "unknown_id", `no phase "${id}"`, phaseIdsHint(state.plan));
+    }
+    if (input.commit !== undefined && input.phaseId === undefined) issues.add("commit", "type", "commit is the phase's checkpoint: pass phaseId with it");
+    if (input.phaseId !== undefined && input.phaseId === input.nextPhaseId) issues.add("nextPhaseId", "format", "nextPhaseId is the phase that starts next; it can't be the one being finished");
+    if (!issues.ok) return issues.result();
+    const done = [];
+    const failed = (res) => ({ ...res, applied: done, note: done.length ? `already applied: ${done.join("; ")}. Fix the issue and send only the remaining steps.` : undefined });
+    if (input.phaseId !== undefined) {
+        const res = await commandPlan({ op: "phase", phaseId: input.phaseId, status: "done", frontIds: [fromId], ...(input.commit !== undefined ? { commit: input.commit } : {}) }, ctx);
+        if (!res.ok) return failed(res);
+        done.push(res.summary);
+    }
+    if (from.status !== "complete") {
+        const res = await commandFront({ op: "status", id: fromId, status: "complete" }, ctx);
+        if (!res.ok) return failed(res);
+        done.push(res.summary);
+    }
+    const reg = await commandFront({ op: "register", id: toId, label, worktree, stacksOn: fromId, ...(input.note !== undefined ? { note: input.note } : {}) }, ctx);
+    if (!reg.ok) return failed(reg);
+    done.push(reg.summary);
+    if (input.nextPhaseId !== undefined) {
+        const res = await commandPlan({ op: "phase", phaseId: input.nextPhaseId, status: "active", frontIds: [toId] }, ctx);
+        if (!res.ok) return failed(res);
+        done.push(res.summary);
+    }
+    return { ok: true, revision: readState(docId).revision, summary: done.join("; ") };
+}
+
 // ---------- command_front ----------
 export async function commandFront(input, ctx) {
     const r = new Reader(new Issues());
-    const op = r.enumOf(input.op, "op", ["plan", "register", "status", "remove", "list"]);
+    const op = r.enumOf(input.op, "op", ["plan", "register", "status", "remove", "list", "advance"]);
     if (!r.issues.ok) return r.issues.result();
     const { docId, repo } = ctx;
     if (op === "list") return { ok: true, fronts: readState(docId).fronts };
+    if (op === "advance") return advanceStack(input, ctx);
     if (!isOwner(docId, ctx.sessionId)) return notOwner(docId, "Command state");
     const state = readState(docId);
     const issues = r.issues;

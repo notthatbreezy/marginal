@@ -169,15 +169,22 @@ const actions = [
     },
     {
         name: "read",
-        description: "Read a doc as an outline with element IDs. targetId returns one element in full; full:true returns the whole JSON; version reads history.",
-        inputSchema: { type: "object", properties: { documentId: docId, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" } } },
+        description: "Read a doc as an outline with element IDs (and the doc version). targetId returns one element in full; with lines:true (optionally fromLine/toLine) it returns that element's text numbered by line instead, for patch edits; full:true returns the whole JSON; version reads history.",
+        inputSchema: { type: "object", properties: { documentId: docId, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" } } },
         handler: wrap((i, ctx) => {
             const id = docIdFor(i, ctx);
             const doc = i.version !== undefined ? store.getVersion(id, i.version) : store.getDoc(id);
             if (i.targetId) {
                 const el = findElement(doc.content, i.targetId);
                 if (!el) throw new InputError(`Unknown targetId: ${i.targetId}`);
-                return el;
+                if (!i.lines) return el;
+                const field = i.field ?? "markdown";
+                if (typeof el[field] !== "string") throw new InputError(`${i.targetId} has no text field "${field}".`);
+                const all = el[field].split("\n");
+                const from = Math.max(1, i.fromLine ?? 1);
+                const to = Math.min(all.length, i.toLine ?? all.length);
+                const w = String(to).length;
+                return { id: el.id, type: el.type, field, version: doc.version, lineCount: all.length, from, to, text: all.slice(from - 1, to).map((l, k) => `${String(from + k).padStart(w)}| ${l}`).join("\n") };
             }
             if (i.full) return { documentId: doc.id, title: doc.title, version: doc.version, target: doc.target, pullRequest: doc.pullRequest, lenses: doc.lenses, content: doc.content };
             return store.outline(doc);
@@ -185,7 +192,7 @@ const actions = [
     },
     {
         name: "edit",
-        description: "Apply edits: {edit} or {edits:[...]}. Types: insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Each saves a version and animates live. See instructions topic 'blocks'.",
+        description: "Apply edits: {edit} or {edits:[...]}. Types: insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Any edit may carry baseVersion (the doc version you read): it's refused, with nothing saved, if its target changed since (e.g. the user edited it in place). Each saves a version and animates live. See instructions topic 'blocks'.",
         inputSchema: { type: "object", properties: { documentId: docId, edit: { type: "object" }, edits: { type: "array", items: { type: "object" } } } },
         handler: wrap(async (i, ctx) => {
             const id = docIdFor(i, ctx);
@@ -213,6 +220,12 @@ const actions = [
             }
             return i.edit && !i.edits ? results[0] : results;
         }),
+    },
+    {
+        name: "changes",
+        description: "What changed in a doc since a version: each element added, removed, moved or modified (Markdown with a line diff), and which versions were the user's (edited in place) or Copilot's. Cheaper than re-reading the doc.",
+        inputSchema: { type: "object", properties: { documentId: docId, sinceVersion: { type: "integer" } }, required: ["sinceVersion"] },
+        handler: wrap((i, ctx) => store.changesSince(docIdFor(i, ctx), i.sinceVersion)),
     },
     {
         name: "activity",

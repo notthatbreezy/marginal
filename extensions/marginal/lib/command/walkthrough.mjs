@@ -102,6 +102,74 @@ export async function commandDiff(input, ctx) {
     return out;
 }
 
+// ---------- symbol anchors ----------
+const KEYWORDS = "export|default|public|private|protected|internal|static|async|abstract|override|readonly|final|pub|fn|func|def|function|class|interface|type|enum|struct|trait|impl|const|let|var|val|record|module|namespace|resource|param|output|module|sub|method";
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Lines that declare `name`: after declaration keywords, as a method (`name(…) {`), or as a key/assignment. */
+function declLines(lines, name, from = 0) {
+    const n = escRe(name);
+    const strong = new RegExp(`^\\s*(?:@\\w+\\s+)*(?:(?:${KEYWORDS})\\s+)+\\*?${n}\\b`);
+    const weak = new RegExp(`^\\s*(?:async\\s+|static\\s+|get\\s+|set\\s+)*${n}\\s*(?:\\(|[:=](?!=))`);
+    const hits = { strong: [], weak: [] };
+    for (let i = from; i < lines.length; i++) {
+        if (strong.test(lines[i])) hits.strong.push(i);
+        else if (weak.test(lines[i])) hits.weak.push(i);
+    }
+    return hits.strong.length ? hits.strong : hits.weak;
+}
+/** The end of the declaration starting at line i: its matching brace, else its indented body, else the line. */
+function declEnd(lines, i) {
+    let depth = 0;
+    let opened = false;
+    for (let k = i; k < Math.min(lines.length, i + 600); k++) {
+        const s = lines[k].replace(/(["'`])(?:\\.|(?!\1).)*\1/g, "").replace(/\/\/.*$|#.*$/, "");
+        for (const ch of s) {
+            if (ch === "{" || ch === "(" || ch === "[") (depth++, ch === "{" && (opened = true));
+            else if (ch === "}" || ch === ")" || ch === "]") depth--;
+        }
+        if (opened && depth <= 0) return k;
+        if (!opened && k > i + 3 && depth <= 0) break;
+    }
+    // Indentation (Python, YAML): the lines after it that are blank or indented deeper.
+    const ind = (l) => l.match(/^\s*/)[0].length;
+    if (/:\s*(#.*)?$/.test(lines[i])) {
+        let end = i;
+        for (let k = i + 1; k < lines.length; k++) {
+            if (!lines[k].trim()) continue;
+            if (ind(lines[k]) <= ind(lines[i])) break;
+            end = k;
+        }
+        return end;
+    }
+    return i;
+}
+/** Resolve {symbol} to lines: "name", or "Outer.name" / "Outer#name" to look inside Outer. Leading comments come along. */
+export function resolveSymbol(lines, symbol) {
+    const parts = String(symbol).split(/[.#:]+/).filter(Boolean);
+    let from = 0;
+    let to = lines.length - 1;
+    for (const [k, name] of parts.entries()) {
+        const hits = declLines(lines, name, from).filter((i) => i <= to);
+        if (!hits.length) return null;
+        const start = hits[0];
+        const end = declEnd(lines, start);
+        if (k < parts.length - 1) {
+            from = start + 1;
+            to = end;
+            continue;
+        }
+        let top = start;
+        while (top > 0 && top > start - 25 && /^\s*(\/\/|\/\*|\*|#(?!!)|""")/.test(lines[top - 1])) top--;
+        return { startLine: top + 1, endLine: end + 1 };
+    }
+    return null;
+}
+/** Names declared in a file (for "did you mean" hints). */
+function declaredNames(lines) {
+    const re = new RegExp(`^\\s*(?:@\\w+\\s+)*(?:(?:${KEYWORDS})\\s+)+\\*?([A-Za-z_$][\\w$]*)`);
+    return [...new Set(lines.map((l) => l.match(re)?.[1]).filter(Boolean))];
+}
+
 // ---------- walkthrough parsing ----------
 /** Validates one stop against the walkthrough's diff. `diff` = { byPath: Map, paths: string[], lines(side, file) }. */
 async function parseStop(r, v, path, diff, { partial = false } = {}) {
@@ -117,7 +185,7 @@ async function parseStop(r, v, path, diff, { partial = false } = {}) {
         stop.ranges = [];
         for (const [i, rv] of ranges.entries()) {
             const rp = `${path}.ranges[${i}]`;
-            const ro = r.obj(rv, rp, ["file", "side", "startLine", "endLine"]);
+            const ro = r.obj(rv, rp, ["file", "side", "startLine", "endLine", "symbol"]);
             if (!ro) continue;
             const n = normalizeRepoPath(ro.file);
             if (n.error) {
@@ -125,9 +193,23 @@ async function parseStop(r, v, path, diff, { partial = false } = {}) {
                 continue;
             }
             const side = r.enumOf(ro.side ?? "head", `${rp}.side`, ["head", "base"]);
-            const start = r.int(ro.startLine, `${rp}.startLine`, { min: 1 });
-            const end = r.int(ro.endLine ?? ro.startLine, `${rp}.endLine`, { min: 1 });
             const entry = diff.byPath.get(n.path);
+            // A symbol stands in for the line numbers: its declaration (and leading comments) on that side.
+            let anchored = null;
+            if (ro.symbol !== undefined && entry && side) {
+                const sym = r.str(ro.symbol, `${rp}.symbol`, { max: 200 });
+                const lines = sym ? await diff.text(side, side === "base" ? (entry.previousPath ?? n.path) : n.path) : null;
+                anchored = lines && resolveSymbol(lines, sym);
+                if (sym && lines && !anchored) {
+                    const names = declaredNames(lines);
+                    const near = names.filter((x) => x.toLowerCase().includes(sym.split(/[.#:]/).pop().toLowerCase().slice(0, 4)));
+                    r.issues.add(`${rp}.symbol`, "ref_unresolvable", `no declaration named ${JSON.stringify(sym)} in ${n.path} (${side})`, listHint("declared there", (near.length ? near : names).slice(0, 15)) ?? "pass startLine/endLine instead");
+                    continue;
+                }
+                if (anchored && anchored.endLine - anchored.startLine + 1 > LIMITS.linesPerRange) anchored.endLine = anchored.startLine + LIMITS.linesPerRange - 1;
+            }
+            const start = anchored ? anchored.startLine : r.int(ro.startLine, `${rp}.startLine`, { min: 1 });
+            const end = anchored ? anchored.endLine : r.int(ro.endLine ?? ro.startLine, `${rp}.endLine`, { min: 1 });
             if (!entry) {
                 const near = nearestPath(n.path, diff.paths);
                 r.issues.add(`${rp}.file`, "path_not_in_diff", `${n.path} is not changed between the walkthrough's checkpoints`, near ? `did you mean "${near}"?` : listHint("changed files", diff.paths));
@@ -148,6 +230,13 @@ async function parseStop(r, v, path, diff, { partial = false } = {}) {
             }
             // `file` is the diff's (head) path used by the map; `sourceFile` is what exists on that side (renames).
             stop.ranges.push({ file: n.path, ...(file !== n.path ? { sourceFile: file } : {}), side, startLine: start, endLine: end });
+            // Allowed, but worth a word: a range that shows none of the change in its file.
+            const hunks = await diff.hunks(n.path, side);
+            if (hunks.length && !hunks.some((hk) => hk.start <= end && hk.end >= start)) {
+                const near = [...hunks].sort((a, b) => Math.min(Math.abs(a.start - end), Math.abs(a.end - start)) - Math.min(Math.abs(b.start - end), Math.abs(b.end - start)))[0];
+                diff.notes.push(`${rp} (${n.path}:${start}–${end}) shows none of that file's changes on the ${side} side; nearest change: lines ${near.start}–${near.end}${hunks.length > 1 ? ` (all: ${hunks.slice(0, 8).map((hk) => (hk.start === hk.end ? hk.start : `${hk.start}–${hk.end}`)).join(", ")})` : ""}`);
+            }
+            if (anchored) diff.notes.push(`${rp}: ${JSON.stringify(ro.symbol)} → lines ${start}–${end}`);
         }
     }
     if (o.focus !== undefined) {
@@ -162,14 +251,34 @@ async function diffIndex(repoId, pins) {
     const files = await diffFiles(repoId, pins.base, pins.head);
     const byPath = new Map(files.map((f) => [f.path, f]));
     const cache = new Map();
+    const hunkCache = new Map();
+    const text = async (side, file) => {
+        const k = `${side}\0${file}`;
+        if (!cache.has(k)) cache.set(k, (await readFileAt(repoId, side === "base" ? pins.base : pins.head, file)).lines ?? []);
+        return cache.get(k);
+    };
     return {
         files,
         byPath,
         paths: files.map((f) => f.path),
+        notes: [],
+        text,
         async lines(side, file) {
+            return (await text(side, file)).length;
+        },
+        /** Changed line spans of a file on one side ({start, end}, 1-based; a pure deletion marks where it was). */
+        async hunks(file, side) {
             const k = `${side}\0${file}`;
-            if (!cache.has(k)) cache.set(k, (await readFileAt(repoId, side === "base" ? pins.base : pins.head, file)).lines?.length ?? 0);
-            return cache.get(k);
+            if (!hunkCache.has(k)) {
+                const patch = await diffPatch(repoId, pins.base, pins.head, [file], { context: 0 }).catch(() => "");
+                const out = [];
+                for (const m of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+                    const [s, n] = side === "base" ? [Number(m[1]), m[2] === undefined ? 1 : Number(m[2])] : [Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+                    out.push({ start: Math.max(1, s), end: Math.max(1, s + Math.max(n, 1) - 1) });
+                }
+                hunkCache.set(k, out);
+            }
+            return hunkCache.get(k);
         },
     };
 }
@@ -252,7 +361,7 @@ export async function commandWalkthrough(input, ctx) {
             s.walkthroughView = { id, stopId: w.stops[0].id, seq: nextViewSeq(s) };
         });
         revising(docId, id, false);
-        return { ok: true, revision: w.revision, stateRevision: next.revision, summary: `walkthrough '${id}' shown: ${w.stops.length} stops, ${from.label} ${short(from.sha)} → ${to.label} ${short(to.sha)}` };
+        return { ok: true, revision: w.revision, stateRevision: next.revision, summary: `walkthrough '${id}' shown: ${w.stops.length} stops, ${from.label} ${short(from.sha)} → ${to.label} ${short(to.sha)}`, ...(diff.notes.length ? { notes: diff.notes } : {}) };
     }
 
     const id = r.id(input.id, "id");
@@ -346,6 +455,6 @@ export async function commandWalkthrough(input, ctx) {
     });
     revising(docId, id, false);
     const parts = [changed.size && `${changed.size} updated`, inserted.size && `${inserted.size} inserted`, removed.size && `${removed.size} removed`, focusId && `focused '${focusId}'`].filter(Boolean);
-    return { ok: true, revision, stateRevision: next.revision, summary: `walkthrough '${id}' r${revision}: ${parts.join(", ") || "no changes"}` };
+    return { ok: true, revision, stateRevision: next.revision, summary: `walkthrough '${id}' r${revision}: ${parts.join(", ") || "no changes"}`, ...(diff.notes.length ? { notes: diff.notes } : {}) };
 }
 

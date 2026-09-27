@@ -15,14 +15,14 @@ import { emitCommand, readState, unwatchCommand, writeState } from "./state.mjs"
 
 const OPS = {
     command_plan: ["set", "phase", "step", "read"],
-    command_front: ["plan", "register", "status", "remove", "list"],
+    command_front: ["plan", "register", "status", "remove", "list", "advance"],
     command_view: ["set", "remove", "apply", "list"],
     command_walkthrough: ["show", "edit", "close", "read"],
 };
 
 const DESCRIPTIONS = {
     command_plan: 'Command center plan. op "set" {plan:{id,title,base?,phases:[{id,title,expects[],steps:[{id,title,expects[]}],suggestedView?}]}} replaces the plan atomically and claims this doc\'s Command lease for your session; "phase" {phaseId,status:pending|active|done,frontIds?,commit?}; "step" {stepId,status,frontId?}; "read". Invalid input returns {ok:false, issues[]} and changes nothing. See instructions topic "command".',
-    command_front: 'Command center fronts (one per worktree a session edits). op "plan" {fronts:[{id,label,note?,stacksOn?}]} declares every front the plan needs up front, as planned (no worktree needed yet; stacksOn names the stacked layer below); "register" {id,label,worktree(absolute),stacksOn?,base?,sessionId?,status?,note?} gives a front its worktree (a planned one becomes implementing) and starts polling it (a stacked layer diffs against the HEAD of its stacksOn front, or base; the worktree of a complete front can be taken over by the next layer); "status" {id,status:planned|implementing|review|blocked|complete,note?} on every stage change (note says why when blocked); "remove" {id}; "list". Never report individual edits: the canvas observes worktrees.',
+    command_front: 'Command center fronts (one per worktree a session edits). op "plan" {fronts:[{id,label,note?,stacksOn?}]} declares every front the plan needs up front, as planned (no worktree needed yet; stacksOn names the stacked layer below); "register" {id,label,worktree(absolute),stacksOn?,base?,sessionId?,status?,note?} gives a front its worktree (a planned one becomes implementing) and starts polling it (a stacked layer diffs against the HEAD of its stacksOn front, or base; the worktree of a complete front can be taken over by the next layer); "status" {id,status:planned|implementing|review|blocked|complete,note?} on every stage change (note says why when blocked); "remove" {id}; "list"; "advance" {from,to,label?,worktree?,phaseId?,commit?,nextPhaseId?} moves a stack up one layer in one call (phase done at commit, from complete, to registered stacked on from in its worktree, next phase active). Never report individual edits: the canvas observes worktrees.',
     command_status: "Report mission status {status:working|awaiting_operator|complete, prompt?} when the runtime cannot infer it.",
     command_read: 'Read what the Command tab shows: {include?:["plan","fronts","stats","offplan","focus","views","mission","walkthrough"]}. "focus" is what the user pointed at in the Command chat (paths, fronts, phases, stops, code ranges) and the walkthrough stop on screen.',
     command_diff: 'Diff between two checkpoints (authoring aid for walkthroughs): {from, to, format?:"files"|"patch", paths?[], context?, maxBytes?}. A checkpoint ref is {phaseId} (a done phase), {ref:"base"} (plan base), {ref:"live",frontId} (a snapshot of that worktree now) or {sha}.',

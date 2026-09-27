@@ -86,6 +86,8 @@ function parseExpects(r, v, path, ctx, counter) {
     const list = r.arr(v, path, { required: false, max: LIMITS.patterns });
     const out = [];
     (list ?? []).forEach((raw, i) => {
+        // Plain strings are the format; {path} / {pattern} / {glob} objects are read as their string.
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) raw = raw.path ?? raw.pattern ?? raw.glob ?? raw;
         const c = classifyPattern(raw, ctx.isTree);
         if (c.error) r.issues.add(`${path}[${i}]`, c.error, c.message, c.hint);
         else out.push(c.pattern);

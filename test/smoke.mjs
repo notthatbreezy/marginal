@@ -253,6 +253,73 @@ await test("prose edits: exact lines, one version by the user, refused when the 
     await store.applyEdit(d, { type: "remove", targetId: id });
 });
 
+await test("patch edits, baseVersion guards, changes since a version, and friendlier schema errors", async () => {
+    const d = doc.documentId;
+    const ins = await store.applyEdit(d, { type: "insert", content: { type: "markdown", markdown: "# Plan\n\n- step one\n- step two\n- step three\n\nDone when tests pass." } });
+    const id = ins.targetId;
+    const other = (await store.applyEdit(d, { type: "insert", content: { type: "markdown", markdown: "Another block." } })).targetId;
+    const md = () => store.getDoc(d).content.find((b) => b.id === id).markdown;
+    const v0 = store.getDoc(d).version;
+    // find/replace, exactly once
+    await store.applyEdit(d, { type: "patch", targetId: id, ops: [{ find: "step two", replace: "step 2" }] });
+    assert.equal(md(), "# Plan\n\n- step one\n- step 2\n- step three\n\nDone when tests pass.");
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, ops: [{ find: "step", replace: "x" }] }), /occurs 3 times/);
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, ops: [{ find: "nowhere", replace: "x" }] }), /isn't in/);
+    // line ranges (numbered from the current text), with expect; line ops before finds; inserts with to = from - 1
+    await store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [5, 5], text: "- step three\n- step four", expect: "- step three" }, { lines: [3, 2], text: "- step zero" }, { find: "tests pass", replace: "CI is green" }] });
+    assert.equal(md(), "# Plan\n\n- step zero\n- step one\n- step 2\n- step three\n- step four\n\nDone when CI is green.");
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [1, 1], text: "x", expect: "# Nope" }] }), /no longer read as expected/);
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, field: "title", ops: [{ find: "a", replace: "b" }] }), /no text field "title"/);
+    // baseVersion: refused only when the target itself changed since
+    const vRead = store.getDoc(d).version;
+    await store.editProse(d, [{ blockId: id, from: 0, to: 0, before: "# Plan", after: "# The plan" }]); // the user edits in place
+    await rejects(() => store.applyEdit(d, { type: "patch", targetId: id, baseVersion: vRead, ops: [{ find: "step one", replace: "step 1" }] }), /changed since version \d+ \(by the user/);
+    await store.applyEdit(d, { type: "update", targetId: other, baseVersion: vRead, changes: { markdown: "Another block, edited." } });
+    // the user's save follows its text when Copilot's patch shifted the lines
+    await store.applyEdit(d, { type: "patch", targetId: id, ops: [{ lines: [2, 1], text: "Intro line." }] });
+    await store.editProse(d, [{ blockId: id, from: 8, to: 8, before: "Done when CI is green.", after: "Done when CI is green and docs updated." }]);
+    assert.match(md(), /^# The plan\nIntro line\.\n/);
+    assert.match(md(), /docs updated\.$/);
+    // changes since a version: who, what, and a line diff
+    const ch = store.changesSince(d, v0);
+    assert.ok(ch.versions.some((v) => v.by === "user") && ch.versions.some((v) => v.by === "copilot"));
+    const c1 = ch.changed.find((x) => x.id === id);
+    assert.equal(c1.change, "modified");
+    assert.match(c1.diff, /^@@ line 1\n- # Plan\n\+ # The plan/m);
+    assert.match(c1.diff, /\+ - step zero/);
+    assert.ok(ch.changed.some((x) => x.id === other && x.change === "modified"));
+    // dry runs understand patch too (Discuss mode holds them)
+    assert.equal(await store.checkEdits(d, [{ type: "patch", targetId: id, ops: [{ find: "Intro line.", replace: "Intro." }] }]), 1);
+    await rejects(() => store.checkEdits(d, [{ type: "patch", targetId: id, baseVersion: vRead, ops: [{ find: "Intro line.", replace: "Intro." }] }]), /changed since/);
+    // schema: a Markdown-only child may leave out its type; restating the type in update is fine
+    const sec = await store.applyEdit(d, { type: "insert", content: { type: "section", title: "S", children: [{ markdown: "child" }] } });
+    assert.equal(store.getDoc(d).content.find((b) => b.id === sec.targetId).children[0].type, "markdown");
+    await rejects(() => store.applyEdit(d, { type: "insert", content: { type: "section", title: "S", children: [{ text: "x" }] } }), /missing type/);
+    await store.applyEdit(d, { type: "update", targetId: other, changes: { type: "markdown", markdown: "Same type restated." } });
+    // insert and replace at the same line, in either order; overlapping ops refused
+    for (const order of [0, 1]) {
+        const t = (await store.applyEdit(d, { type: "insert", content: { type: "markdown", markdown: "a\nb" } })).targetId;
+        const ops = [{ lines: [2, 1], text: "x" }, { lines: [2, 2], text: "B" }];
+        await store.applyEdit(d, { type: "patch", targetId: t, ops: order ? ops.reverse() : ops });
+        assert.equal(store.getDoc(d).content.find((b) => b.id === t).markdown, "a\nx\nB");
+        await rejects(() => store.applyEdit(d, { type: "patch", targetId: t, ops: [{ lines: [1, 2], text: "q" }, { lines: [2, 1], text: "z" }] }), /overlap/);
+        await store.applyEdit(d, { type: "remove", targetId: t });
+    }
+    // a move since baseVersion is a change too, and changes reports reorders within a parent
+    const vMove = store.getDoc(d).version;
+    const order = store.getDoc(d).content.map((b) => b.id);
+    const others = [id, sec.targetId].sort((x, y) => order.indexOf(x) - order.indexOf(y));
+    await store.applyEdit(d, order.indexOf(other) < order.indexOf(others[0]) ? { type: "move", targetId: other, afterId: others[1] } : { type: "move", targetId: other, beforeId: others[0] });
+    await rejects(() => store.applyEdit(d, { type: "update", targetId: other, baseVersion: vMove, changes: { markdown: "x" } }), /changed since/);
+    assert.equal(store.changesSince(d, vMove).changed.find((x) => x.id === other)?.change, "moved");
+    for (const x of [id, other, sec.targetId]) await store.applyEdit(d, { type: "remove", targetId: x });
+    // a brand-new doc is at version 0, and that's a valid baseline
+    const fresh = await store.create({ title: "Fresh" });
+    const f0 = (await store.applyEdit(fresh.documentId, { type: "insert", baseVersion: 0, content: { type: "markdown", markdown: "hi" } })).targetId;
+    assert.ok(store.changesSince(fresh.documentId, 0).changed.some((x) => x.id === f0 && x.change === "added"));
+    await store.remove(fresh.documentId);
+});
+
 await test("settings: defaults, partial merges, and bad values fall back", async () => {
     const { readSettings, writeSettings, parseSettings } = await import("../extensions/marginal/lib/settings.mjs");
     assert.deepEqual(readSettings().shortcuts, { jump: true, stepKeys: true, tourKey: true, markdown: true });
