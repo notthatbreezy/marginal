@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-27
+
 ### Added
 
 - **When Copilot is busy** (Settings): chat messages can interrupt Copilot's current turn instead of queueing behind it, so it reads them at its next step and can change course. On by default for the Command chat, whose orchestrator often stays mid-turn for a long time while it waits on helper agents; off by default for the doc chat, whose questions would otherwise land in whatever the main chat is doing. Before, every message waited for the current turn to finish.
