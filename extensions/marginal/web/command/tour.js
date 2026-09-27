@@ -69,15 +69,7 @@ export function startCommandTour(o = {}) {
                 target: ".cc .timeline .track",
                 placement: "top",
                 title: "Checkpoints",
-                body: () => p("The plan's phases in order: ✓ done, blue active, grey still to come. Click one to apply its view, replay from its first edit or completion, or ask the orchestrator about it."),
-            },
-            {
-                id: "scrub",
-                when: plan,
-                target: ".cc .hist-wrap",
-                placement: "top",
-                title: "Replay",
-                body: () => [p("Edits over time, stacked by front. Drag or click here to see the map as it was at that moment; ", kbd("←"), " ", kbd("→"), " step, ", kbd("End"), " returns."), p("While replaying the map is outlined in yellow; ", h("b", {}, "◀ Live"), " comes back.")],
+                body: () => p("The plan's phases in order: ✓ done, blue active, grey still to come. Click one to apply its view or ask the orchestrator about it."),
             },
             {
                 id: "chat",

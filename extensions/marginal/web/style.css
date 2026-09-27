@@ -2992,10 +2992,6 @@ svg .muted {
     grid-area: time;
     border-top: 1px solid var(--border);
     padding: 8px 14px 10px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 14px;
-    align-items: center;
 }
 .cc .track {
     position: relative;
@@ -3060,79 +3056,6 @@ svg .muted {
     color: var(--muted);
     font-weight: 400;
     font-variant-numeric: tabular-nums;
-}
-.cc .hist {
-    position: relative;
-    height: 22px;
-    display: flex;
-    align-items: flex-end;
-    gap: 1px;
-}
-.cc .hist i {
-    flex: 1;
-    display: flex;
-    flex-direction: column-reverse;
-    min-width: 0;
-}
-.cc .hist b {
-    display: block;
-    background: var(--fc);
-    opacity: 0.55;
-}
-.cc .playhead {
-    position: absolute;
-    top: -34px;
-    bottom: -2px;
-    width: 2px;
-    background: var(--fg);
-    border-radius: 1px;
-    pointer-events: none;
-}
-.cc .playhead::before {
-    content: "";
-    position: absolute;
-    top: -3px;
-    left: -4px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--fg);
-    box-shadow: 0 0 0 3px var(--bg);
-}
-.cc .tl-ctl {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    grid-row: 1 / span 2;
-    grid-column: 2;
-}
-.cc .live-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    border-radius: 999px;
-    padding: 2px 10px;
-}
-.cc .live-btn.is-live {
-    color: var(--red);
-    background: var(--red-muted);
-    border-color: transparent;
-}
-.cc .live-btn.is-live i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--red);
-}
-.cc .replay-badge {
-    font-size: 11.5px;
-    font-weight: 600;
-    color: var(--yellow);
-    background: var(--yellow-muted);
-    padding: 1px 8px;
-    border-radius: 999px;
 }
 .cc .feedlane {
     margin: 0 10px 4px;
@@ -3529,7 +3452,7 @@ svg .muted {
         box-shadow: 0 0 0 2px var(--fc);
     }
 }
-/* ---- Command: fronts rail, timeline/replay, off-plan filter, views & follow, pins, monitors, phase menu ---- */
+/* ---- Command: fronts rail, timeline, off-plan filter, views & follow, pins, monitors, phase menu ---- */
 .cc {
     position: relative;
 }
@@ -3789,7 +3712,7 @@ svg .muted {
     font-size: 11.5px;
     color: var(--yellow);
 }
-/* Timeline: segments are buttons (phase menu); the histogram wrapper is the scrub surface. */
+/* Timeline: segments are buttons (phase menu). */
 .cc button.seg {
     border: none;
     font: inherit;
@@ -3804,28 +3727,10 @@ svg .muted {
     outline: 2px solid var(--blue);
     outline-offset: 1px;
 }
-.cc .hist-wrap {
-    position: relative;
-    cursor: ew-resize;
-    touch-action: none;
-    padding-top: 2px;
-}
-.cc .hist:focus-visible {
-    outline: 2px solid var(--blue);
-    outline-offset: 3px;
-    border-radius: 3px;
-}
 .cc .timeline .muted {
     color: var(--muted);
     font-size: 12px;
     align-self: center;
-}
-.cc.replaying .stage {
-    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--yellow) 55%, transparent);
-}
-.cc.replaying .playhead,
-.cc.replaying .playhead::before {
-    background: var(--yellow);
 }
 /* Phase menu (anchored above the clicked segment). */
 .cc .cc-menu {

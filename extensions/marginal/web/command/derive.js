@@ -1,4 +1,4 @@
-// Command tab: pure derivations from the change-event log (no DOM). Live view and replay share these by passing `at`.
+// Command tab: pure derivations from the change-event log (no DOM).
 
 /** Mirror of lib/command/patterns.mjs isPresentChange (kept in lockstep by test/command.web.test.mjs). */
 export const isPresentChange = (e) => !!(e.totals.add || e.totals.del || e.binary || e.kind !== "modified");
@@ -71,7 +71,7 @@ export function velocity(events, { at = Date.now(), windowKey = "auto", startedA
     return { churn: r(churn / mins), net: r(net / mins), files: r(files.size / mins), events: r(n / mins), label: windowKey === "auto" ? `auto · ${auto.label}` : windowKey, bucketMs, auto };
 }
 
-/** Churn per front per bucket over [from, to] — sparklines and the timeline histogram. */
+/** Churn per front per bucket over [from, to] — the fronts' sparklines. */
 export function buckets(events, { from, to, count }) {
     const width = Math.max(1, (to - from) / count);
     const out = new Map(); // frontId → number[count]

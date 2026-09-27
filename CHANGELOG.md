@@ -4,6 +4,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Removed
+
+- The Command timeline's churn histogram and replay scrubber (with its playhead, Live button and the phase menu's Replay items). The timeline is now the plan's phases; walkthroughs cover looking back. Command chat focus no longer carries a replay time.
+
 ### Added
 
 - **Walkthroughs are kept.** The Command map's header lists every walkthrough of the work (up to 50, newest first, with its range, stops and time); open any of them again, and it stays open until the orchestrator shows a newer one. Reaching a walkthrough's last stop marks it **reviewed** (the list can mark or unmark by hand), and the orchestrator can start a new walkthrough where you left off: `from:{ref:"reviewed"}` is where the latest reviewed one ended, `from:{walkthrough:<id>}` where a given one did. `command_read {include:["walkthrough"]}` lists them with their reviewed times. The list ends with **Walk me through what's new since my last review** (or **the work so far**, before any review): one click asks the orchestrator for it, and the Command chat opens for its reply or any questions.

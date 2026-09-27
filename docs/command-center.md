@@ -53,7 +53,6 @@ type Focus = {
     | { kind: "stop"; walkthroughId: string; stopId: string; revision: number }
     | { kind: "range"; file: string; startLine: number; endLine: number; pins: { base: string; head: string } }
   )[];
-  replayAt?: string; // ISO time when the user is scrubbed into the past
 };
 ```
 
@@ -72,7 +71,6 @@ The line-count cache lives in `~/.copilot/marginal/loc-cache/`. Checkpoint snaps
 
 ## Deliberate limits
 
-- Replay is scrub-only; there's no play button.
 - Monitors have two modes, diff feed and files.
 - Pins use a fixed 3× weight.
 - The mission lamp uses explicit session events only: turns, tool starts, user-input, plan-approval and permission requests, and task completion. After 30 s of idling it switches to "waiting on you".

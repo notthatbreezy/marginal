@@ -1,6 +1,5 @@
-// Fronts rail (per-front sparklines live here only) and the checkpoint timeline with scrub replay.
+// Fronts rail (per-front sparklines live here only) and the checkpoint timeline (the plan's phases).
 import { h, put } from "../core.js";
-import { buckets } from "./derive.js";
 
 const ADD_CHAT_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 
@@ -86,15 +85,20 @@ export function renderFronts(host, rows, opts) {
 }
 
 /**
- * Timeline: phase track (widths ∝ elapsed for done/active), churn histogram stacked by front, scrubber + Live.
- * o: { plan, fronts, events, from, to, at (null = live), onScrub(ms|null), onPhase(phase, el) }
+ * Timeline: the plan's phases in order (widths ∝ elapsed for done/active); click one for its menu.
+ * o: { plan, events, now, onPhase(phase, el) }
  */
 export function renderTimeline(host, o) {
-    const now = o.to;
+    const now = o.now;
     const phases = o.plan?.phases ?? [];
     const starts = phases.map((p) => (p.state.since ? Date.parse(p.state.since) : null));
+    function activeStart(p) {
+        // When a phase is done its "since" is the completion time; approximate its start from the first event matching it.
+        const ev = o.events.find((e) => e.phaseIds?.includes(p.id) && !e.initial);
+        return ev ? Date.parse(ev.at) : null;
+    }
     const seg = phases.map((p, i) => {
-        const dur = p.state.status === "active" ? now - (starts[i] ?? now) : p.state.status === "done" ? Math.max(0, Date.parse(p.state.since) - (activeStart(p, i) ?? Date.parse(p.state.since))) : 0;
+        const dur = p.state.status === "active" ? now - (starts[i] ?? now) : p.state.status === "done" ? Math.max(0, Date.parse(p.state.since) - (activeStart(p) ?? Date.parse(p.state.since))) : 0;
         const flex = p.state.status === "pending" ? 1 : Math.max(1.4, Math.min(8, 1 + dur / 300_000));
         const glyph = p.state.status === "done" ? "✓" : "";
         return h(
@@ -105,89 +109,16 @@ export function renderTimeline(host, o) {
             dur ? h("span", { class: "dur" }, fmtDur(dur)) : null,
         );
     });
-    function activeStart(p) {
-        // When a phase is done its "since" is the completion time; approximate its start from the first event matching it.
-        const ev = o.events.find((e) => e.phaseIds?.includes(p.id) && !e.initial);
-        return ev ? Date.parse(ev.at) : null;
+    // The track persists across the 4 Hz refresh so keyboard focus on a phase survives it.
+    if (!host._track) {
+        host._track = h("div", { class: "track" });
+        put(host, host._track);
     }
-    const N = 72;
-    const b = buckets(o.events, { from: o.from, to: o.to, count: N });
-    const totals = new Array(N).fill(0);
-    for (const arr of b.values()) arr.forEach((v, i) => (totals[i] += v));
-    const mx = Math.max(1, ...totals);
-    const order = o.fronts.map((f) => f.id);
-    const bars = totals.map((_, i) =>
-        h(
-            "i",
-            {},
-            order.filter((id) => b.get(id)?.[i]).map((id) => h("b", { class: `f${(o.fronts.find((f) => f.id === id)?.color ?? 5) + 1}`, style: `height:${(b.get(id)[i] / mx) * 22}px` })),
-        ),
-    );
-    const pos = o.at === null ? 1 : (o.at - o.from) / Math.max(1, o.to - o.from);
-    const live = o.at === null;
-    // The skeleton persists across renders so an in-progress drag, pointer capture and keyboard focus survive the
-    // 4 Hz live refresh; only its contents are replaced. Handlers read the latest options from host._tl.
-    host._tl = o;
-    if (!host._skel) host._skel = buildTimelineSkeleton(host);
-    const { track, ctl, hist, playhead } = host._skel;
     const focused = document.activeElement?.closest?.(".seg")?.dataset.phase;
-    put(track, seg.length ? seg : h("span", { class: "muted" }, "No checkpoints yet"));
-    if (focused) track.querySelector(`.seg[data-phase="${CSS.escape(focused)}"]`)?.focus();
-    put(
-        ctl,
-        h("span", { class: "replay-badge", style: live ? "visibility:hidden" : "" }, live ? "REPLAY 00:00" : `REPLAY ${new Date(o.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`),
-        h("button", { class: `live-btn${live ? " is-live" : ""}`, title: live ? "You are watching live" : "Return to live", onclick: () => host._tl.onScrub(null) }, h("i"), live ? "Live" : "◀ Live"),
-    );
-    put(hist, bars);
-    hist.setAttribute("aria-valuemin", String(o.from));
-    hist.setAttribute("aria-valuemax", String(o.to));
-    hist.setAttribute("aria-valuenow", String(o.at ?? o.to));
-    hist.setAttribute("aria-valuetext", live ? "Live" : new Date(o.at).toLocaleTimeString());
-    playhead.style.left = `calc(${(pos * 100).toFixed(2)}% - 1px)`;
+    put(host._track, seg.length ? seg : h("span", { class: "muted" }, "No checkpoints yet"));
+    if (focused) host._track.querySelector(`.seg[data-phase="${CSS.escape(focused)}"]`)?.focus();
 }
 
-function buildTimelineSkeleton(host) {
-    const track = h("div", { class: "track" });
-    const ctl = h("div", { class: "tl-ctl" });
-    const hist = h("div", { class: "hist", role: "slider", "aria-label": "Replay position", tabindex: "0" });
-    const playhead = h("div", { class: "playhead" });
-    const wrap = h("div", { class: "hist-wrap" }, hist, playhead);
-    const scrubAt = (clientX) => {
-        const o = host._tl;
-        const r = hist.getBoundingClientRect();
-        const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-        o.onScrub(t > 0.995 ? null : Math.round(o.from + t * (o.to - o.from)));
-    };
-    wrap.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        hist.focus({ preventScroll: true, focusVisible: false });
-        wrap.setPointerCapture(e.pointerId);
-        scrubAt(e.clientX);
-        const move = (ev) => scrubAt(ev.clientX);
-        const up = () => {
-            wrap.removeEventListener("pointermove", move);
-            wrap.removeEventListener("pointerup", up);
-            wrap.removeEventListener("lostpointercapture", up);
-        };
-        wrap.addEventListener("pointermove", move);
-        wrap.addEventListener("pointerup", up);
-        wrap.addEventListener("lostpointercapture", up);
-    });
-    hist.addEventListener("keydown", (e) => {
-        const o = host._tl;
-        const step = (o.to - o.from) / 60;
-        const cur = o.at ?? o.to;
-        if (e.key === "ArrowLeft") o.onScrub(Math.max(o.from, cur - step));
-        else if (e.key === "ArrowRight") o.onScrub(cur + step >= o.to ? null : cur + step);
-        else if (e.key === "Home") o.onScrub(o.from);
-        else if (e.key === "End") o.onScrub(null);
-        else return;
-        e.preventDefault();
-    });
-    put(host, track, ctl, wrap);
-    return { track, ctl, hist, playhead };
-}
 export function fmtDur(ms) {
     const m = Math.round(ms / 60_000);
     if (m < 1) return "<1m";

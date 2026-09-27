@@ -336,7 +336,7 @@ test("activity lane: root messages (first line) and tool starts; subagents, chat
 test("focus payload from the panel keeps only well-formed §7.10 items", async () => {
     const { parseFocus } = await import("../extensions/marginal/lib/server.mjs");
     const f = parseFocus({ items: [{ kind: "path", path: "src/a", isDir: 1 }, { kind: "front" }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }, { kind: "range", file: "a.ts", startLine: 0, endLine: 5, pins: { base: "b", head: "h" } }, { kind: "evil", path: "x" }], replayAt: "2026-01-01T00:00:00Z" });
-    assert.deepEqual(f, { items: [{ kind: "path", path: "src/a", isDir: true }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }], replayAt: "2026-01-01T00:00:00Z" });
+    assert.deepEqual(f, { items: [{ kind: "path", path: "src/a", isDir: true }, { kind: "range", file: "a.ts", startLine: 3, endLine: 5, pins: { base: "b", head: "h" } }] }, "a stale replayAt from an old client is dropped");
     assert.deepEqual(parseFocus(null), { items: [] });
 });
 

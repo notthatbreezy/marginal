@@ -182,7 +182,7 @@ export function parsePrefs(v) {
             const L = parseLayout(sv);
             return { id: sv.id, title: str(sv.title) ?? sv.id, root: L.root, pins: L.pins.map((path) => ({ path })), monitors: L.monitors, filters: L.filters };
         });
-    if (o.focus && typeof o.focus === "object" && Array.isArray(o.focus.items)) out.focus = { items: o.focus.items.slice(0, 40), ...(str(o.focus.replayAt) ? { replayAt: o.focus.replayAt } : {}) };
+    if (o.focus && typeof o.focus === "object" && Array.isArray(o.focus.items)) out.focus = { items: o.focus.items.slice(0, 40) };
     if (o.walkthroughDismissed && isId(o.walkthroughDismissed.id) && Number.isInteger(o.walkthroughDismissed.seq)) out.walkthroughDismissed = { id: o.walkthroughDismissed.id, seq: o.walkthroughDismissed.seq };
     // Walkthroughs the user finished (or marked) reviewed: id → { at, head } (the commit the review covered up to).
     if (o.reviewed && typeof o.reviewed === "object" && !Array.isArray(o.reviewed))

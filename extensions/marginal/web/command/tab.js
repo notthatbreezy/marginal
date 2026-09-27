@@ -1,5 +1,5 @@
 // Command tab: the implementation mission wall.
-// Instrument strip, territory map, fronts rail, checkpoint timeline + scrub replay, off-plan filter,
+// Instrument strip, territory map, fronts rail, checkpoint timeline, off-plan filter,
 // views & follow, auto-root, fisheye pins, monitors dock, hunk rows. Everything renders "as of" a time: live = now.
 import { shortcut } from "../settings.js";
 import { INSTANCE, api, bus, h, put, svc } from "../core.js";
@@ -45,7 +45,6 @@ const cc = {
 
 const freshUi = () => ({
     windowKey: "auto",
-    at: null, // replay position (ms); null = live
     focusFront: null,
     hoverFront: null,
     offOnly: false,
@@ -139,7 +138,7 @@ export async function mountCommand(host, { documentId }) {
     });
     Object.assign(svc, {
         commandChatBlocked: chatBlockedReason,
-        commandFocusPayload: (focus) => ({ items: focus.map((f) => f.item), ...(cc.ui.at !== null ? { replayAt: new Date(cc.ui.at).toISOString() } : {}) }),
+        commandFocusPayload: (focus) => ({ items: focus.map((f) => f.item) }),
         onCommandChatOpen: () => {
             renderFeed();
             // While a walkthrough is open, the chat sits to its left instead of over its stop actions.
@@ -353,7 +352,7 @@ function maybeFollow(st) {
         if (v) return applyView(v);
     }
     const target = followDecision({ state: st, prefs: prefs() });
-    if (target && quietSinceZoom(cc.ui.userZoomAt) && cc.ui.at === null) applyView(target.suggestedView, { phaseId: target.id });
+    if (target && quietSinceZoom(cc.ui.userZoomAt)) applyView(target.suggestedView, { phaseId: target.id });
 }
 
 function togglePin(path) {
@@ -453,27 +452,18 @@ function whereOf(plan, frontId) {
     return { phase: null, step: null };
 }
 
-function timeRange(st, now) {
-    const first = cc.events.find((e) => !e.baseline)?.at ?? cc.events[0]?.at;
-    const since = (st.plan?.phases ?? []).map((p) => (p.state.since ? Date.parse(p.state.since) : Infinity));
-    const from = Math.min(first ? Date.parse(first) : now, ...since, now - 60_000);
-    return { from, to: now };
-}
-
 // ---------- render ----------
 function render() {
     if (!isMounted() || !cc.data) return;
     const st = cc.data.state;
     const now = Date.now();
-    const at = cc.ui.at ?? now;
-    const replay = cc.ui.at !== null;
+    const at = now;
     if (st.plan) maybeFollow(st);
-    const changes = changesAt(cc.events, replay ? at : Infinity);
+    const changes = changesAt(cc.events, Infinity);
     const offCount = [...changes.values()].filter(isOff).length;
     renderStrip(st, at, offCount);
     renderNudge();
     const main = cc.host.querySelector(".cc");
-    main.classList.toggle("replaying", replay);
     syncWalkthrough(st);
     main.classList.toggle("walking", !!cc.walk?.open);
     syncOwner();
@@ -526,7 +516,7 @@ function render() {
         now: at,
         filter,
         offPlan: (path, c) => isOff(c),
-        decorateFile: replay ? null : decorateHunks,
+        decorateFile: decorateHunks,
         tipExtra: (node, c) => (isOff(c) ? h("div", { class: "warn" }, "Off-plan: outside every active checkpoint this front is working on.") : null),
         badges: cc.walkLink?.files,
         stopOn: cc.walkLink?.stopOn,
@@ -550,22 +540,10 @@ function render() {
         },
         onAddChat: svc.addToCommandChat ? (id) => svc.addToCommandChat([frontItem(fronts.get(id))]) : null,
     });
-    const range = timeRange(st, now);
-    renderTimeline(cc.host.querySelector(".timeline"), {
-        plan: st.plan,
-        fronts: st.fronts,
-        events: cc.events,
-        ...range,
-        at: cc.ui.at,
-        onScrub: (t) => {
-            cc.ui.at = t === null || t >= now ? null : Math.max(range.from, t);
-            schedule(true);
-        },
-        onPhase: (p, el) => openPhaseMenu(p, el, st),
-    });
+    renderTimeline(cc.host.querySelector(".timeline"), { plan: st.plan, events: cc.events, now, onPhase: (p, el) => openPhaseMenu(p, el, st) });
     renderMonitors(cc.host.querySelector(".dock"), {
         monitors: L.monitors,
-        events: replay ? cc.events.filter((e) => Date.parse(e.at) <= at) : cc.events,
+        events: cc.events,
         changes,
         fronts,
         docId: cc.docId,
@@ -1091,16 +1069,7 @@ function openWalkMenu(anchor, st) {
 function openPhaseMenu(p, anchor, st) {
     closeMenu();
     const items = [];
-    const at = (t) => () => {
-        cc.ui.at = t;
-        closeMenu();
-        schedule(true);
-    };
     if (p.suggestedView) items.push(["Apply suggested view", () => (applyView(p.suggestedView, { phaseId: p.id }), closeMenu())]);
-    const first = cc.events.find((e) => !e.initial && !e.baseline && e.phaseIds?.includes(p.id));
-    if (first) items.push(["Replay from its first edit", at(Date.parse(first.at))]);
-    if (p.state.status === "done") items.push([`Replay at completion${p.state.checkpoint ? ` (${p.state.checkpoint.sha.slice(0, 7)})` : ""}`, at(Date.parse(p.state.since))]);
-    if (cc.ui.at !== null) items.push(["Back to live", at(null)]);
     if (svc.addToCommandChat) items.push(["Ask about this phase", () => (closeMenu(), svc.addToCommandChat([phaseItem(p)]))]);
     const menu = h(
         "div",
@@ -1256,7 +1225,7 @@ function announceChanges(st, offCount) {
         if (moved) announce(`${moved.title} is now ${moved.state.status}`);
     }
     cc.announced.phases = phases;
-    if (offCount > cc.announced.offPlan && cc.ui.at === null) announce(`${offCount} off-plan edit${offCount === 1 ? "" : "s"}`);
+    if (offCount > cc.announced.offPlan) announce(`${offCount} off-plan edit${offCount === 1 ? "" : "s"}`);
     cc.announced.offPlan = offCount;
 }
 

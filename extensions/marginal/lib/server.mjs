@@ -220,7 +220,7 @@ export async function startServer({ chat, instances, getSessionId }) {
         const edited = editedNote(doc);
         if (edited) lines.push(edited);
         lines.push(message.trim().slice(0, 8000));
-        if (f.items.length || f.replayAt) lines.push("Focus (what the user is pointing at on the Command map):\n```json\n" + JSON.stringify(f, null, 1).slice(0, 6000) + "\n```");
+        if (f.items.length) lines.push("Focus (what the user is pointing at on the Command map):\n```json\n" + JSON.stringify(f, null, 1).slice(0, 6000) + "\n```");
         lines.push('(The user reads your reply in the Command chat popup: keep it short. For "walk me through…" use command_diff then command_walkthrough {op:"show"}; for questions about a stop prefer command_walkthrough {op:"edit"}. Views: command_view.)');
         const chips = f.items.length ? ` · ${f.items.length} focused` : "";
         return chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\nCommand chat on “${doc.title}”${chips}`, immediate: readSettings().interrupt.command });
@@ -469,7 +469,7 @@ export function parseFocus(v) {
         else if (it?.kind === "stop" && s(it.walkthroughId, 64) && s(it.stopId, 64)) items.push({ kind: "stop", walkthroughId: it.walkthroughId, stopId: it.stopId, revision: n(it.revision) ?? 0 });
         else if (it?.kind === "range" && s(it.file) && n(it.startLine) && n(it.endLine) && s(it.pins?.base, 80) && s(it.pins?.head, 80)) items.push({ kind: "range", file: it.file, startLine: it.startLine, endLine: it.endLine, pins: { base: it.pins.base, head: it.pins.head } });
     }
-    return { items, ...(s(v?.replayAt, 40) ? { replayAt: v.replayAt } : {}) };
+    return { items };
 }
 /** Launch the OS default browser without a shell (the URL carries `&`, which cmd.exe would split). */
 export function openInBrowser(url) {
