@@ -1,6 +1,6 @@
 // Doc navigation: a Contents card (top-left, minimizable, closable, reopened from the header) and a Ctrl/⌘-J jump
 // palette, both over the outline in outline.js.
-import { $, h } from "./core.js";
+import { $, h, put } from "./core.js";
 import { KIND_LABEL, outlineOf, rank } from "./outline.js";
 
 const svg = (d, extra = "") => `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
@@ -17,6 +17,7 @@ const ICON = {
 };
 const CLOSE = svg('<path d="M4 4l8 8M12 4l-8 8"/>', ' stroke-width="1.6"');
 const MIN = svg('<path d="M4 8.5h8"/>', ' stroke-width="1.6"');
+const CHEVRON = '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const OUTLINE = svg('<path d="M2.5 3.5h11M5.5 8h8M5.5 12.5h8M2.5 8h.01M2.5 12.5h.01"/>');
 
 /**
@@ -26,19 +27,31 @@ const OUTLINE = svg('<path d="M2.5 3.5h11M5.5 8h8M5.5 12.5h8M2.5 8h.01M2.5 12.5h
  */
 export function createToc(o) {
     const KEY = "marginal.toc";
+    const DEPTH_KEY = "marginal.toc.depth";
     let entries = [];
-    const saved = () => {
+    // Folding: the levels control opens everything above a depth; the ▸ on a group overrides that per doc.
+    let depth = Number(read(DEPTH_KEY)) || 2; // 99 = all
+    const folds = new Map(); // docId -> Map(entry key -> open?)
+    const foldsOf = () => {
+        const id = o.getDoc()?.documentId ?? o.getDoc()?.id ?? "";
+        if (!folds.has(id)) folds.set(id, new Map());
+        return folds.get(id);
+    };
+    const isOpen = (e) => foldsOf().get(e.key) ?? e.level < depth;
+    function read(k) {
         try {
-            return localStorage.getItem(KEY);
+            return localStorage.getItem(k);
         } catch {
             return null;
         }
-    };
-    const save = (v) => {
+    }
+    function write(k, v) {
         try {
-            localStorage.setItem(KEY, v);
+            localStorage.setItem(k, v);
         } catch {}
-    };
+    }
+    const saved = () => read(KEY);
+    const save = (v) => write(KEY, v);
 
     // ---- card ----
     const list = h("nav", { class: "toc-list", "aria-label": "Sections" });
@@ -53,14 +66,16 @@ export function createToc(o) {
         minBtn,
         closeBtn,
     );
-    const card = h("aside", { id: "toc", hidden: true, "aria-label": "Contents" }, bar, list);
+    const levels = h("div", { class: "toc-levels", role: "group", "aria-label": "Levels shown" });
+    const card = h("aside", { id: "toc", hidden: true, "aria-label": "Contents" }, bar, levels, list);
     document.body.append(card);
 
     // Sit just under the header (which wraps on narrow panels) and never run off the bottom.
     const place = () => {
         const top = Math.round(o.main.getBoundingClientRect().top) + 12;
         card.style.top = `${top}px`;
-        card.style.maxHeight = `${Math.max(120, innerHeight - top - 16)}px`;
+        // A reference card, not a second page: at most about 60% of the window tall; the list scrolls inside it.
+        card.style.maxHeight = `${Math.max(120, Math.min(innerHeight - top - 16, Math.round(innerHeight * 0.6)))}px`;
     };
     new ResizeObserver(place).observe(o.main);
     addEventListener("resize", place);
@@ -74,7 +89,7 @@ export function createToc(o) {
         const docEl = o.main.querySelector(".doc");
         if (!docEl) return "min";
         const room = docEl.getBoundingClientRect().left - o.main.getBoundingClientRect().left;
-        return room >= 262 ? "open" : "min";
+        return room >= 282 ? "open" : "min";
     }
     function setMode(m, byUser = false) {
         mode = m;
@@ -103,13 +118,85 @@ export function createToc(o) {
         list.replaceChildren(
             ...entries.map((e, i) =>
                 h(
-                    "button",
-                    { class: `toc-i l${e.level} k-${e.kind}`, "data-i": i, title: e.label, onclick: () => jump(e) },
-                    e.level > 1 ? h("span", { class: "toc-k", html: ICON[e.kind] ?? "" }) : null,
-                    h("span", { class: "toc-t" }, e.label),
-                    h("span", { class: "toc-dot", "aria-hidden": "true" }),
+                    "div",
+                    { class: `toc-row l${Math.min(e.level, 6)}`, "data-i": i, style: `--lv:${e.level - 1}` },
+                    e.hasChildren
+                        ? h("button", { class: "toc-fold", tabindex: -1, title: "Expand or collapse (Alt-click: everything inside)", "aria-label": `Expand or collapse ${e.label}`, html: CHEVRON, onclick: (ev) => (ev.stopPropagation(), toggle(e, ev.altKey)) })
+                        : h("span", { class: "toc-fold none", "aria-hidden": "true" }),
+                    h(
+                        "button",
+                        { class: `toc-i l${Math.min(e.level, 6)} k-${e.kind}`, title: e.label, "aria-expanded": e.hasChildren ? "true" : null, onclick: () => jump(e) },
+                        e.kind !== "section" && e.level > 1 ? h("span", { class: "toc-k", html: ICON[e.kind] ?? "" }) : null,
+                        h("span", { class: "toc-t" }, e.label),
+                        h("span", { class: "toc-dot", "aria-hidden": "true" }),
+                    ),
                 ),
             ),
+        );
+        paintFolds();
+    }
+    const byKey = () => new Map(entries.map((e, i) => [e.key, i]));
+    /** Show each row only if every group above it is open; turn each group's chevron. */
+    function paintFolds() {
+        const idx = byKey();
+        const visible = entries.map(() => true);
+        entries.forEach((e, i) => {
+            const p = e.parent !== null ? idx.get(e.parent) : undefined;
+            visible[i] = p === undefined || (visible[p] && isOpen(entries[p]));
+        });
+        list.querySelectorAll(".toc-row").forEach((row) => {
+            const i = Number(row.dataset.i);
+            const e = entries[i];
+            row.hidden = !visible[i];
+            if (!e.hasChildren) return;
+            const open = isOpen(e);
+            row.classList.toggle("open", open);
+            row.querySelector(".toc-i").setAttribute("aria-expanded", String(open));
+            // A folded group shows how much is inside it.
+            let n = row.querySelector(".toc-n");
+            const count = entries.filter((x) => x.parent === e.key).length;
+            if (!open) {
+                n ??= row.querySelector(".toc-i").insertBefore(h("span", { class: "toc-n" }), row.querySelector(".toc-dot"));
+                n.textContent = count;
+            } else n?.remove();
+        });
+        renderLevels();
+        remark();
+    }
+    function toggle(e, deep) {
+        const f = foldsOf();
+        const open = !isOpen(e);
+        f.set(e.key, open);
+        if (deep) {
+            // Everything inside follows.
+            const inside = new Set([e.key]);
+            for (const x of entries) if (inside.has(x.parent)) {
+                inside.add(x.key);
+                if (x.hasChildren) f.set(x.key, open);
+            }
+        }
+        paintFolds();
+    }
+    /** Open every group above a depth (clears the per-group toggles). 99 = everything. */
+    function setDepth(d) {
+        depth = d;
+        write(DEPTH_KEY, String(d));
+        foldsOf().clear();
+        paintFolds();
+    }
+    function renderLevels() {
+        const max = entries.reduce((m, e) => Math.max(m, e.level), 1);
+        levels.hidden = max < 2;
+        if (max < 2) return;
+        const opts = [];
+        for (let d = 1; d <= Math.min(max, 3); d++) opts.push({ d: d === max ? 99 : d, label: String(d) });
+        if (max > 3) opts.push({ d: 99, label: "All" });
+        const cur = depth >= max ? 99 : depth;
+        const custom = foldsOf().size > 0;
+        put(
+            levels,
+            h("span", { class: "toc-levels-h" }, "Levels"),
+            opts.map((x) => h("button", { class: x.d === cur && !custom ? "on" : "", "aria-pressed": String(x.d === cur && !custom), title: x.d === 99 ? "Show everything" : `Show ${x.d} level${x.d > 1 ? "s" : ""}`, onclick: () => setDepth(x.d) }, x.label)),
         );
     }
 
@@ -117,7 +204,7 @@ export function createToc(o) {
     function rebuild() {
         const doc = o.active() ? o.getDoc() : null;
         const next = doc ? outlineOf(doc) : [];
-        const same = next.length === entries.length && next.every((e, i) => e.key === entries[i].key && e.label === entries[i].label && e.level === entries[i].level);
+        const same = next.length === entries.length && next.every((e, i) => e.key === entries[i].key && e.label === entries[i].label && e.level === entries[i].level && e.parent === entries[i].parent);
         entries = next;
         if (!same) renderList();
         const pref = saved();
@@ -148,6 +235,16 @@ export function createToc(o) {
         }
     }
     function jump(e) {
+        // Jumping from the palette to something folded away opens the groups above it.
+        const idx = byKey();
+        let changed = false;
+        for (let p = e.parent; p !== null && idx.has(p); p = entries[idx.get(p)].parent) {
+            if (!isOpen(entries[idx.get(p)])) {
+                foldsOf().set(p, true);
+                changed = true;
+            }
+        }
+        if (changed) paintFolds();
         const el = elementOf(e);
         // Jumping to a collapsed section opens it: you went there to read it.
         const sec = e.kind === "section" ? el?.querySelector(":scope > .section.collapsed") : null;
@@ -171,23 +268,36 @@ export function createToc(o) {
         }
         return false;
     }
-    /** Dots on the entries that contain what the chat is about. */
+    /** Dots on the entries that contain what the chat is about (a folded group shows them for what's inside). */
+    let lastTargets = [];
     function marks(els) {
-        const targets = els.filter(Boolean);
+        lastTargets = els.filter(Boolean);
+        remark();
+    }
+    function remark() {
+        const targets = lastTargets.filter((t) => t.isConnected);
         entries.forEach((e, i) => {
-            const b = list.querySelector(`[data-i="${i}"]`);
+            const b = list.querySelector(`.toc-row[data-i="${i}"] .toc-i`);
             if (!b) return;
             const el = elementOf(e);
-            b.classList.toggle("asking", !!el && targets.some((t) => (e.heading === undefined ? el.contains(t) : underHeading(el, t))));
+            const hit = !!el && targets.some((t) => (e.heading === undefined ? el.contains(t) : underHeading(el, t)));
+            // Only the deepest visible row carries the dot.
+            b.classList.toggle("asking", hit && !b.closest(".toc-row").hidden && !(e.hasChildren && isOpen(e) && entries.some((x) => x.parent === e.key && hitOf(x, targets))));
         });
     }
+    const hitOf = (x, targets) => {
+        const el = elementOf(x);
+        return !!el && targets.some((t) => (x.heading === undefined ? el.contains(t) : underHeading(el, t)));
+    };
     /** A brief dot on the entries around something Copilot just changed. */
     function fresh(el) {
         if (!el) return;
         entries.forEach((e, i) => {
             const own = e.heading === undefined ? elementOf(e) : null;
             if (!own || !own.contains(el)) return;
-            const b = list.querySelector(`[data-i="${i}"]`);
+            const row = list.querySelector(`.toc-row[data-i="${i}"]`);
+            if (!row || row.hidden) return;
+            const b = row.querySelector(".toc-i");
             b?.classList.remove("fresh");
             void b?.offsetWidth;
             b?.classList.add("fresh");
@@ -230,7 +340,7 @@ export function createToc(o) {
                 ? shown.map(({ e, pos }, i) =>
                       h(
                           "div",
-                          { class: `jump-i${i === sel ? " sel" : ""}${!q.trim() && e.level > 1 ? " sub" : ""}`, role: "option", id: `jump-o${i}`, "aria-selected": String(i === sel), onpointermove: () => i !== sel && select(i), onclick: () => go(i) },
+                          { class: `jump-i${i === sel ? " sel" : ""}`, style: q.trim() ? null : `--lv:${Math.min(e.level, 5) - 1}`, role: "option", id: `jump-o${i}`, "aria-selected": String(i === sel), onpointermove: () => i !== sel && select(i), onclick: () => go(i) },
                           h("span", { class: `jump-k k-${e.kind}`, html: ICON[e.kind] ?? (e.kind === "section" ? svg('<path d="M3 4h10M3 8h10M3 12h6"/>') : "") }),
                           h("span", { class: "jump-t" }, ...labelWithMarks(e.label, pos)),
                           h("span", { class: "jump-trail" }, q.trim() ? e.trail.join(" › ") : e.kind === "section" ? "" : KIND_LABEL[e.kind] ?? ""),

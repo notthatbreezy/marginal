@@ -1,6 +1,6 @@
 // The doc outline behind Contents and Ctrl/⌘-J, plus the palette's fuzzy ranking. Pure (no DOM), so it's unit tested.
-// Level 1 is the doc's top-level sections (and top-level diagrams); level 2 is what's worth finding inside them
-// (nested sections, diagrams, code peeks, titled callouts, Markdown headings). Never deeper.
+// It is a tree that follows the doc: sections hold what's inside them (nested sections, diagrams, code peeks, titled
+// callouts, Markdown headings), and Markdown headings nest under each other by rank.
 
 const NOTABLE = new Set(["sequence", "flow_diagram", "call_stack_diff", "database_lens", "code_peek"]);
 export const KIND_LABEL = { section: "Section", heading: "Heading", sequence: "Sequence", flow_diagram: "Flow", call_stack_diff: "Call stack", database_lens: "Data lens", code_peek: "Code", callout: "Callout", code: "Code", image: "Image" };
@@ -14,31 +14,42 @@ const plain = (t) =>
         .trim();
 const clip = (t, n = 80) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
 
-/** The outline of a doc, in reading order. Entries resolve to their rendered element lazily (the doc re-renders). */
+/**
+ * The outline of a doc, in reading order. Each entry has a level (1 = top) and the key of its parent, so the
+ * Contents card can fold it; entries resolve to their rendered element lazily (the doc re-renders).
+ */
 export function outlineOf(doc) {
     const out = [];
-    const walk = (blocks, depth, trail) => {
+    const walk = (blocks, parent, trail) => {
+        const level = parent ? parent.level + 1 : 1;
         for (const b of blocks ?? []) {
-            const level = Math.min(depth + 1, 2);
             const add = (kind, label, extra = {}) => {
-                const e = { key: extra.key ?? b.id, blockId: b.id, kind, level, label: clip(plain(label) || KIND_LABEL[kind]), trail, ...extra };
+                const e = { key: extra.key ?? b.id, blockId: b.id, kind, level, parent: parent?.key ?? null, label: clip(plain(label) || KIND_LABEL[kind]), trail, ...extra };
                 out.push(e);
                 return e;
             };
             if (b.type === "section") {
-                add("section", b.title);
-                walk(b.children, depth + 1, [...trail, clip(plain(b.title), 40)]);
+                const sec = add("section", b.title);
+                walk(b.children, sec, [...trail, clip(plain(b.title), 40)]);
             } else if (b.type === "callout") {
-                if (b.title) add("callout", b.title);
-                walk(b.children, depth + 1, trail);
+                const own = b.title ? add("callout", b.title) : null;
+                walk(b.children, own ?? parent, own ? [...trail, clip(plain(b.title), 40)] : trail);
             } else if (b.type === "markdown") {
                 // Headings the agent wrote inside prose (outside code fences), matched to the rendered h1–h4 by order.
+                // A heading nests under the nearest earlier heading of a higher rank in the same text.
                 let fence = false;
                 let n = 0;
+                const stack = []; // [{rank, entry}]
                 for (const line of String(b.markdown ?? "").split("\n")) {
                     if (/^```/.test(line)) fence = !fence; // exactly what core.js markdown() treats as a fence
                     const m = !fence && /^(#{1,4})\s+(.+?)\s*#*\s*$/.exec(line);
-                    if (m) add("heading", m[2], { key: `${b.id}#${n}`, heading: n++ });
+                    if (!m) continue;
+                    const rank = m[1].length;
+                    while (stack.length && stack.at(-1).rank >= rank) stack.pop();
+                    const up = stack.at(-1)?.entry ?? parent;
+                    const entry = { key: `${b.id}#${n}`, blockId: b.id, kind: "heading", heading: n++, level: up ? up.level + 1 : 1, parent: up?.key ?? null, label: clip(plain(m[2]) || "Heading"), trail: up && up !== parent ? [...trail, up.label] : trail };
+                    out.push(entry);
+                    stack.push({ rank, entry });
                 }
             } else if (NOTABLE.has(b.type)) {
                 const label = b.title ?? b.caption ?? b.source?.file?.split("/").pop();
@@ -46,7 +57,10 @@ export function outlineOf(doc) {
             } else if ((b.type === "code" || b.type === "image") && b.caption) add(b.type, b.caption);
         }
     };
-    walk(doc?.content, 0, []);
+    walk(doc?.content, null, []);
+    // Mark which entries have children (they get a fold toggle).
+    const parents = new Set(out.map((e) => e.parent).filter(Boolean));
+    for (const e of out) e.hasChildren = parents.has(e.key);
     return out;
 }
 

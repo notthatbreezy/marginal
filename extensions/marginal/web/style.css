@@ -4722,7 +4722,7 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     left: 14px;
     top: 66px;
     z-index: 25;
-    width: 236px;
+    width: 256px;
     display: flex;
     flex-direction: column;
     background: var(--bg);
@@ -4786,17 +4786,93 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     line-height: 18px;
     text-align: left;
 }
-.toc-i.l1 {
+/* Tree rows: a fold toggle (or its space), then the entry, indented one step per level. */
+.toc-row {
+    display: flex;
+    align-items: center;
+    padding-left: calc(var(--lv, 0) * 12px);
+}
+.toc-row.l1:not(:first-child) {
     margin-top: 3px;
+}
+.toc-fold {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+}
+.toc-fold svg {
+    transition: transform 0.15s;
+}
+.toc-row.open > .toc-fold svg {
+    transform: rotate(90deg);
+}
+.toc-fold:not(.none):hover {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+.toc-row .toc-i {
+    flex: 1;
+    min-width: 0;
+    padding-left: 4px;
+}
+.toc-i.l1 {
     color: var(--fg);
     font-weight: 500;
 }
-.toc-i.l1:first-child {
-    margin-top: 0;
-}
-.toc-i.l2 {
-    padding-left: 12px;
+.toc-i:not(.l1) {
     font-size: 12px;
+}
+.toc-n {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 15px;
+}
+.toc-levels {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: -2px 10px 6px 12px;
+    font-size: 11px;
+    color: var(--muted);
+}
+.toc-levels-h {
+    margin-right: auto;
+}
+.toc-levels button {
+    min-width: 24px;
+    height: 20px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.toc-levels button:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+.toc-levels button.on {
+    background: var(--blue-muted);
+    color: var(--blue);
+    font-weight: 600;
+}
+#toc.min .toc-levels {
+    display: none;
 }
 .toc-k {
     display: grid;
@@ -4937,8 +5013,8 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     line-height: 20px;
     cursor: pointer;
 }
-.jump-i.sub {
-    padding-left: 32px;
+.jump-i {
+    padding-left: calc(10px + var(--lv, 0) * 18px);
 }
 .jump-i.sel {
     background: var(--blue-muted);
