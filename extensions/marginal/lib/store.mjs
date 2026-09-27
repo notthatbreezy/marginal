@@ -390,9 +390,23 @@ async function applyEditInner(doc, edit, { dryRun = false } = {}) {
 export function applyEdit(docId, edit) {
     return withLock(docId, async () => {
         const doc = getDoc(docId);
-        guardBase(doc, edit);
-        return applyEditInner(doc, edit.type === "patch" ? patchToUpdate(doc, edit) : edit);
+        const conv = convertEdit(doc, edit);
+        const res = await applyEditInner(doc, conv.edit);
+        conv.after?.();
+        return conv.note ? { ...res, note: conv.note } : res;
     });
+}
+
+/**
+ * The addressing edits (patch, region, under) become plain edits against the doc as it is now. baseVersion guards
+ * the target element (patch/update/…), or just the text under a heading (under); a region guards itself (its text
+ * must still be there).
+ */
+function convertEdit(doc, edit) {
+    if (edit?.type === "region") return regionToEdit(doc, edit);
+    if (edit?.type === "under") return underToEdit(doc, edit);
+    guardBase(doc, edit);
+    return { edit: edit?.type === "patch" ? patchToUpdate(doc, edit) : edit };
 }
 
 // An element's content and where it sits (its parent and the sibling before it), so a move since then counts too.
@@ -466,6 +480,270 @@ function patchToUpdate(doc, edit) {
     }
     if (text === cur) throw new InputError("patch changes nothing.");
     return { type: "update", targetId: edit.targetId, changes: { [field]: text } };
+}
+
+// ---------- addressing by heading ----------
+const plainHeading = (s) =>
+    String(s ?? "")
+        .replace(/\s+#+\s*$/, "")
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/[*_`~]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+const headKey = (s) => plainHeading(s).toLowerCase();
+/** Split "Plan > Review findings" (or an array) into path segments. */
+const headSegments = (q) => (Array.isArray(q) ? q : String(q ?? "").split(/\s+>\s+|\s*›\s*/)).map(headKey).filter(Boolean);
+
+/**
+ * Every heading an agent can address, in doc order: sections and titled callouts (their whole content), and the
+ * Markdown headings inside text blocks (from the heading to the next one of the same or higher rank in that block).
+ * path: the titles from the top down, e.g. ["Plan", "Review findings"].
+ */
+export function headingIndex(doc) {
+    const out = [];
+    const walk = (list, trail) => {
+        for (const b of list ?? []) {
+            if (b.type === "section" || (b.type === "callout" && b.title)) {
+                const e = { kind: b.type, blockId: b.id, text: plainHeading(b.title), path: [...trail, plainHeading(b.title)] };
+                out.push(e);
+                walk(b.children, e.path);
+            } else if (b.type === "markdown") {
+                const lines = b.markdown.replace(/\r\n/g, "\n").split("\n");
+                const mine = [];
+                const stack = [];
+                let fence = false;
+                lines.forEach((l, i) => {
+                    if (/^\s*(```|~~~)/.test(l)) return void (fence = !fence);
+                    const m = !fence && l.match(/^(#{1,6})\s+(.+?)\s*$/);
+                    if (!m) return;
+                    const rank = m[1].length;
+                    while (stack.length && stack.at(-1).rank >= rank) stack.pop();
+                    const text = plainHeading(m[2]);
+                    const e = { kind: "heading", blockId: b.id, line: i, rank, text, path: [...trail, ...stack.map((s) => s.text), text] };
+                    mine.push(e);
+                    stack.push(e);
+                });
+                mine.forEach((e, k) => {
+                    const next = mine.slice(k + 1).find((x) => x.rank <= e.rank);
+                    e.end = next ? next.line - 1 : lines.length - 1;
+                });
+                out.push(...mine);
+            }
+        }
+    };
+    walk(doc.content, []);
+    return out;
+}
+const pathText = (e) => e.path.join(" > ");
+
+/** Resolve a heading path: its last part names the heading; earlier parts, if given, must be among its ancestors. */
+export function resolveHeading(doc, query) {
+    const segs = headSegments(query);
+    if (!segs.length) throw new InputError('heading must name a heading, e.g. "Plan > Review findings".');
+    const all = headingIndex(doc);
+    const within = (e) => {
+        const keys = e.path.map(headKey);
+        let k = 0;
+        for (const s of segs.slice(0, -1)) {
+            k = keys.indexOf(s, k);
+            if (k < 0 || k >= keys.length - 1) return false;
+            k++;
+        }
+        return true;
+    };
+    const hits = all.filter((e) => headKey(e.text) === segs.at(-1) && within(e));
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) throw new InputError(`heading ${JSON.stringify(query)} matches ${hits.length} headings: ${hits.map((e) => JSON.stringify(pathText(e))).join(", ")}. Pass the full path.`);
+    const words = segs.at(-1).split(" ").filter((w) => w.length > 2);
+    const near = all.filter((e) => words.some((w) => headKey(e.text).includes(w))).slice(0, 8);
+    throw new InputError(`no heading ${JSON.stringify(query)}. ${near.length ? `Close: ${near.map((e) => JSON.stringify(pathText(e))).join(", ")}.` : `Headings: ${all.slice(0, 12).map((e) => JSON.stringify(pathText(e))).join(", ")}${all.length > 12 ? ", …" : ""}.`}`);
+}
+
+/** The content under a heading: a Markdown span (text + its lines), or a section's children (text, and ids of the rest). */
+export function readHeading(docId, query, { version } = {}) {
+    return headingContent(version === undefined ? getDoc(docId) : getVersion(docId, version), query);
+}
+function headingContent(doc, query) {
+    const e = resolveHeading(doc, query);
+    if (e.kind === "heading") {
+        const lines = locate(doc.content, e.blockId).node.markdown.replace(/\r\n/g, "\n").split("\n");
+        return { heading: pathText(e), kind: "heading", blockId: e.blockId, version: doc.version, headingLine: e.line + 1, lines: [e.line + 2, e.end + 1], markdown: lines.slice(e.line + 1, e.end + 1).join("\n").replace(/^\n+|\n+$/g, "") };
+    }
+    const node = locate(doc.content, e.blockId).node;
+    return {
+        heading: pathText(e),
+        kind: e.kind,
+        blockId: e.blockId,
+        version: doc.version,
+        children: node.children.map((c) => ({ id: c.id, type: c.type, ...(c.title ? { title: c.title } : {}) })),
+        markdown: node.children.filter((c) => c.type === "markdown").map((c) => c.markdown).join("\n\n"),
+    };
+}
+
+/** Drop blank lines at both ends of a span (its inside is left alone). */
+const trimBlank = (lines) => {
+    let a = 0;
+    let b = lines.length;
+    while (a < b && !lines[a].trim()) a++;
+    while (b > a && !lines[b - 1].trim()) b--;
+    return lines.slice(a, b);
+};
+function guardUnder(doc, edit) {
+    if (edit.baseVersion === undefined) return;
+    if (!Number.isInteger(edit.baseVersion) || edit.baseVersion < 0 || edit.baseVersion > doc.version) throw new InputError(`baseVersion must be a version of this doc (0–${doc.version}).`);
+    let then;
+    try {
+        then = headingContent(getVersion(doc.id, edit.baseVersion), edit.heading);
+    } catch {
+        throw new InputError(`heading ${JSON.stringify(edit.heading)} didn't exist at version ${edit.baseVersion}; read it again.`);
+    }
+    const now = headingContent(doc, edit.heading);
+    if (then.markdown !== now.markdown || JSON.stringify(then.children) !== JSON.stringify(now.children)) throw new InputError(`The text under ${JSON.stringify(now.heading)} changed since version ${edit.baseVersion} (the doc is at v${doc.version}). Nothing was saved: read {heading:${JSON.stringify(edit.heading)}} again and redo the edit.`);
+}
+/** under {heading, markdown, append?}: replace (or append to) what's under a heading; the heading itself stays. */
+function underToEdit(doc, edit) {
+    for (const k of Object.keys(edit)) if (!["type", "heading", "markdown", "append", "baseVersion"].includes(k)) throw new InputError(`under: unknown field "${k}" (allowed: heading, markdown, append, baseVersion)`);
+    if (typeof edit.markdown !== "string") throw new InputError('under needs markdown (the new text under the heading; "" empties it).');
+    guardUnder(doc, edit);
+    const e = resolveHeading(doc, edit.heading);
+    const md = edit.markdown.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+    if (e.kind === "heading") {
+        const node = locate(doc.content, e.blockId).node;
+        const lines = node.markdown.replace(/\r\n/g, "\n").split("\n");
+        // Only the span under the heading changes; everything before and after it is kept exactly as it is.
+        const body = lines.slice(e.line + 1, e.end + 1);
+        const kept = edit.append ? trimBlank(body) : [];
+        const add = md ? md.split("\n") : [];
+        const after = lines.slice(e.end + 1);
+        const inner = [...kept, ...(kept.length && add.length ? [""] : []), ...add];
+        const span = inner.length ? ["", ...inner, ...(after.length ? [""] : [])] : after.length ? [""] : [];
+        return { edit: { type: "update", targetId: e.blockId, changes: { markdown: [...lines.slice(0, e.line + 1), ...span, ...after].join("\n") } } };
+    }
+    const node = locate(doc.content, e.blockId).node;
+    if (edit.append) {
+        if (!md) throw new InputError("under with append needs some markdown to add.");
+        return { edit: { type: "insert", parentId: e.blockId, content: { type: "markdown", markdown: md } } };
+    }
+    const other = node.children.filter((c) => c.type !== "markdown");
+    if (other.length) throw new InputError(`${JSON.stringify(pathText(e))} also holds ${other.map((c) => `${c.type} ${c.id}`).join(", ")}, which replacing its text would drop. Edit its text blocks by id (${node.children.filter((c) => c.type === "markdown").map((c) => c.id).join(", ") || "none"}), or pass append:true to add text.`);
+    const { id, children, ...rest } = node;
+    return { edit: { type: "replace", targetId: e.blockId, content: { ...rest, children: md ? [{ type: "markdown", markdown: md }] : [] } } };
+}
+
+// ---------- regions: the parts of the doc a chat message pointed at ----------
+const regionsFile = (docId) => join(dirOf(docId), "regions.json");
+function readRegions(docId) {
+    try {
+        return existsSync(regionsFile(docId)) ? JSON.parse(readFileSync(regionsFile(docId), "utf8")) : { next: 1, messages: {} };
+    } catch {
+        return { next: 1, messages: {} };
+    }
+}
+const saveRegions = (docId, r) => atomicWriteJson(regionsFile(docId), r);
+
+/**
+ * Record what a chat message is about. regions: [{blockId, unit?:"from-to"}] (unit = the paragraph's Markdown lines,
+ * 0-based, as the page marks them). Each becomes a ref ("m4.r1") the agent can read or rewrite; text is held so a
+ * later rewrite can find it again, and refuse if it changed.
+ */
+export function registerRegions(docId, regions) {
+    const doc = getDoc(docId);
+    const list = (Array.isArray(regions) ? regions : []).slice(0, 20);
+    const store = readRegions(docId);
+    const msg = `m${store.next}`;
+    const refs = [];
+    const seen = new Set();
+    for (const r of list) {
+        if (!r || typeof r.blockId !== "string") continue;
+        const hit = locate(doc.content, r.blockId);
+        if (!hit) continue;
+        const md = hit.kind === "block" && hit.node.type === "markdown" ? hit.node.markdown.replace(/\r\n/g, "\n").split("\n") : null;
+        let from = null;
+        let to = null;
+        if (md) {
+            const m = typeof r.unit === "string" && r.unit.match(/^(\d+)-(\d+)$/);
+            [from, to] = m ? [Number(m[1]), Math.min(Number(m[2]), md.length - 1)] : [0, md.length - 1];
+            if (from > to) continue;
+        }
+        const key = `${r.blockId}:${from}:${to}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const rec = { r: `r${refs.length + 1}`, blockId: r.blockId, type: hit.kind === "unit" ? "unit" : hit.node.type, version: doc.version, ...(md ? { from, text: md.slice(from, to + 1).join("\n") } : {}) };
+        refs.push(rec);
+    }
+    if (!refs.length) return null;
+    store.messages[msg] = { at: new Date().toISOString(), regions: refs };
+    store.next++;
+    const keys = Object.keys(store.messages);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete store.messages[k];
+    saveRegions(docId, store);
+    return {
+        message: msg,
+        refs: refs.map((x) => ({ ref: `${msg}.${x.r}`, blockId: x.blockId, type: x.type, ...(x.text !== undefined ? { lines: `${x.from + 1}–${x.from + x.text.split("\n").length}`, preview: clip(x.text, 50) } : {}) })),
+    };
+}
+function findRegion(docId, ref) {
+    const m = String(ref ?? "").match(/^(m\d+)\.(r\d+)$/);
+    if (!m) throw new InputError(`ref must look like "m4.r1" (from the chat message), not ${JSON.stringify(ref)}.`);
+    const store = readRegions(docId);
+    const rec = store.messages[m[1]]?.regions.find((x) => x.r === m[2]);
+    if (!rec) throw new InputError(`no region ${ref} (only the last 100 messages' regions are kept).`);
+    return { store, rec, msg: m[1] };
+}
+/** Where a region's text is now: the occurrence nearest its old place, or null if the text itself changed. */
+function locateRegion(doc, rec) {
+    const hit = locate(doc.content, rec.blockId);
+    if (!hit) return { gone: true };
+    if (rec.text === undefined) return { hit };
+    if (hit.node.type !== "markdown") return { hit, changed: true };
+    const lines = hit.node.markdown.replace(/\r\n/g, "\n").split("\n");
+    const want = rec.text.split("\n");
+    const at = [];
+    for (let k = 0; k + want.length <= lines.length; k++) if (want.every((w, j) => lines[k + j] === w)) at.push(k);
+    if (!at.length) return { hit, lines, changed: true };
+    const from = at.sort((a, b) => Math.abs(a - rec.from) - Math.abs(b - rec.from))[0];
+    return { hit, lines, from, to: from + want.length - 1 };
+}
+export function readRegion(docId, ref) {
+    const doc = getDoc(docId);
+    const { rec } = findRegion(docId, ref);
+    const loc = locateRegion(doc, rec);
+    if (loc.gone) return { ref, blockId: rec.blockId, status: "removed", note: `${rec.blockId} is no longer in the doc` };
+    if (rec.text === undefined) return { ref, blockId: rec.blockId, type: rec.type, status: "element", note: "not text: read or edit it by blockId" };
+    if (loc.changed) return { ref, blockId: rec.blockId, status: "changed", was: rec.text, note: `that text was changed since (read ${rec.blockId})` };
+    return { ref, blockId: rec.blockId, status: loc.from === rec.from ? "unchanged" : "moved", lines: [loc.from + 1, loc.to + 1], markdown: rec.text, version: doc.version };
+}
+/** region {ref, markdown}: rewrite exactly what the message pointed at ("" removes it). */
+function regionToEdit(doc, edit) {
+    for (const k of Object.keys(edit)) if (!["type", "ref", "markdown"].includes(k)) throw new InputError(`region: unknown field "${k}" (allowed: ref, markdown)`);
+    if (typeof edit.markdown !== "string") throw new InputError('region needs markdown (the new text; "" removes it).');
+    const { store, rec, msg } = findRegion(doc.id, edit.ref);
+    const loc = locateRegion(doc, rec);
+    if (loc.gone) throw new InputError(`${edit.ref}: ${rec.blockId} is no longer in the doc.`);
+    if (rec.text === undefined) throw new InputError(`${edit.ref} is a whole ${rec.type} (${rec.blockId}), not text: edit it by id (update/replace).`);
+    if (loc.changed) throw new InputError(`${edit.ref} was changed since the message (it read: ${JSON.stringify(clip(rec.text, 160))}). Nothing was saved: read ${rec.blockId} and edit what's there now.`);
+    const md = edit.markdown.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+    let before = loc.lines.slice(0, loc.from);
+    let after = loc.lines.slice(loc.to + 1);
+    // Removing a paragraph leaves one blank line between its neighbours (none at the block's ends); nothing else changes.
+    if (!md) {
+        if (!after.length) before = before.slice(0, before.findLastIndex((l) => l.trim()) + 1);
+        else if (!before.length) after = after.slice(Math.max(0, after.findIndex((l) => l.trim())));
+        else if (!before.at(-1).trim() && !after[0].trim()) after = after.slice(1);
+    }
+    const text = [...before, ...(md ? md.split("\n") : []), ...after].join("\n");
+    if (!text.trim()) throw new InputError(`removing ${edit.ref} would leave ${rec.blockId} empty: remove the block instead.`);
+    return {
+        edit: { type: "update", targetId: rec.blockId, changes: { markdown: text } },
+        // Afterwards the ref points at its new text, so the agent can revise it again.
+        after: () => {
+            if (md) Object.assign(rec, { from: loc.from, text: md });
+            else Object.assign(rec, { removed: true });
+            saveRegions(doc.id, store);
+        },
+        note: md ? undefined : `${edit.ref} removed`,
+        msg,
+    };
 }
 
 /** What changed since a version: every element added, removed or modified (Markdown with a line diff), and by whom. */
@@ -546,7 +824,7 @@ export async function previewEdits(docId, edits) {
     let doc = getDoc(docId);
     const changes = [];
     for (const e of edits) {
-        ({ draft: doc } = await applyEditInner(doc, e?.type === "patch" ? patchToUpdate(doc, e) : e, { dryRun: true }));
+        ({ draft: doc } = await applyEditInner(doc, convertEdit(doc, e).edit, { dryRun: true }));
         changes.push(doc.lastEdit);
     }
     return { doc, changes, baseVersion: getDoc(docId).version };
@@ -557,8 +835,8 @@ export async function checkEdits(docId, edits) {
     let doc = getDoc(docId);
     for (const [n, e] of edits.entries()) {
         try {
-            guardBase(getDoc(docId), e);
-            ({ draft: doc } = await applyEditInner(doc, e?.type === "patch" ? patchToUpdate(doc, e) : e, { dryRun: true }));
+            // Guards compare with the draft, so a batch that conflicts with itself fails here, not halfway through applying.
+            ({ draft: doc } = await applyEditInner(doc, convertEdit(doc, e).edit, { dryRun: true }));
         } catch (err) {
             if (!(err instanceof InputError)) throw err;
             throw new InputError(`${edits.length > 1 ? `edits[${n}]: ` : ""}${err.message}`);
@@ -812,9 +1090,12 @@ function outlineBlock(b, depth, lines) {
     const pad = "  ".repeat(depth);
     const head = `${pad}- [${b.id}] ${b.type}`;
     switch (b.type) {
-        case "markdown":
+        case "markdown": {
             lines.push(`${head}: ${clip(b.markdown)}`);
+            // Headings inside the text, addressable as heading:"A > B" (read, and under edits).
+            for (const e of headingIndex({ content: [b] }).filter((x) => x.kind === "heading")) lines.push(`${pad}    ${"#".repeat(e.rank)} ${e.text}  (lines ${e.line + 1}–${e.end + 1})`);
             break;
+        }
         case "code":
             lines.push(`${head} (${b.language}): ${clip(b.text, 60)}`);
             break;
@@ -858,6 +1139,7 @@ export function outline(doc) {
     if (doc.pullRequest) lines.push(`pull request: ${doc.pullRequest.url}`);
     if (doc.lenses.length) lines.push(`file lenses: ${doc.lenses.map((l) => `[${l.id}] ${l.title}`).join(", ")}`);
     if (!doc.content.length) lines.push("(empty)");
+    else lines.push('Address a section or a heading inside text by its path: heading:"Section > Heading" (read {heading}; edit {type:"under", heading, markdown}).');
     doc.content.forEach((b) => outlineBlock(b, 0, lines));
     return lines.join("\n");
 }

@@ -2077,6 +2077,31 @@ function showSuggestion(ev) {
     scrollChat();
 }
 
+/**
+ * What the message is about, as the doc's own addresses: paragraphs (a Markdown block and the lines the page marks on
+ * it) and whole elements. The server turns them into refs ("m4.r1") the agent can rewrite without re-reading.
+ */
+function chatRegions() {
+    const out = [];
+    const add = (el) => {
+        if (!el) return;
+        if (el.dataset.pk) return void (el.dataset.uid && out.push({ blockId: el.dataset.uid })); // a step in Inspect
+        const blockEl = el.closest(".block[data-id]");
+        if (!blockEl) return;
+        if (el.dataset.l && el.closest(".md")) out.push({ blockId: blockEl.dataset.id, unit: el.dataset.l });
+        else out.push({ blockId: el.dataset.unit ?? blockEl.dataset.id });
+    };
+    const block = chat.blockId && document.querySelector(`#main .block[data-id="${CSS.escape(chat.blockId)}"]`);
+    if (chat.picks?.length) chat.picks.forEach((k) => add(elOf(k)));
+    else if (chat.unit && block) add(block.querySelector(`.md [data-l="${chat.unit}"]`));
+    else if (chat.askRange?.startContainer?.isConnected) {
+        const r = chat.askRange;
+        for (const u of document.querySelectorAll("#main .md [data-l]")) if (!u.parentElement.closest("[data-l]") && r.intersectsNode(u)) add(u);
+        for (const b of document.querySelectorAll("#main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-callout)")) if (r.intersectsNode(b)) add(b);
+    } else if (block) add(block);
+    return out.slice(0, 20);
+}
+
 async function sendChat({ flip = false } = {}) {
     const message = chatText.value.trim();
     if (!message || chat.awaiting) return;
@@ -2101,7 +2126,7 @@ async function sendChat({ flip = false } = {}) {
             method: "POST",
             body: cmd
                 ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: docked?.context?.() }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss },
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss },
         });
         chat.threadId = res.threadId;
         if (!cmd && chat.focusGen === gen) chat.quoteFresh = false; // unless the focus moved while this was sending

@@ -169,10 +169,12 @@ const actions = [
     },
     {
         name: "read",
-        description: "Read a doc as an outline with element IDs (and the doc version). targetId returns one element in full; with lines:true (optionally fromLine/toLine) it returns that element's text numbered by line instead, for patch edits; full:true returns the whole JSON; version reads history.",
-        inputSchema: { type: "object", properties: { documentId: docId, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" } } },
+        description: "Read a doc as an outline with element IDs, headings and the doc version. heading:\"Section > Heading\" returns just the text under that heading (or a section's contents); ref:\"m4.r1\" returns a region a chat message pointed at, as it is now; targetId returns one element in full (with lines:true, optionally fromLine/toLine, its text numbered by line); full:true returns the whole JSON; version reads history.",
+        inputSchema: { type: "object", properties: { documentId: docId, heading: { type: "string" }, ref: { type: "string" }, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" } } },
         handler: wrap((i, ctx) => {
             const id = docIdFor(i, ctx);
+            if (i.ref !== undefined) return store.readRegion(id, i.ref);
+            if (i.heading !== undefined) return store.readHeading(id, i.heading, { version: i.version });
             const doc = i.version !== undefined ? store.getVersion(id, i.version) : store.getDoc(id);
             if (i.targetId) {
                 const el = findElement(doc.content, i.targetId);
@@ -192,7 +194,7 @@ const actions = [
     },
     {
         name: "edit",
-        description: "Apply edits: {edit} or {edits:[...]}. Types: insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Any edit may carry baseVersion (the doc version you read): it's refused, with nothing saved, if its target changed since (e.g. the user edited it in place). Each saves a version and animates live. See instructions topic 'blocks'.",
+        description: "Apply edits: {edit} or {edits:[...]}. Types: region {ref:\"m4.r1\", markdown} (rewrite exactly what a chat message pointed at; \"\" removes it), under {heading:\"Section > Heading\", markdown, append?} (replace or add to the text under a heading; the heading stays), insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Any edit may carry baseVersion (the doc version you read): it's refused, with nothing saved, if its target changed since (e.g. the user edited it in place). Each saves a version and animates live. See instructions topic 'blocks'.",
         inputSchema: { type: "object", properties: { documentId: docId, edit: { type: "object" }, edits: { type: "array", items: { type: "object" } } } },
         handler: wrap(async (i, ctx) => {
             const id = docIdFor(i, ctx);

@@ -335,7 +335,7 @@ export async function startServer({ chat, instances, getSessionId }) {
         }
 
         if (parts[1] === "ask" && method === "POST") {
-            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind, discuss } = await readBody(req);
+            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind, discuss, regions } = await readBody(req);
             if (typeof message !== "string" || !message.trim()) throw new InputError("message is required.");
             const instanceId = url.searchParams.get("instance") ?? "";
             const doc = documentId ? store.getDoc(documentId) : null;
@@ -356,6 +356,12 @@ export async function startServer({ chat, instances, getSessionId }) {
                 );
             const edited = editedNote(doc);
             if (edited) lines.push(edited);
+            // What this message points at, as refs the agent can rewrite directly (no re-reading, no line numbers).
+            const reg = doc && Array.isArray(regions) && regions.length ? store.registerRegions(doc.id, regions) : null;
+            if (reg)
+                lines.push(
+                    `[Regions in this message: ${reg.refs.map((r) => `${r.ref} = ${r.blockId}${r.lines ? ` lines ${r.lines}` : ` (${r.type})`}`).join("; ")}. To rewrite one: edit {type:"region", ref, markdown} ("" removes it); read {ref} shows it as it is now.]`,
+                );
             // Inspecting a diagram (and the docked Command walkthrough) says where the reader is on every message, since they move between steps.
             if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
             lines.push(message.trim().slice(0, 8000));

@@ -320,6 +320,70 @@ await test("patch edits, baseVersion guards, changes since a version, and friend
     await store.remove(fresh.documentId);
 });
 
+await test("addressing: heading paths (read, under) and message regions (read, rewrite, refused when changed)", async () => {
+    const d = doc.documentId;
+    const sec = (await store.applyEdit(d, { type: "insert", content: { type: "section", title: "Plan", children: [{ type: "markdown", markdown: "# Goals\n\nShip it.\n\n## Review findings\n\n- one\n- two\n\n### Detail\n\nsmall\n\n## Risks\n\n```\n# not a heading\n```\nnone" }] } })).targetId;
+    const md = store.getDoc(d).content.find((b) => b.id === sec).children[0].id;
+    const text = () => store.getDoc(d).content.find((b) => b.id === sec).children.find((b) => b.id === md).markdown;
+    // the outline names headings; paths resolve through sections and heading ranks; code fences don't count
+    assert.match(store.outline(store.getDoc(d)), /## Review findings {2}\(lines 5–13\)/);
+    const r1 = store.readHeading(d, "Plan > Review findings");
+    assert.equal(r1.heading, "Plan > Goals > Review findings");
+    assert.equal(r1.markdown, "- one\n- two\n\n### Detail\n\nsmall");
+    assert.equal(store.readHeading(d, "Detail").heading, "Plan > Goals > Review findings > Detail");
+    assert.throws(() => store.resolveHeading(store.getDoc(d), "not a heading"), /no heading/);
+    assert.throws(() => store.resolveHeading(store.getDoc(d), "Review"), /Close: "Plan > Goals > Review findings"/);
+    assert.equal(store.readHeading(d, "Plan").children[0].id, md);
+    // under: replace keeps the heading and what follows; append adds to the end; baseVersion guards only that text
+    const v1 = store.getDoc(d).version;
+    await store.applyEdit(d, { type: "under", heading: "Plan > Review findings", markdown: "- A\n- B" });
+    assert.equal(text(), "# Goals\n\nShip it.\n\n## Review findings\n\n- A\n- B\n\n## Risks\n\n```\n# not a heading\n```\nnone");
+    await store.applyEdit(d, { type: "under", heading: "Risks", markdown: "- none known", append: true, baseVersion: v1 }); // Risks untouched since v1
+    assert.match(text(), /none\n\n- none known$/);
+    await rejects(() => store.applyEdit(d, { type: "under", heading: "Review findings", baseVersion: v1, markdown: "x" }), /changed since version/);
+    // a section of only text can be replaced whole; a section with a diagram can only be appended to
+    const plain = (await store.applyEdit(d, { type: "insert", content: { type: "section", title: "Notes", children: [{ markdown: "old" }] } })).targetId;
+    await store.applyEdit(d, { type: "under", heading: "Notes", markdown: "new notes" });
+    const notes = store.getDoc(d).content.find((b) => b.id === plain);
+    assert.equal(notes.title, "Notes");
+    assert.deepEqual(notes.children.map((c) => c.markdown), ["new notes"]);
+    // regions: what a message pointed at, rewritten in place even after lines above moved
+    const reg = store.registerRegions(d, [{ blockId: md, unit: "6-7" }, { blockId: plain }, { blockId: "nope" }]);
+    assert.equal(reg.refs.length, 2);
+    assert.equal(reg.refs[0].lines, "7–8");
+    const ref = reg.refs[0].ref;
+    assert.equal(store.readRegion(d, ref).markdown, "- A\n- B");
+    await store.applyEdit(d, { type: "patch", targetId: md, ops: [{ find: "Ship it.", replace: "Ship it.\n\nSoon." }] });
+    assert.equal(store.readRegion(d, ref).status, "moved");
+    await store.applyEdit(d, { type: "region", ref, markdown: "- A (fixed)\n- B\n- C" });
+    assert.match(text(), /## Review findings\n\n- A \(fixed\)\n- B\n- C\n\n## Risks/);
+    await store.applyEdit(d, { type: "region", ref, markdown: "- A (fixed twice)\n- B\n- C" }); // the ref follows its new text
+    assert.match(text(), /A \(fixed twice\)/);
+    await rejects(() => store.applyEdit(d, { type: "region", ref: reg.refs[1].ref, markdown: "x" }), /not text/);
+    // changed by the user since the message: refused, nothing saved
+    const all = text().split("\n");
+    const at = all.indexOf("- A (fixed twice)");
+    await store.editProse(d, [{ blockId: md, from: at, to: at, before: "- A (fixed twice)", after: "- A (the user's words)" }]);
+    const v2 = store.getDoc(d).version;
+    await rejects(() => store.applyEdit(d, { type: "region", ref, markdown: "x" }), /was changed since the message/);
+    assert.equal(store.getDoc(d).version, v2);
+    assert.equal(store.readRegion(d, ref).status, "changed");
+    // Discuss mode's dry runs understand the new edits, and catch a batch that conflicts with itself
+    assert.equal(await store.checkEdits(d, [{ type: "under", heading: "Risks", markdown: "- maybe one" }]), 1);
+    const vb = store.getDoc(d).version;
+    await rejects(() => store.checkEdits(d, [{ type: "under", heading: "Risks", baseVersion: vb, markdown: "x" }, { type: "under", heading: "Risks", baseVersion: vb, markdown: "y" }]), /edits\[1\].*changed since/);
+    // edits leave everything outside their span exactly as it was (a fenced block's double blank line survives)
+    const fence = (await store.applyEdit(d, { type: "insert", content: { type: "markdown", markdown: "# A\n\nold a\n\n# B\n\n```\nx\n\n\ny\n```\n\n\ntail" } })).targetId;
+    const fmd = () => store.getDoc(d).content.find((b) => b.id === fence).markdown;
+    await store.applyEdit(d, { type: "under", heading: "A", markdown: "new a" });
+    assert.equal(fmd(), "# A\n\nnew a\n\n# B\n\n```\nx\n\n\ny\n```\n\n\ntail");
+    const fr = store.registerRegions(d, [{ blockId: fence, unit: "2-2" }]).refs[0].ref;
+    await store.applyEdit(d, { type: "region", ref: fr, markdown: "" });
+    assert.equal(fmd(), "# A\n\n# B\n\n```\nx\n\n\ny\n```\n\n\ntail");
+    await store.applyEdit(d, { type: "remove", targetId: fence });
+    for (const x of [sec, plain]) await store.applyEdit(d, { type: "remove", targetId: x });
+});
+
 await test("settings: defaults, partial merges, and bad values fall back", async () => {
     const { readSettings, writeSettings, parseSettings } = await import("../extensions/marginal/lib/settings.mjs");
     assert.deepEqual(readSettings().shortcuts, { jump: true, stepKeys: true, tourKey: true, markdown: true });
