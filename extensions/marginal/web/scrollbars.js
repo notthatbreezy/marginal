@@ -156,6 +156,30 @@ function show(el) {
     position(el);
     for (const t of [b.v, b.h]) t?.classList.add("on");
     clearTimeout(b.timer);
+    follow();
+}
+
+/** Bars are fixed-position, so a container that moves without scrolling (the chat being dragged or resized) would
+ *  leave its bar behind. While any bar is showing (including its fade-out), keep it on its container each frame. */
+let following = 0;
+function follow() {
+    if (following) return;
+    const tick = () => {
+        following = 0;
+        let showing = false;
+        for (const [el, b] of bars) {
+            if (!b.v?.classList.contains("on") && !b.h?.classList.contains("on") && !b.fading) continue;
+            showing = true;
+            const r = el.getBoundingClientRect();
+            const key = `${r.left},${r.top},${r.width},${r.height}`;
+            if (key !== b.rect) {
+                b.rect = key;
+                position(el);
+            }
+        }
+        if (showing) following = requestAnimationFrame(tick);
+    };
+    following = requestAnimationFrame(tick);
 }
 
 function touch(el) {
@@ -165,6 +189,9 @@ function touch(el) {
     b.timer = setTimeout(() => {
         if (b.hovered || b.onBar) return;
         for (const t of [b.v, b.h]) t?.classList.remove("on");
+        // Keep following through the fade-out transition.
+        b.fading = true;
+        setTimeout(() => (b.fading = false), 400);
     }, IDLE_MS);
 }
 

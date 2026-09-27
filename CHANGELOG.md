@@ -15,6 +15,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Fixed
 
+- A scrollbar no longer stays behind when you drag or resize the chat while it's showing.
 - Illustrative code in notes, tour steps and peeks keeps its line breaks and indentation instead of running together on one line.
 
 ### Docs
