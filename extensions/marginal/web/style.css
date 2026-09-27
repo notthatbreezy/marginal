@@ -6224,3 +6224,55 @@ del.sg-del {
         animation: none;
     }
 }
+
+/* ---------- Command: a walkthrough takes over the wall ----------
+   While one is open the walkthrough is the main thing: it takes most of the width (with a roomier stop list), and the
+   left keeps just the map, which still zooms and badges as you step. Instruments, timeline, monitors, legend and view
+   controls come back when it closes. */
+.cc {
+    --walk-w: clamp(600px, 64vw, calc(100vw - 360px));
+}
+.cc .walk {
+    width: var(--walk-w);
+    grid-template-columns: minmax(250px, 34%) minmax(0, 1fr);
+}
+.cc.walking {
+    padding-right: calc(var(--walk-w) + 10px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "map";
+}
+.cc.walking > .strip,
+.cc.walking > .timeline,
+.cc.walking .map > .dock,
+.cc.walking .map-head .legend,
+.cc.walking .map-head .view-ctl {
+    display: none !important;
+}
+.cc.walking .map-head {
+    padding: 8px 12px 4px;
+}
+.cc.walking .stage {
+    margin-bottom: 10px;
+}
+/* The map header never overlaps itself: long folder names cut with an ellipsis, and the controls wrap below. */
+.cc .map-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+.cc .crumbs {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    max-width: 100%;
+}
+.cc .crumbs > * {
+    white-space: nowrap;
+    flex: none;
+}
+.cc .crumbs > :first-child,
+.cc .crumbs > .here {
+    flex: 0 1 auto;
+    min-width: 3ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

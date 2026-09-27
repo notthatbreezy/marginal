@@ -776,7 +776,7 @@ function buildMap() {
 function renderMapHead(st, root, auto = false) {
     const crumbs = cc.host.querySelector(".crumbs");
     const parts = root ? root.split("/") : [];
-    const items = [h("button", { class: `path crumb${parts.length ? "" : " here"}`, title: "Zoom to the repository root", onclick: () => zoomTo("") }, `${cc.data.repository ?? "repo"}/`)];
+    const items = [h("button", { class: `path crumb${parts.length ? "" : " here"}`, title: `${cc.data.repository ?? "repo"}/\nZoom to the repository root`, onclick: () => zoomTo("") }, `${cc.data.repository ?? "repo"}/`)];
     parts.forEach((p, i) => {
         const path = parts.slice(0, i + 1).join("/");
         items.push(h("span", { class: "sepc", "aria-hidden": "true" }, "›"), h("button", { class: `path crumb${i === parts.length - 1 ? " here" : ""}`, onclick: () => zoomTo(path) }, `${p}/`));

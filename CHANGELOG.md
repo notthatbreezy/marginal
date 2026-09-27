@@ -6,6 +6,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- A Command walkthrough now takes over the wall: it spans about two thirds of the width, with a roomier stop list, and the left keeps just the map (still zooming and badging each stop's files). The instruments, timeline, monitors, legend and view controls return when it closes.
+- The Command map's header no longer runs into itself: long folder names in the breadcrumbs end in an ellipsis (the tooltip has the full name), and the legend and view controls wrap below when there's no room.
 - Pins on the Command map are chips in the map's header instead of a line of names: hover one to outline its tile, click it to find it (the map zooms out if it's off screen, and the tile flashes), × unpins it, and **Clear all** unpins every one, including pins that came with a view.
 
 ## [0.5.0] - 2026-09-27
