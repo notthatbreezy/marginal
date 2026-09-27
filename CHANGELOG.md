@@ -18,6 +18,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The agent is steered to change part of a doc rather than resend it: the edit action's description leads with region / under / patch, the instructions' editing section opens with them, the Command protocol (which orchestrators read instead of the authoring guide) now covers editing docs, and an update that resends a long text to change a little of it gets a tip in its result naming the cheaper edit.
 - The chat docked in a walkthrough or tour takes at most half of its column, so the stop list stays in view; its messages scroll.
 - Friendlier schema: a child that is only Markdown may leave out `type` (anything else gets "missing type" with an example), `update` ignores an unchanged `id`/`type` in `changes`, and plan `expects` accept `{path}` / `{glob}` objects as well as strings.
 - Your in-place prose saves follow their text when Copilot changed other lines of the same block meanwhile (a patch above them shifts line numbers); only text that itself changed is refused.

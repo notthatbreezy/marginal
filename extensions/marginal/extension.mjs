@@ -194,7 +194,7 @@ const actions = [
     },
     {
         name: "edit",
-        description: "Apply edits: {edit} or {edits:[...]}. Types: region {ref:\"m4.r1\", markdown} (rewrite exactly what a chat message pointed at; \"\" removes it), under {heading:\"Section > Heading\", markdown, append?} (replace or add to the text under a heading; the heading stays), insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Any edit may carry baseVersion (the doc version you read): it's refused, with nothing saved, if its target changed since (e.g. the user edited it in place). Each saves a version and animates live. See instructions topic 'blocks'.",
+        description: "Apply edits: {edit} or {edits:[...]}. To change part of existing text, use region, under or patch (never resend a whole long block). Types: region {ref:\"m4.r1\", markdown} (rewrite exactly what a chat message pointed at; \"\" removes it), under {heading:\"Section > Heading\", markdown, append?} (replace or add to the text under a heading; the heading stays), insert {content, parentId?, afterId?, beforeId?}, update {targetId, changes}, patch {targetId, field?:'markdown', ops:[{find, replace, all?} | {lines:[from,to], text, expect?}]} (change part of a long text without resending it; lines from read {targetId, lines:true}), replace {targetId, content}, move {targetId, parentId?, afterId?, beforeId?}, remove {targetId}. Any edit may carry baseVersion (the doc version you read): it's refused, with nothing saved, if its target changed since (e.g. the user edited it in place). Each saves a version and animates live. See instructions topic 'blocks'.",
         inputSchema: { type: "object", properties: { documentId: docId, edit: { type: "object" }, edits: { type: "array", items: { type: "object" } } } },
         handler: wrap(async (i, ctx) => {
             const id = docIdFor(i, ctx);
@@ -212,14 +212,28 @@ const actions = [
                 };
             }
             const results = [];
+            const tips = [];
             for (const [n, e] of edits.entries()) {
                 try {
+                    const before = e?.type === "update" && typeof e.changes?.markdown === "string" ? findElement(store.getDoc(id).content, e.targetId)?.markdown : null;
                     results.push(await store.applyEdit(id, e));
+                    // Resending a long text to change a little of it: say what would have been cheaper, once per call.
+                    if (typeof before === "string" && e.changes.markdown.length > 800 && !tips.length) {
+                        const a = before;
+                        const b = e.changes.markdown;
+                        let p = 0;
+                        while (p < a.length && p < b.length && a[p] === b[p]) p++;
+                        let s = 0;
+                        while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+                        const changed = b.length - p - s;
+                        if (changed < b.length * 0.25) tips.push(`That update resent ${b.length} characters to change about ${Math.max(changed, 1)}. Next time use under {heading}, region {ref} or patch {ops}: they send only the change and don't overwrite the user's edits elsewhere in the block.`);
+                    }
                 } catch (err) {
                     if (!(err instanceof InputError)) throw err;
                     throw new InputError(`${edits.length > 1 ? `edits[${n}] failed (${n} earlier edit(s) were saved): ` : ""}${err.message}`);
                 }
             }
+            if (tips.length) return i.edit && !i.edits ? { ...results[0], tip: tips[0] } : { results, tip: tips[0] };
             return i.edit && !i.edits ? results[0] : results;
         }),
     },
