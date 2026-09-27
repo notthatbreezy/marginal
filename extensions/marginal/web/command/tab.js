@@ -7,6 +7,7 @@ import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatt
 import { buckets, changesAt, velocity } from "./derive.js";
 import { renderFronts, renderTimeline } from "./fronts.js";
 import { PHASE_STAGE, renderPhases } from "./phases.js";
+import { helpersPopover, renderProgressLine, todosPopover } from "./progress.js";
 import { renderMonitors } from "./monitors.js";
 import { buildTree, findNode } from "./squarify.js";
 import { createTreemap } from "./treemap.js";
@@ -75,7 +76,8 @@ export async function mountCommand(host, { documentId }) {
     put(host, root);
     cc.off.push(bus.on("command", onEvent));
     const onKey = (e) => keydown(e);
-    const onDown = (e) => cc.ui.menu && !e.target.closest(".cc-menu") && closeMenu();
+    // A control that opens a popover toggles it itself (closing here first would reopen it on click).
+    const onDown = (e) => cc.ui.menu && !e.target.closest(".cc-menu") && !e.target.closest("[aria-haspopup]") && closeMenu();
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onDown, true);
     cc.off.push(() => document.removeEventListener("keydown", onKey), () => document.removeEventListener("pointerdown", onDown, true));
@@ -257,6 +259,11 @@ function onEvent(ev) {
     } else if (ev.kind === "activity") {
         cc.activity = [...cc.activity, ev.item].slice(-50);
         renderFeed();
+    } else if (ev.kind === "progress") {
+        if (!cc.data) return;
+        cc.data.progress = ev.progress ?? null;
+        refreshProgPop();
+        schedule();
     } else if (ev.kind === "state" || ev.kind === "prefs") reloadState();
     else if (ev.kind === "compacted" || ev.kind === "tree") reloadAll();
 }
@@ -480,11 +487,12 @@ function whereOf(plan, frontId) {
     return { phase: null, step: null };
 }
 
-/** Where the timeline starts: the first real edit or phase start (at least a minute back). */
+/** Where the timeline starts: the first real edit, phase start or helper (at least a minute back). */
 function timelineStart(st, now) {
     const first = cc.events.find((e) => !e.baseline)?.at ?? cc.events[0]?.at;
     const since = (st.plan?.phases ?? []).map((p) => (p.state.since ? Date.parse(p.state.since) : Infinity));
-    return Math.min(first ? Date.parse(first) : now, ...since, now - 60_000);
+    const helpers = (cc.data?.progress?.helpers?.list ?? []).map((x) => Date.parse(x.startedAt)).filter(Number.isFinite);
+    return Math.min(first ? Date.parse(first) : now, ...since, ...helpers, now - 60_000);
 }
 
 // ---------- render ----------
@@ -567,6 +575,7 @@ function render() {
     renderPhases(cc.host.querySelector(".rail-phases"), phaseRows(st, changes, now), {
         focusId: cc.ui.focusPhase,
         chatIcon: ADD_CHAT_SVG,
+        progress: cc.data.progress,
         onToggle: (id) => {
             cc.ui.focusPhase = cc.ui.focusPhase === id ? null : id;
             announce(cc.ui.focusPhase ? `Showing only ${id.toUpperCase()}'s files` : "Showing all phases");
@@ -599,7 +608,20 @@ function render() {
         },
         onAddChat: svc.addToCommandChat ? (id) => svc.addToCommandChat([frontItem(fronts.get(id))]) : null,
     });
-    renderTimeline(cc.host.querySelector(".timeline"), { plan: st.plan, fronts: st.fronts, events: cc.events, from: timelineStart(st, now), now, onPhase: (p, el) => openPhaseMenu(p, el, st) });
+    renderTimeline(cc.host.querySelector(".timeline"), {
+        plan: st.plan,
+        fronts: st.fronts,
+        events: cc.events,
+        from: timelineStart(st, now),
+        now,
+        onPhase: (p, el) => openPhaseMenu(p, el, st),
+        helpers: cc.data.progress?.helpers?.list,
+        lanesOpen: cc.ui.lanesOpen,
+        onLanes: () => {
+            cc.ui.lanesOpen = !cc.ui.lanesOpen;
+            schedule(true);
+        },
+    });
     renderMonitors(cc.host.querySelector(".dock"), {
         monitors: L.monitors,
         events: cc.events,
@@ -697,6 +719,7 @@ function buildStrip() {
         "section",
         { class: "strip", "aria-label": "Mission instruments" },
         h("span", { class: "lamp", role: "status", hidden: true }),
+        h("div", { class: "progress-line", role: "group", "aria-label": "Progress", hidden: true }),
         h("div", { class: "readout", title: "Lines added + removed per minute" }, h("span", { class: "v num churn" }, "0"), h("span", { class: "u" }, "lines/min churn"), h("span", { class: "net num" })),
         h("span", { class: "sep" }),
         h("div", { class: "readout minor" }, h("span", { class: "v num files" }, "0"), h("span", { class: "u" }, "files/min")),
@@ -748,6 +771,7 @@ function renderStrip(st, at, offCount) {
     else if (ms.status === "awaiting_operator") put(lamp, h("span", { class: "dot" }), "Waiting on you", sub);
     else if (ms.status === "complete") put(lamp, "✓ Complete");
     else put(lamp, h("span", { class: "dot" }), "Idle");
+    renderProgressLine(strip.querySelector(".progress-line"), st.plan ? cc.data.progress : null, { onTodos: (a) => toggleProgPop("todos", a), onHelpers: (a) => toggleProgPop("helpers", a) });
     const v = velocity(cc.events, { at, windowKey: cc.ui.windowKey });
     strip.querySelector(".churn").textContent = v.churn;
     const net = strip.querySelector(".net");
@@ -898,7 +922,7 @@ function renderMapHead(st, root, auto = false) {
                 title: L.pins.length ? `${L.pins.length} pinned (drawn ${PIN_WEIGHT}× larger): find or unpin them` : "Pinned areas (P over a tile pins it)",
                 "aria-label": `Pinned areas${L.pins.length ? `: ${L.pins.length}` : ""}`,
                 "aria-haspopup": "dialog",
-                onclick: (e) => (cc.ui.menu?.classList.contains("pin-pop") ? closeMenu() : openPinMenu(e.currentTarget)),
+                onclick: (e) => (cc.ui.menu?.classList.contains("pin-menu") ? closeMenu() : openPinMenu(e.currentTarget)),
             },
             h("span", { html: PIN_SVG }),
             L.pins.length ? h("span", { class: "pin-n" }, String(L.pins.length)) : null,
@@ -1043,6 +1067,28 @@ function saveCurrentView() {
 function closeMenu() {
     cc.ui.menu?.remove();
     cc.ui.menu = null;
+}
+
+// ---------- progress popovers (todos, helpers) ----------
+function buildProgPop(kind) {
+    const args = [cc.data.progress, cc.data.state.plan];
+    const menu = kind === "todos" ? todosPopover(...args, { onClose: closeMenu }) : helpersPopover(...args, { now: Date.now(), onClose: closeMenu });
+    menu.dataset.pop = kind;
+    return menu;
+}
+function toggleProgPop(kind, anchor) {
+    if (cc.ui.menu?.dataset.pop === kind) return closeMenu();
+    closeMenu();
+    placeMenu(buildProgPop(kind), anchor);
+}
+/** An open popover follows the progress as it changes, keeping its place and scroll. */
+function refreshProgPop() {
+    const m = cc.ui.menu;
+    const kind = m?.dataset.pop;
+    if (!kind || !cc.data) return;
+    const top = m.scrollTop;
+    m.replaceChildren(...buildProgPop(kind).childNodes);
+    m.scrollTop = top;
 }
 
 /**

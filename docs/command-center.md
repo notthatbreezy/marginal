@@ -31,6 +31,24 @@ Every `command_*` action validates its whole input first. On any problem it retu
 
 The `instructions` action's `command` topic gives the agent the same protocol in prose.
 
+## Progress
+
+The Command tab shows how the work is going without the orchestrator reporting any of it. Marginal's extension runs in the orchestrator's session and reads what the runtime already produces:
+
+| Shown | From |
+|---|---|
+| **Now:** what the orchestrator is doing | the `assistant.intent` event (the orchestrator's own, not a helper's) while it's fresh, else its todo in progress |
+| **Todos** done / total, and the list | `session.todos_changed`, then `session.rpc.plan.readSqlTodosWithDependencies()` |
+| **Helpers** running, and each one's span | `subagent.started` / `completed` / `failed`, and `session.rpc.tasks.list()` after `session.background_tasks_changed` (it fills in what was missed, such as during an extensions reload; shell tasks are ignored) |
+
+- **Status line** (the instrument strip): `Now: …`, `Todos n / m` and `k helpers running`. The last two open popovers: the todos grouped by phase, and the helpers with their state and time.
+- **Phase cards**: each phase's todo count, its todo in progress as "Now:", and its running helpers. An **Other** card collects what matched no phase.
+- **Helper lanes** under the timeline's histogram, on the same time axis: one bar per helper from start to end (running, done, failed, cancelled). More than three lanes collapse into one row of how many ran at once; click it for the lanes.
+
+Each todo and helper is matched to a phase once, the first time it's seen, and keeps it: a todo whose id or title starts with a phase id (`p2-wire`, `P2: …`) belongs to that phase; otherwise it belongs to the first phase in play (implementing or in review) at that moment, or to Other when none is. Helpers match by timing only. A todo that's already done when the Command center first sees it, was created before it started watching and isn't named for a phase is earlier work and isn't counted.
+
+The RPC reads are debounced (the runtime signals task changes in bursts) and the panel hears at most one update a second. Missing pieces are simply absent: no todo list, no pill.
+
 ## Ownership
 
 - `command_plan {op:"set"}` explicitly claims the doc's Command lease for the calling session. Opening a panel never claims it.
@@ -66,6 +84,7 @@ Per doc, under `~/.copilot/marginal/docs/<id>/command/`:
 | `prefs.json` | UI preferences such as follow, layout, saved views, the tour-seen flag and the last chat focus. Any panel may write it, and it is validated on every read and write. |
 | `events.jsonl` | The append-only change log. It is compacted once at 20 MB: events older than 6 h fold into per-file baselines plus minute buckets. |
 | `owner.json` | The lease. |
+| `progress.json` | Observed progress: the latest intent, the last todo snapshot with each todo's phase, and the last 200 helpers. Written only by the owner; derived, so it's rebuilt from the session if lost. |
 
 The line-count cache lives in `~/.copilot/marginal/loc-cache/`. Checkpoint snapshots are git refs under `refs/marginal/checkpoints/<doc>/` in your repository, and they are deleted with the doc.
 

@@ -122,7 +122,7 @@ export function applyTodos(p, snapshot, { plan, now = Date.now() } = {}) {
     const at = new Date(now).toISOString();
     const src = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
     const before = new Map((p.todos?.rows ?? []).map((t) => [t.id, t]));
-    const since = Date.parse(p.since);
+    const since = Math.floor(Date.parse(p.since) / 1000) * 1000; // createdAt has whole seconds
     const firstSeen = { ...p.firstSeen };
     const rows = [];
     for (const r of src.slice(0, TODOS_MAX)) {
@@ -192,6 +192,8 @@ export function applyTasks(p, result, { plan, readAt = Date.now() } = {}) {
 // ---------- what the panel shows ----------
 
 const FRESH_INTENT_MS = 10 * 60_000;
+// A todo's change is seen when the debounced read lands, up to ~2 s after the runtime made it.
+const READ_LAG_MS = 3000;
 
 /**
  * The panel's view: `now`, todo counts, helpers, and per-phase progress. Absent pieces are null (the UI hides them).
@@ -204,7 +206,7 @@ export function summarizeProgress(p, plan, now = Date.now()) {
     const doing = counted.filter((t) => t.status === "in_progress").sort((a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt));
     const intentAt = p.intent ? Date.parse(p.intent.at) : -Infinity;
     let nowLine = null;
-    if (p.intent && (!doing.length || intentAt >= Date.parse(doing[0].changedAt)) && now - intentAt < FRESH_INTENT_MS) nowLine = { text: p.intent.text, source: "intent", at: p.intent.at };
+    if (p.intent && (!doing.length || intentAt + READ_LAG_MS >= Date.parse(doing[0].changedAt)) && now - intentAt < FRESH_INTENT_MS) nowLine = { text: p.intent.text, source: "intent", at: p.intent.at };
     else if (doing.length) nowLine = { text: doing[0].title, source: "todo", at: doing[0].changedAt, todoId: doing[0].id };
     const helpers = p.helpers.map((h) => ({ ...h, phaseId: h.phaseId && phaseIds.has(h.phaseId) ? h.phaseId : null }));
     const bucket = () => ({ done: 0, total: 0, now: null, helpers: [] });

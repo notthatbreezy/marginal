@@ -99,3 +99,18 @@ export function relTime(ms, now = Date.now()) {
     const h = Math.round(m / 60);
     return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
+
+/** Greedy interval packing: each helper goes in the first lane free at its start. */
+export function packLanes(helpers, now, gapMs = 4000) {
+    const lanes = [];
+    for (const x of [...helpers].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))) {
+        const s = Date.parse(x.startedAt);
+        const e = x.endedAt ? Date.parse(x.endedAt) : now;
+        const lane = lanes.find((l) => l.end + gapMs <= s);
+        if (lane) {
+            lane.items.push(x);
+            lane.end = e;
+        } else lanes.push({ end: e, items: [x] });
+    }
+    return lanes.map((l) => l.items);
+}

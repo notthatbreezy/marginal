@@ -1,6 +1,7 @@
 // Fronts rail (per-front sparklines live here only) and the checkpoint timeline (the plan's phases).
 import { h, put } from "../core.js";
 import { buckets } from "./derive.js";
+import { renderLanes } from "./progress.js";
 
 const ADD_CHAT_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 
@@ -88,7 +89,7 @@ export function renderFronts(host, rows, opts) {
 /**
  * Timeline: the plan's phases in order (widths ∝ elapsed for done/active; click one for its menu), over a histogram
  * of edits across the same span, stacked by front. The histogram is read-only.
- * o: { plan, fronts, events, from, now, onPhase(phase, el) }
+ * o: { plan, fronts, events, from, now, onPhase(phase, el), helpers?, lanesOpen?, onLanes?() }
  */
 export function renderTimeline(host, o) {
     const now = o.now;
@@ -117,7 +118,8 @@ export function renderTimeline(host, o) {
     if (!host._track) {
         host._track = h("div", { class: "track" });
         host._hist = h("div", { class: "hist", role: "img" });
-        put(host, host._track, host._hist);
+        host._lanes = h("div", { class: "helper-lanes", hidden: true });
+        put(host, host._track, host._hist, host._lanes);
     }
     const focused = document.activeElement?.closest?.(".seg")?.dataset.phase;
     put(host._track, seg.length ? seg : h("span", { class: "muted" }, "No checkpoints yet"));
@@ -142,6 +144,8 @@ export function renderTimeline(host, o) {
         ),
     );
     host._hist.setAttribute("aria-label", `Edits over time by front, ${hhmm(from)} to now`);
+    // Helper agents on the same time axis (observed progress, option D).
+    renderLanes(host._lanes, o.helpers, { from, now, open: o.lanesOpen, onToggle: o.onLanes });
 }
 
 export function fmtDur(ms) {

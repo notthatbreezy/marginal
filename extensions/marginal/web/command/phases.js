@@ -2,6 +2,7 @@
 // changed so far, and its recent pace. Fronts (worktrees) are plumbing; they only get a section when there are several.
 import { h, put } from "../core.js";
 import { spark } from "./fronts.js";
+import { otherCard, phaseProgress } from "./progress.js";
 
 /** Phase status (stored) → the stage shown. */
 export const PHASE_STAGE = { pending: "planned", active: "implementing", review: "review", blocked: "blocked", done: "complete" };
@@ -26,7 +27,7 @@ function deliverables(ph) {
 
 /**
  * rows: [{ phase, stage, add, del, files, series:number[] }] in plan order.
- * opts: { focusId, onToggle(id), onHover(id|null), onAddChat?(phase) }
+ * opts: { focusId, onToggle(id), onHover(id|null), onAddChat?(phase), progress? (the server's progress summary) }
  */
 export function renderPhases(host, rows, opts) {
     const counts = Object.fromEntries(ORDER.map((s) => [s, 0]));
@@ -46,6 +47,9 @@ export function renderPhases(host, rows, opts) {
         const p = r.phase;
         const step = p.steps.find((s) => s.state.status === "active");
         const on = opts.focusId === p.id;
+        const pg = opts.progress?.phases?.[p.id];
+        // Now: the phase's todo in progress (observed), else the plan step marked active.
+        const nowText = pg?.now ?? step?.title ?? null;
         return h(
             "li",
             {
@@ -67,7 +71,8 @@ export function renderPhases(host, rows, opts) {
                 h("span", { class: `st ${r.stage}`, title: p.state.since ? `Since ${new Date(p.state.since).toLocaleString()}` : null }, BADGE[r.stage]()),
             ),
             deliverables(p),
-            step ? h("div", { class: "where" }, "Now: ", h("b", {}, step.title)) : null,
+            nowText ? h("div", { class: "where" }, "Now: ", h("b", {}, nowText)) : null,
+            phaseProgress(pg),
             p.state.note ? h("div", { class: `note${r.stage === "blocked" ? " why" : ""}` }, p.state.note) : null,
             r.stage === "planned" && !r.files
                 ? null
@@ -75,6 +80,7 @@ export function renderPhases(host, rows, opts) {
             opts.onAddChat ? h("button", { class: "addchat", title: "Add phase to chat", "aria-label": `Add ${p.id} to chat`, html: opts.chatIcon ?? "", onclick: () => opts.onAddChat(p) }) : null,
         );
     });
+    if (opts.progress?.other) items.push(otherCard(opts.progress.other));
     // Keep the scrolling list itself (replacing it mid-scroll snaps it back to the top), as the fronts rail does.
     const list = host.querySelector(":scope > ul.fronts");
     if (list) {

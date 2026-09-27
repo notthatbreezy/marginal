@@ -53,7 +53,8 @@ export async function resolveRef(r, v, path, { state, repo, docId } = {}) {
         const ph = id && findPhase(state.plan, id);
         if (id && !ph) return void issues.add(`${path}.phaseId`, "unknown_id", `no phase "${id}"`, phaseIdsHint(state.plan));
         if (!ph) return null;
-        if (ph.state.status !== "done" || !ph.state.checkpoint?.sha) return void issues.add(`${path}.phaseId`, "ref_unresolvable", `phase "${id}" has no checkpoint yet (it is ${ph.state.status})`, `mark it done first, or use {"ref":"live","frontId":…} for work in progress`);
+        // A reopened phase keeps its last checkpoint until it's delivered again, so it stays usable as a ref.
+        if (!ph.state.checkpoint?.sha) return void issues.add(`${path}.phaseId`, "ref_unresolvable", `phase "${id}" has no checkpoint yet (it is ${ph.state.status})`, `mark it done first, or use {"ref":"live","frontId":…} for work in progress`);
         return { sha: ph.state.checkpoint.sha, label: id.toUpperCase() };
     }
     if (o.sha !== undefined) {

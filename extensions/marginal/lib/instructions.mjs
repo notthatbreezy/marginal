@@ -101,7 +101,7 @@ ${blocks}`,
 8. Handing work to a helper agent: export {path} the doc (or heading:"Plan > P2") to a Markdown file and give it the path; the header's version and commits say exactly what it reflects. Editing a doc (the plan, notes, findings): change part of it with edit {type:"under", heading:"Plan > Findings", markdown} or {type:"region", ref} (a chat message's regions) or {type:"patch"}, and read {heading} for just one part; never resend a whole long block. Topic "blocks" has the details.
 9. Every command_* action returns {ok:false, issues:[{path, code, message, hint}]} on invalid input and changes nothing. Read the issues, fix everything, resend the whole request. Never partially retry.
 Right after extensions_reload, a canvas action can fail with "owning provider … is not connected" for a second or two while the extension reconnects: wait a moment and retry the same call (no need to reopen the canvas).
-You never report individual edits — the canvas observes the worktrees directly. Mission status comes from your session's events; command_status {status} is only a fallback.`,
+You never report individual edits — the canvas observes the worktrees directly. Mission status comes from your session's events; command_status {status} is only a fallback. Progress is observed too: the Command tab shows your todo list, what you're doing now and the helper agents you start, so don't send progress updates. Starting a todo's id with its phase id (p2-wire-executor) counts it for that phase; otherwise it counts for the phase being worked on when it appeared.`,
 };
 
 export function getInstructions(topic = "authoring") {

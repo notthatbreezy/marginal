@@ -139,8 +139,8 @@ export async function commandPlan(input, ctx) {
             if (!commit) issues.add("commit", "ref_unresolvable", `cannot resolve ${JSON.stringify(input.commit)}`, "pass the sha you committed at this checkpoint");
         }
         if (!issues.ok) return issues.result();
-        // With one watched worktree, a phase is built there: no need to name it.
-        const working = state.fronts.filter((f) => f.worktree && !f.handedTo && WORKING_STATUS.has(f.status));
+        // With one watched worktree, a phase is built there: no need to name it. (A blocked front is still watched.)
+        const working = state.fronts.filter((f) => f.worktree && !f.handedTo && (WORKING_STATUS.has(f.status) || f.status === "blocked"));
         if (!frontIds && !(phase.state.frontIds ?? []).length && working.length === 1 && status !== "pending") frontIds = [working[0].id];
         // A done phase must carry a real, attributable checkpoint: resolve or create it BEFORE persisting anything.
         let checkpoint = null;

@@ -144,17 +144,18 @@ test("matching: by name (id or title, longest phase id wins), else by timing, el
 
 test("earlier work: a todo already done, created before the Command center started and not named for a phase, isn't counted", () => {
     const plan = planOf(phase("p1", "active"));
-    const since = Date.parse("2026-01-02T00:00:00Z");
+    const since = Date.parse("2026-01-02T00:00:00.600Z");
     let p = P.emptyProgress(since);
     p = P.applyTodos(p, { rows: [
         { id: "old-done", title: "Old", status: "done", createdAt: "2026-01-01 10:00:00" },
         { id: "old-open", title: "Old but open", status: "pending", createdAt: "2026-01-01 10:00:00" },
         { id: "new-done", title: "New", status: "done", createdAt: "2026-01-02 10:00:00" },
         { id: "p1-old", title: "Named for a phase", status: "done", createdAt: "2026-01-01 10:00:00" },
+        { id: "same-second", title: "Created in the second we started", status: "done", createdAt: "2026-01-02 00:00:00" },
     ] }, { plan, now: since + 1000 });
     const s = P.summarizeProgress(p, plan, since + 1000);
-    assert.deepEqual([s.todos.done, s.todos.total], [2, 3]);
-    assert.deepEqual(s.todos.rows.map((t) => t.id), ["old-open", "new-done", "p1-old"]);
+    assert.deepEqual([s.todos.done, s.todos.total], [3, 4]);
+    assert.deepEqual(s.todos.rows.map((t) => t.id), ["old-open", "new-done", "p1-old", "same-second"]);
 });
 
 test("a todo whose phase was re-planned away lands in Other; nothing is counted twice", () => {

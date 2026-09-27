@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 const { buildTree, weigh, squarify, findNode } = await import("../extensions/marginal/web/command/squarify.js");
-const { changesAt, velocity, autoWindow, buckets, heatOf } = await import("../extensions/marginal/web/command/derive.js");
+const { changesAt, velocity, autoWindow, buckets, heatOf, packLanes } = await import("../extensions/marginal/web/command/derive.js");
 
 test("squarify: areas proportional to value, inside the rect, no overlap", () => {
     const items = [6, 6, 4, 3, 2, 2, 1].map((v, i) => ({ id: i, value: v }));
@@ -122,4 +122,10 @@ test("layoutFromView normalizes pins/monitors; viewChoices merges agent, phase a
     const state = { plan: { phases: [{ id: "p2", suggestedView: { id: "p2v", title: "P2" } }] }, views: [{ id: "p2v", title: "dup" }, { id: "agent2", title: "A2", origin: "agent" }] };
     const ch = views.viewChoices(state, { savedViews: [{ id: "my-view-1", title: "Mine" }] });
     assert.deepEqual(ch.map((v) => [v.id, v.origin, v.phaseId ?? null]), [["p2v", "agent", "p2"], ["agent2", "agent", null], ["my-view-1", "user", null]]);
+});
+test("packLanes: helpers share a lane only when they don't overlap (plus the gap); running ones end now", () => {
+    const x = (id, s, e) => ({ id, startedAt: new Date(s).toISOString(), ...(e ? { endedAt: new Date(e).toISOString() } : {}) });
+    const lanes = packLanes([x("c", 12_000, 20_000), x("a", 0, 5_000), x("b", 2_000, 9_000), x("d", 6_000, null)], 30_000, 1000);
+    assert.deepEqual(lanes.map((l) => l.map((h) => h.id)), [["a", "d"], ["b", "c"]]);
+    assert.equal(packLanes([x("a", 0, 5_000), x("b", 5_500, 9_000)], 10_000, 1000).length, 2, "closer than the gap: a new lane");
 });

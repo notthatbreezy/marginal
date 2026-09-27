@@ -26,6 +26,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 - `changes` no longer reports elements whose content is unchanged but re-saved in a different key order.
 - Headings inside a longer code fence are no longer taken for real headings (heading paths and the export read fences the way CommonMark does).
 - The canvas opens with `null` input as well as `{}`.
+- The `marginal` tool returns a failed action's message (it reported only "Tool execution failed").
 
 ## [0.6.0] - 2026-09-27
 
