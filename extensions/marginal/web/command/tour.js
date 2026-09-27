@@ -69,7 +69,7 @@ export function startCommandTour(o = {}) {
                 target: ".cc .timeline .track",
                 placement: "top",
                 title: "Checkpoints",
-                body: () => p("The plan's phases in order: ✓ done, blue active, grey still to come. Click one to apply its view or ask the orchestrator about it."),
+                body: () => [p("The plan's phases in order: ✓ done, blue active, grey still to come. Click one to apply its view or ask the orchestrator about it."), p("Under them, edits over the same time, stacked by front: where the work happened and how busy it was.")],
             },
             {
                 id: "chat",

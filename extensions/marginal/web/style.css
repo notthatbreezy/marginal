@@ -2992,6 +2992,28 @@ svg .muted {
     grid-area: time;
     border-top: 1px solid var(--border);
     padding: 8px 14px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+/* Edits over time, stacked by front (read-only). */
+.cc .hist {
+    position: relative;
+    height: 22px;
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+}
+.cc .hist i {
+    flex: 1;
+    display: flex;
+    flex-direction: column-reverse;
+    min-width: 0;
+}
+.cc .hist b {
+    display: block;
+    background: var(--fc);
+    opacity: 0.55;
 }
 .cc .track {
     position: relative;

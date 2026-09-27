@@ -452,6 +452,13 @@ function whereOf(plan, frontId) {
     return { phase: null, step: null };
 }
 
+/** Where the timeline starts: the first real edit or phase start (at least a minute back). */
+function timelineStart(st, now) {
+    const first = cc.events.find((e) => !e.baseline)?.at ?? cc.events[0]?.at;
+    const since = (st.plan?.phases ?? []).map((p) => (p.state.since ? Date.parse(p.state.since) : Infinity));
+    return Math.min(first ? Date.parse(first) : now, ...since, now - 60_000);
+}
+
 // ---------- render ----------
 function render() {
     if (!isMounted() || !cc.data) return;
@@ -540,7 +547,7 @@ function render() {
         },
         onAddChat: svc.addToCommandChat ? (id) => svc.addToCommandChat([frontItem(fronts.get(id))]) : null,
     });
-    renderTimeline(cc.host.querySelector(".timeline"), { plan: st.plan, events: cc.events, now, onPhase: (p, el) => openPhaseMenu(p, el, st) });
+    renderTimeline(cc.host.querySelector(".timeline"), { plan: st.plan, fronts: st.fronts, events: cc.events, from: timelineStart(st, now), now, onPhase: (p, el) => openPhaseMenu(p, el, st) });
     renderMonitors(cc.host.querySelector(".dock"), {
         monitors: L.monitors,
         events: cc.events,

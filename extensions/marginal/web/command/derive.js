@@ -71,7 +71,7 @@ export function velocity(events, { at = Date.now(), windowKey = "auto", startedA
     return { churn: r(churn / mins), net: r(net / mins), files: r(files.size / mins), events: r(n / mins), label: windowKey === "auto" ? `auto · ${auto.label}` : windowKey, bucketMs, auto };
 }
 
-/** Churn per front per bucket over [from, to] — the fronts' sparklines. */
+/** Churn per front per bucket over [from, to] — the fronts' sparklines and the timeline histogram. */
 export function buckets(events, { from, to, count }) {
     const width = Math.max(1, (to - from) / count);
     const out = new Map(); // frontId → number[count]

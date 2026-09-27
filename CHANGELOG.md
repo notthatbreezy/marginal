@@ -6,7 +6,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Removed
 
-- The Command timeline's churn histogram and replay scrubber (with its playhead, Live button and the phase menu's Replay items). The timeline is now the plan's phases; walkthroughs cover looking back. Command chat focus no longer carries a replay time.
+- Replay on the Command timeline: scrubbing the histogram, its playhead and Live button, the phase menu's Replay items, and the replay time in Command chat focus. The histogram stays, read-only (hover a bar for its time and edit count); walkthroughs cover looking back.
 
 ### Added
 

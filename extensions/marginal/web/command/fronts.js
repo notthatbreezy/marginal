@@ -1,5 +1,6 @@
 // Fronts rail (per-front sparklines live here only) and the checkpoint timeline (the plan's phases).
 import { h, put } from "../core.js";
+import { buckets } from "./derive.js";
 
 const ADD_CHAT_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 
@@ -85,8 +86,9 @@ export function renderFronts(host, rows, opts) {
 }
 
 /**
- * Timeline: the plan's phases in order (widths ∝ elapsed for done/active); click one for its menu.
- * o: { plan, events, now, onPhase(phase, el) }
+ * Timeline: the plan's phases in order (widths ∝ elapsed for done/active; click one for its menu), over a histogram
+ * of edits across the same span, stacked by front. The histogram is read-only.
+ * o: { plan, fronts, events, from, now, onPhase(phase, el) }
  */
 export function renderTimeline(host, o) {
     const now = o.now;
@@ -109,14 +111,35 @@ export function renderTimeline(host, o) {
             dur ? h("span", { class: "dur" }, fmtDur(dur)) : null,
         );
     });
-    // The track persists across the 4 Hz refresh so keyboard focus on a phase survives it.
+    // Track and histogram persist across the 4 Hz refresh so keyboard focus on a phase survives it.
     if (!host._track) {
         host._track = h("div", { class: "track" });
-        put(host, host._track);
+        host._hist = h("div", { class: "hist", role: "img" });
+        put(host, host._track, host._hist);
     }
     const focused = document.activeElement?.closest?.(".seg")?.dataset.phase;
     put(host._track, seg.length ? seg : h("span", { class: "muted" }, "No checkpoints yet"));
     if (focused) host._track.querySelector(`.seg[data-phase="${CSS.escape(focused)}"]`)?.focus();
+    const N = 72;
+    const from = Math.min(o.from ?? now, now - 60_000);
+    const b = buckets(o.events, { from, to: now, count: N });
+    const totals = new Array(N).fill(0);
+    for (const arr of b.values()) arr.forEach((v, i) => (totals[i] += v));
+    const mx = Math.max(1, ...totals);
+    const fronts = o.fronts ?? [];
+    const span = (now - from) / N;
+    const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    put(
+        host._hist,
+        totals.map((tot, i) =>
+            h(
+                "i",
+                tot ? { title: `${hhmm(from + i * span)}–${hhmm(from + (i + 1) * span)} · ${tot} line${tot === 1 ? "" : "s"} changed` } : {},
+                fronts.filter((f) => b.get(f.id)?.[i]).map((f) => h("b", { class: `f${f.color + 1}`, style: `height:${(b.get(f.id)[i] / mx) * 22}px` })),
+            ),
+        ),
+    );
+    host._hist.setAttribute("aria-label", `Edits over time by front, ${hhmm(from)} to now`);
 }
 
 export function fmtDur(ms) {
