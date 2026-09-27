@@ -44,20 +44,29 @@ function boot(theme) {
         sessionStorage.setItem(key, "1");
     } catch {}
     document.getElementById("boot")?.remove();
-    const el = h("div", { id: "boot", class: `b-${theme}`, "aria-hidden": "true", style: `--boot-ms:${theme === "future" ? 1500 : 1300}ms` }, BOOT[theme]());
+    const el = h("div", { id: "boot", class: `b-${theme}`, "aria-hidden": "true", style: `--boot-ms:${theme === "future" ? 1100 : 900}ms` }, BOOT[theme]());
+    const skip = () => el.remove();
+    el.addEventListener("pointerdown", skip); // a click or key skips it
+    addEventListener("keydown", skip, { once: true });
     document.body.append(el);
-    setTimeout(() => el.remove(), 2200);
+    setTimeout(skip, 1600);
 }
 function apply() {
     const root = document.documentElement;
     // Themes are for browser windows only; inside the Copilot app the app's own theme always wins.
     if (STANDALONE) {
         const prev = root.dataset.theme;
-        root.dataset.theme = settings.theme;
-        root.toggleAttribute("data-effects", settings.effects && !matchMedia("(prefers-reduced-motion: reduce)").matches);
-        if (prev !== settings.theme && prev !== undefined) root.classList.add("theme-switch");
-        if (settings.effects && BOOT[settings.theme]) boot(settings.theme);
-        setTimeout(() => root.classList.remove("theme-switch"), 400);
+        const set = () => {
+            root.dataset.theme = settings.theme;
+            // Effects are the theme's wallpapers and extras; reduced motion only stills their animation (themes.css).
+            root.toggleAttribute("data-effects", settings.effects);
+        };
+        const switching = prev !== undefined && (prev !== settings.theme || root.hasAttribute("data-effects") !== settings.effects);
+        // Switching: a quick crossfade where the browser can do it cheaply, otherwise instant. Never a boot screen.
+        if (switching && document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) document.startViewTransition(set);
+        else set();
+        // The boot screen is for opening a window in a retro theme, not for trying themes on.
+        if (prev === undefined && settings.effects && BOOT[settings.theme]) boot(settings.theme);
     }
     for (const fn of listeners) fn(settings);
     render();

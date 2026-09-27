@@ -39,8 +39,19 @@
     --purple-muted: rgba(171, 125, 248, 0.16);
     color-scheme: dark;
 }
-:root.theme-switch * {
-    transition: background-color 0.25s, color 0.25s, border-color 0.25s !important;
+/* Theme switches crossfade (view transitions), briefly. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.18s;
+}
+/* Reduced motion keeps every wallpaper and effect, but still. */
+@media (prefers-reduced-motion: reduce) {
+    :root[data-standalone][data-effects] #main,
+    :root[data-standalone][data-effects] #bar,
+    :root[data-standalone][data-effects] body::before,
+    :root[data-standalone][data-effects] body::after {
+        animation: none !important;
+    }
 }
 
 /* ---------------- Shared by Windows 3.0 and 95: square corners, bitmap-ish type, bevels ---------------- */
@@ -946,7 +957,7 @@
     z-index: 2147483600;
     display: grid;
     place-items: center;
-    pointer-events: none;
+    cursor: pointer;
     animation: boot-out 0.35s ease-in forwards;
     animation-delay: var(--boot-ms, 1400ms);
 }
@@ -1068,8 +1079,10 @@
     animation: hud-flicker 1.4s steps(1) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-    #boot {
-        display: none;
+    #boot,
+    #boot * {
+        animation-duration: 0.01s !important;
+        animation-delay: 0s !important;
     }
 }
 
