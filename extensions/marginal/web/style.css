@@ -5696,3 +5696,30 @@ body.prose-editing #center > :not(#edit-hint) {
 .chat-changes .chg.more {
     border: none;
 }
+
+/* List lines typed into a paragraph while editing ("- " or "1. " at a line start), drawn like the doc's list items. */
+.md [data-l].editing .ed-li {
+    position: relative;
+    display: block;
+    padding: 2px 0 2px 22px;
+}
+.md [data-l].editing .ed-li.ul::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: calc(2px + 0.8em - 2.5px);
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.7;
+}
+.md [data-l].editing .ed-li.ol::before {
+    content: attr(data-n) ".";
+    position: absolute;
+    left: 0;
+    width: 18px;
+    text-align: right;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}

@@ -14,6 +14,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- Editing converts Markdown as you type: `` `code` ``, `**bold**` and `*italic*` format when closed, and `- ` or `1. ` at the start of a line starts a list (Enter continues it, Enter on an empty item ends it, Backspace at its start undoes it).
+- The margin icons and the editing tools line up with what they act on: centred on it when it's shorter than they are, level with its top otherwise.
 - Copilot's live edits no longer scroll the page to where they happened. The changed part still flashes, the page keeps your place (even when text above you grows), and the doc chat lists the changes under the reply that made them: click one to go there, or to open a changed diagram step in Inspect.
 - Contents follows the doc's real nesting instead of flattening everything below the top level into one list. A **Levels** control (1, 2, 3, All; remembered) sets how deep it opens, each group folds with its ▸ (Alt-click folds or opens everything inside), folded groups show how many entries they hold, and jumping with Ctrl/⌘-J opens the groups above the target. The card is capped at about 60% of the window height and scrolls.
 

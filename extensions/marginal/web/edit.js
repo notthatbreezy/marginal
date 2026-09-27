@@ -44,7 +44,7 @@ export function hrefOf(a) {
 function collect(node, marks, out) {
     for (const n of node.childNodes) {
         if (n.nodeType === Node.TEXT_NODE) {
-            const t = n.data.replace(/\u00a0/g, " ").replace(/[\t\n\r ]+/g, " ");
+            const t = n.data.replace(/\u200b/g, "").replace(/\u00a0/g, " ").replace(/[\t\n\r ]+/g, " ");
             if (t) out.push({ t, ...marks });
             continue;
         }
@@ -55,7 +55,16 @@ function collect(node, marks, out) {
         else if (tag === "STRONG" || tag === "B") collect(n, { ...marks, b: true }, out);
         else if (tag === "EM" || tag === "I") collect(n, { ...marks, i: true }, out);
         else if (tag === "DEL" || tag === "S" || tag === "STRIKE") collect(n, { ...marks, s: true }, out);
-        else if (tag === "CODE") n.textContent && out.push({ t: n.textContent, ...marks, code: true });
+        else if (tag === "CODE") {
+            const t = n.textContent.replace(/\u200b/g, "");
+            if (t) out.push({ t, ...marks, code: true });
+        } else if (tag === "SPAN" && n.classList.contains("ed-li")) {
+            // A list line typed into a paragraph ("- " or "1. " at the start of a line).
+            if (out.length && !out.at(-1).br) out.push({ br: true });
+            out.push({ li: n.classList.contains("ol") ? "ol" : "ul" });
+            collect(n, marks, out);
+            out.push({ br: true });
+        }
         else if (tag === "A") collect(n, { ...marks, href: hrefOf(n) || undefined }, out);
         else if (tag === "DIV" || tag === "P") {
             if (out.length && !out.at(-1).br) out.push({ br: true });
@@ -130,13 +139,33 @@ export function inlineMd(node) {
     const paras = [[]];
     for (const r of runs) {
         if (r.br) paras.push([]);
-        else {
+        else if (r.li) {
+            if (paras.at(-1).length) paras.push([]);
+            paras.at(-1).li = r.li;
+        } else {
             const cur = paras.at(-1);
             if (cur.length && same(cur.at(-1), r) && !r.code) cur.at(-1).t += r.t;
             else cur.push({ ...r });
         }
     }
-    return paras.map(para).join(BR);
+    return paras.map((p) => (p.li && para(p).trim() ? (p.li === "ol" ? "1. " : "- ") : "") + para(p)).join(BR);
+}
+const LIST_LINE = /^([-*+]|\d+[.)]) /;
+/** Paragraph parts → Markdown: list lines next to each other form one list (numbered ones count up). */
+function joinParts(ps) {
+    let out = "";
+    let n = 0;
+    ps.forEach((p, i) => {
+        const kind = (x) => (LIST_LINE.test(x) ? (/^\d/.test(x) ? "ol" : "ul") : null);
+        const list = !!kind(p);
+        const prevList = i > 0 && kind(ps[i - 1]) === kind(p); // a bullet list and a numbered one stay separate lists
+        if (/^\d+[.)] /.test(p)) {
+            n = prevList && /^\d+[.)] /.test(ps[i - 1]) ? n + 1 : Number(/^\d+/.exec(p)[0]);
+            p = p.replace(/^\d+/, String(n));
+        }
+        out += (i ? (list && prevList ? "\n" : "\n\n") : "") + p;
+    });
+    return out;
 }
 const parts = (s) =>
     s
@@ -146,7 +175,7 @@ const parts = (s) =>
 
 /** The unit's new Markdown for its source lines ("" deletes them). `lines` are its original source lines. */
 export function unitMarkdown(el, kind, lines) {
-    if (kind === "p") return parts(inlineMd(el)).join("\n\n");
+    if (kind === "p") return joinParts(parts(inlineMd(el)));
     if (kind === "h") {
         const text = parts(inlineMd(el)).join(" ");
         return text ? `${"#".repeat(Number(el.tagName[1]))} ${text}` : "";
@@ -287,12 +316,17 @@ export function createProseEditor(o) {
     /** The toolbar sits in the margin at the top of the editing area being typed in, where the comment/copy icons were. */
     function place() {
         if (!active() || !focused) return;
-        const el = (focused.run ?? [focused])[0].el;
+        const run = focused.run ?? [focused];
+        const el = run[0].el;
         const col = el.closest(".md").getBoundingClientRect();
-        const r = el.getBoundingClientRect();
+        const first = el.getBoundingClientRect();
+        const last = run.at(-1).el.getBoundingClientRect();
+        const r = { top: first.top, height: last.bottom - first.top };
         const view = o.main.getBoundingClientRect();
         const hgt = bar.offsetHeight || 190;
-        const top = Math.max(view.top + 6, Math.min(r.top, view.bottom - hgt - 6));
+        // Centred on the area when the tools are taller than it, else level with its top; kept on screen.
+        const want = hgt > r.height ? r.top + (r.height - hgt) / 2 : r.top;
+        const top = Math.max(view.top + 6, Math.min(want, view.bottom - hgt - 6));
         bar.style.left = `${Math.min(col.right + 18, view.right - 40)}px`;
         bar.style.top = `${top}px`;
         if (!pop.hidden) placePop();
@@ -463,6 +497,19 @@ export function createProseEditor(o) {
                 return openLink();
             }
             if (mod && ["u", "U"].includes(e.key)) e.preventDefault(); // no underline in Markdown
+            const li = listLineAtCaret();
+            if (li && inUnit.el.contains(li) && e.key === "Backspace" && atLineStart(li)) {
+                e.preventDefault();
+                unlist(li);
+                renumber();
+                return;
+            }
+            if (e.key === "Enter" && !mod && li && inUnit.el.contains(li)) {
+                e.preventDefault();
+                enterInList(li);
+                renumber();
+                return place();
+            }
             if (e.key === "Enter" && !mod) {
                 e.preventDefault();
                 if (inUnit.kind !== "h") document.execCommand("insertLineBreak"); // a new paragraph / item / quote line on save
@@ -485,7 +532,127 @@ export function createProseEditor(o) {
     o.main.addEventListener("scroll", () => active() && place(), { passive: true });
     addEventListener("resize", () => active() && place());
     new ResizeObserver(() => active() && place()).observe(o.main);
-    o.main.addEventListener("input", () => active() && place());
+    o.main.addEventListener("input", (e) => {
+        if (!active()) return;
+        const u = units.find((x) => x.el.contains(e.target));
+        if (u && e.inputType === "insertText") inputRules(u, e.data);
+        renumber();
+        place();
+    });
+
+    // ---- Markdown as you type: `code`, **bold**, *italic*, and "- " / "1. " at the start of a paragraph line ----
+    const ZW = "\u200b";
+    function caretText() {
+        const s = getSelection();
+        if (!s?.rangeCount || !s.isCollapsed) return null;
+        const node = s.anchorNode;
+        return node?.nodeType === Node.TEXT_NODE ? { node, off: s.anchorOffset } : null;
+    }
+    function caretAt(node, off) {
+        const r = document.createRange();
+        r.setStart(node, off);
+        r.collapse(true);
+        const s = getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+    }
+    /** Replace the matched text before the caret with a formatting element holding its inner text. */
+    function wrapBefore(node, off, start, len, inner, tag) {
+        const after = node.data.slice(off);
+        node.data = node.data.slice(0, start);
+        const el = document.createElement(tag);
+        el.textContent = inner;
+        const rest = document.createTextNode(after || ZW);
+        node.after(el, rest);
+        caretAt(rest, after ? 0 : 1); // typing continues outside the new format
+    }
+    function inputRules(u, data) {
+        const at = caretText();
+        if (!at || at.node.parentElement?.closest("code")) return;
+        const { node, off } = at;
+        const before = node.data.slice(0, off).replace(/\u00a0/g, " ");
+        let m;
+        if (data === "`" && (m = /`([^`\u200b]+)`$/.exec(before))) return wrapBefore(node, off, m.index, m[0].length, m[1], "code");
+        if (data === "*" && (m = /\*\*([^*\s](?:[^*]*[^*\s])?)\*\*$/.exec(before))) return wrapBefore(node, off, m.index, m[0].length, m[1], "strong");
+        if (data === "*" && (m = /(^|[^*])\*([^*\s](?:[^*]*[^*\s])?)\*$/.exec(before))) return wrapBefore(node, off, m.index + m[1].length, m[0].length - m[1].length, m[2], "em");
+        if (data === " " && u.kind === "p" && node.parentNode === u.el && (m = /^([-*+]|(\d+)[.)]) $/.exec(before.replace(/\u200b/g, "")))) {
+            const prev = node.previousSibling;
+            if (prev && prev.nodeName !== "BR" && !prev.classList?.contains("ed-li")) return;
+            startListLine(u, node, off, m[2] ? "ol" : "ul");
+        }
+    }
+    /** Turn the caret's line into a list line: a block inside the paragraph, bulleted or numbered. */
+    function startListLine(u, node, off, kind) {
+        const li = document.createElement("span");
+        li.className = `ed-li ${kind}`;
+        const rest = node.data.slice(off);
+        const prev = node.previousSibling;
+        node.replaceWith(li);
+        if (prev?.nodeName === "BR") prev.remove(); // the block starts its own line
+        li.append(document.createTextNode(rest || ZW));
+        // The rest of the line moves in; the break that ended it isn't needed after a block.
+        while (li.nextSibling && li.nextSibling.nodeName !== "BR" && !li.nextSibling.classList?.contains("ed-li")) li.append(li.nextSibling);
+        if (li.nextSibling?.nodeName === "BR") li.nextSibling.remove();
+        caretAt(li.firstChild, rest ? 0 : 1);
+    }
+    const listLineAtCaret = () => {
+        const s = getSelection();
+        const n = s?.anchorNode;
+        return (n?.nodeType === Node.ELEMENT_NODE ? n : n?.parentElement)?.closest?.("span.ed-li") ?? null;
+    };
+    const textOf = (el) => el.textContent.replace(/\u200b/g, "");
+    /** Enter in a list line: a new line of the same list, or (on an empty line) the end of the list. */
+    function enterInList(li) {
+        if (!textOf(li).trim()) {
+            const t = document.createTextNode(ZW);
+            li.replaceWith(t);
+            caretAt(t, 1);
+            return;
+        }
+        const s = getSelection();
+        const r = s.getRangeAt(0).cloneRange();
+        r.setEnd(li, li.childNodes.length);
+        const tail = r.extractContents();
+        const next = document.createElement("span");
+        next.className = li.className;
+        next.append(tail);
+        if (!textOf(next)) next.replaceChildren(document.createTextNode(ZW));
+        li.after(next);
+        if (!li.childNodes.length || !textOf(li)) li.append(document.createTextNode(ZW));
+        let first = next.firstChild;
+        while (first && first.nodeType !== Node.TEXT_NODE) first = first.firstChild ?? first.nextSibling;
+        if (first) caretAt(first, first.data.startsWith(ZW) ? 1 : 0);
+    }
+    /** Backspace at the start of a list line turns it back into plain text. */
+    function unlist(li) {
+        const prev = li.previousSibling;
+        const kids = [...li.childNodes];
+        if (!kids.length) kids.push(document.createTextNode(ZW));
+        const needBreak = prev && prev.nodeName !== "BR" && !prev.classList?.contains("ed-li") && (prev.nodeType !== Node.TEXT_NODE || prev.data.replace(/\u200b/g, "").trim());
+        li.replaceWith(...(needBreak ? [document.createElement("br")] : []), ...kids);
+        let first = kids[0];
+        while (first && first.nodeType !== Node.TEXT_NODE) first = first.firstChild;
+        if (first) caretAt(first, 0);
+    }
+    const atLineStart = (li) => {
+        const s = getSelection();
+        if (!s?.rangeCount || !s.isCollapsed) return false;
+        const r = document.createRange();
+        r.setStart(li, 0);
+        r.setEnd(s.anchorNode, s.anchorOffset);
+        return !r.toString().replace(/\u200b/g, "");
+    };
+    /** Numbered lines count up within each run of them. */
+    function renumber() {
+        for (const u of units) {
+            let n = 0;
+            for (const k of u.el.childNodes) {
+                if (k.classList?.contains("ed-li")) n = k.classList.contains("ol") ? n + 1 : 0;
+                else if (k.nodeType !== Node.TEXT_NODE || k.data.replace(/\u200b/g, "").trim()) n = 0;
+                if (k.classList?.contains("ol")) k.dataset.n = n;
+            }
+        }
+    }
 
     // ---- finish ----
     let saving = false;

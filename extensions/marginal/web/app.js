@@ -1955,13 +1955,16 @@ function placeGutter(el) {
     const column = { right: Math.max(col.right, el.matches("table") ? r.right : -Infinity) };
     const view = (panel ? $("#peek-body") : $("#main")).getBoundingClientRect();
     if (r.bottom < view.top || r.top > view.bottom) return hideGutter();
-    // Align with the unit's first line (or a frame's header), in a column just outside it.
-    const top = Math.max(view.top + 4, Math.min(r.top + (el.dataset.l ? 2 : 4), view.bottom - 60));
     gutter.style.left = `${Math.min(column.right + (el.dataset.l ? 22 : panel ? 8 : 14), view.right - 34)}px`;
-    gutter.style.top = `${top}px`;
     gutter.hidden = false;
     gutterState.placedFor = el;
-    updateGutterMode();
+    updateGutterMode(); // decides which icons show, so measure after
+    gutter.style.top = `${alignTo(r, gutter.offsetHeight, view, el.dataset.l ? 2 : 4)}px`;
+}
+/** Margin icons line up with what they act on: at its top when it's taller than they are, centred on it when not. */
+function alignTo(r, height, view, inset = 0) {
+    const top = height > r.height ? r.top + (r.height - height) / 2 : r.top + inset;
+    return Math.max(view.top + 4, Math.min(top, view.bottom - height - 4));
 }
 
 function setGutterTitles(el) {
