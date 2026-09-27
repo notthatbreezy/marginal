@@ -3,6 +3,7 @@ import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdo
 import { createStepper } from "./stepper.js";
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
 import { createToc } from "./toc.js";
+import { createTables } from "./tables.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 
@@ -19,6 +20,7 @@ const state = {
 };
 const sourceCache = new Map();
 let toc = null; // Contents card + Ctrl/⌘-J jump palette (created at boot, below)
+let tables = null; // table width modes + column resizing (created at boot, below)
 
 
 // ---------------- source fetch + code listing ----------------
@@ -990,6 +992,7 @@ function renderBoard() {
     animate = animate ?? null;
     for (const b of doc.content) container.append(renderBlock(b));
     main.replaceChildren(container);
+    tables?.enhance(); // before restoring the scroll: wide tables change the page height
     main.scrollTop = prevScroll;
     toc?.rebuild();
     if (animate?.scrollTo) {
@@ -1728,6 +1731,12 @@ const gutter = $("#gutter");
 const gComment = $("#g-comment");
 const gCopy = $("#g-copy");
 const gutterState = { unit: null, selection: null }; // unit: element with data-l; selection: selected text
+const gWidth = $("#g-width");
+gWidth.onclick = (e) => {
+    e.stopPropagation();
+    const t = gutterState.unit ?? gutterState.placedFor;
+    if (t?.matches("table")) tables?.toggleMenu(t, gutter);
+};
 let lastPointer = null;
 
 function findBlock(list, id) {
@@ -1756,8 +1765,9 @@ function unitSource(el) {
 function placeGutter(el) {
     // Prose aligns to its text column; a block aligns to its visible frame (a callout is narrower than its wrapper).
     const box = el.dataset.l ? el : (el.firstElementChild ?? el);
-    const column = (el.dataset.l ? el.closest(".md") : box).getBoundingClientRect();
     const r = box.getBoundingClientRect();
+    const col = (el.dataset.l ? el.closest(".md") : box).getBoundingClientRect();
+    const column = { right: Math.max(col.right, el.matches("table") ? r.right : -Infinity) };
     const view = $("#main").getBoundingClientRect();
     if (r.bottom < view.top || r.top > view.bottom) return hideGutter();
     // Align with the unit's first line (or a frame's header), in a column just outside it.
@@ -1810,6 +1820,7 @@ function gutterToNearestPick(y) {
 }
 
 function hideGutter() {
+    tables?.closeMenu();
     gutter.hidden = true;
     gutterState.unit?.classList.remove("unit-hover");
     gutterState.unit = null;
@@ -1833,7 +1844,7 @@ function inCorridor(x, y) {
 // The hover zone of a unit extends right through the margin to the far edge of the icons.
 const GUTTER_REACH = 22 + 26 + 6; // gap + button + slack
 function unitNearMargin(x, y) {
-    const columns = document.querySelectorAll("#main .md, #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider) > :first-child");
+    const columns = document.querySelectorAll("#main .md, #main .md table.tw-out, #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider) > :first-child");
     for (const col of columns) {
         const r = col.getBoundingClientRect();
         if (y < r.top || y > r.bottom || x <= r.right || x > r.right + GUTTER_REACH) continue;
@@ -1849,6 +1860,7 @@ document.addEventListener(
     (e) => {
         lastPointer = { x: e.clientX, y: e.clientY };
         if (gutterState.selection || e.buttons) return; // hold still while selecting or dragging
+        if (tables?.isGrip(e.target) || tables?.menuOpen()) return; // a column border or the width menu keeps its table
         const el = unitAt(e.target) ?? (e.target.closest?.("#gutter") ? null : unitNearMargin(e.clientX, e.clientY));
         if (el) setUnit(el);
         else if (!e.target.closest?.("#gutter") && !inCorridor(e.clientX, e.clientY)) {
@@ -1901,6 +1913,8 @@ function updateGutterMode() {
     const target = gutterState.unit ?? gutterState.placedFor;
     const pickMode = modHeld && !!target?.isConnected && !gutterState.selection;
     gComment.hidden = gCopy.hidden = pickMode;
+    gWidth.hidden = pickMode || !!gutterState.selection || !target?.matches?.("table");
+    if (gWidth.hidden) tables?.closeMenu();
     gPick.hidden = !pickMode;
     if (!pickMode) return;
     const picked = picks.has(keyOf(target));
@@ -2398,6 +2412,14 @@ toc = createToc({
         await render();
     },
     blocked: () => !!tour.root || !!document.querySelector(".stepper"),
+});
+
+tables = createTables({
+    main: $("#main"),
+    docId: () => state.documentId,
+    onLayout: (t) => {
+        if (gutterState.unit === t || gutterState.placedFor === t) placeGutter(t);
+    },
 });
 
 // ---------------- services for feature modules (Command tab) ----------------

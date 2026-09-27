@@ -5200,3 +5200,112 @@ body:has(#tour) #toc {
     text-decoration: underline;
     text-decoration-color: var(--border);
 }
+
+/* ---------- table width: text column / wide / full, plus draggable column borders ---------- */
+.md table.tw-out {
+    display: table;
+    width: var(--tw);
+    max-width: none;
+    margin-left: calc((100% - var(--tw)) / 2);
+    margin-right: 0;
+}
+.md table.tw-cols {
+    display: table;
+    table-layout: fixed;
+    width: var(--tw, 100%);
+}
+.md table.tw-cols th,
+.md table.tw-cols td {
+    overflow-wrap: anywhere;
+}
+#col-grip {
+    position: fixed;
+    z-index: 7;
+    width: 9px;
+    cursor: col-resize;
+    touch-action: none;
+}
+#col-grip::after {
+    content: "";
+    position: absolute;
+    left: 3.5px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--blue) 55%, transparent);
+}
+#col-grip.dragging::after {
+    background: var(--blue);
+}
+html.col-resizing,
+html.col-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+#gutter #g-width[aria-expanded="true"],
+#gutter:has(#tw-menu:not([hidden])) #g-width {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+#tw-menu {
+    position: absolute;
+    top: 0;
+    right: calc(100% + 6px);
+    min-width: 188px;
+    padding: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.06);
+    animation: fadein 0.12s ease-out;
+}
+#gutter #tw-menu button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    height: auto;
+    padding: 5px 8px;
+    border-radius: 6px;
+    color: var(--fg);
+    font-size: 12.5px;
+    line-height: 18px;
+    text-align: left;
+}
+#gutter #tw-menu button:hover,
+#gutter #tw-menu button:focus-visible {
+    background: var(--surface-2);
+    outline: none;
+}
+#gutter #tw-menu button.on {
+    color: var(--blue);
+    background: var(--blue-muted);
+}
+.tw-ic {
+    display: grid;
+    flex: none;
+    width: 14px;
+}
+.tw-l {
+    flex: 1;
+}
+.tw-auto {
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    color: var(--muted);
+    background: var(--surface-2);
+}
+.tw-sep {
+    height: 1px;
+    margin: 4px 2px;
+    background: var(--border);
+}
+.tw-hint {
+    margin-top: 4px;
+    padding: 6px 8px 3px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+}
