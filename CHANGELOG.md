@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-27
+
 ### Removed
 
 - Replay on the Command timeline: scrubbing the histogram, its playhead and Live button, the phase menu's Replay items, and the replay time in Command chat focus. The histogram stays, read-only (hover a bar for its time and edit count); walkthroughs cover looking back.
