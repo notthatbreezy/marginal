@@ -6,6 +6,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Added
 
+- **Clear** in the chat's bar tidies its view once you've moved on (for example, to the next walkthrough stop): the messages leave the screen but the conversation continues, and a "Show earlier messages" line brings them back. Only you clear it; nothing clears on its own, and a reply in progress or a suggestion awaiting Apply stays.
 - **Patch edits** for the agent: `patch {targetId, ops}` changes part of a long block's text (`{find, replace}`, or `{lines:[from, to], text, expect?}` against `read {targetId, lines:true}`) instead of resending the whole block.
 - **`baseVersion`** on any edit: it's refused, with nothing saved, if its target changed since that version (for example, you edited it in place), and the error says by whom. Edits to other parts of the doc still go through.
 - **`changes {sinceVersion}`**: what changed since a version (each element added, removed, moved or modified, Markdown with a line diff, and whose version it was), so the agent needn't re-read the doc. When you edit prose in place, Copilot's next chat message now carries the diff itself when it's small.
@@ -14,6 +15,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The chat docked in a walkthrough or tour takes at most half of its column, so the stop list stays in view; its messages scroll.
 - Friendlier schema: a child that is only Markdown may leave out `type` (anything else gets "missing type" with an example), `update` ignores an unchanged `id`/`type` in `changes`, and plan `expects` accept `{path}` / `{glob}` objects as well as strings.
 - Your in-place prose saves follow their text when Copilot changed other lines of the same block meanwhile (a patch above them shifts line numbers); only text that itself changed is refused.
 - The agent is told that right after an extension reload a canvas action can briefly fail with "provider … not connected", and to retry rather than reopen the canvas.

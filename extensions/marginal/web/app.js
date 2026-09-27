@@ -1463,6 +1463,7 @@ function endThread() {
     chat.bubbles.clear();
     chat.suggestions?.clear();
     chat.suggestionActs?.clear();
+    chat.hiddenLog = [];
     if (state.preview) closePreview();
     chatLog.replaceChildren();
     fitHeight();
@@ -1781,7 +1782,7 @@ function fitHeight() {
 }
 function track(handle, onMove) {
     handle.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest("#chat-close, #chat-min")) return;
+        if (e.button !== 0 || e.target.closest("#chat-close, #chat-min, #chat-clear")) return;
         e.preventDefault();
         handle.setPointerCapture(e.pointerId);
         const start = { x: e.clientX, y: e.clientY, ...anchor() };
@@ -2135,6 +2136,43 @@ function targetElement(t) {
     const block = t.blockId && document.querySelector(`#main .block[data-id="${CSS.escape(t.blockId)}"]`);
     return (t.unit && block?.querySelector(`.md [data-l="${t.unit}"]`)) || block || null;
 }
+
+// ---- Clear: tidy the chat's view (the conversation itself goes on); earlier messages can be shown again ----
+const chatClear = $("#chat-clear");
+function syncClear() {
+    const has = [...chatLog.children].some((el) => keepOnClear(el) === false);
+    chatClear.hidden = !has;
+    chatClear.disabled = !!chat.statusEl; // not mid-reply
+}
+/** What Clear leaves: the reply in progress, and suggestions still waiting for Apply or Dismiss. */
+const keepOnClear = (el) => el === chat.statusEl || el.classList.contains("chat-earlier") || (el.classList.contains("chat-suggest") && !!el.querySelector("button:not(:disabled)"));
+function clearChatView() {
+    if (chat.statusEl) return;
+    const gone = [...chatLog.children].filter((el) => !keepOnClear(el));
+    if (!gone.length) return;
+    chat.hiddenLog ??= [];
+    chat.hiddenLog.push(...gone);
+    for (const el of gone) el.remove();
+    let more = chatLog.querySelector(".chat-earlier");
+    if (!more) {
+        more = h("button", { class: "chat-earlier", title: "Put the cleared messages back", onclick: () => showEarlierChat() });
+        chatLog.prepend(more);
+    }
+    more.textContent = `Show ${chat.hiddenLog.filter((el) => el.matches(".chat-msg")).length} earlier message${chat.hiddenLog.filter((el) => el.matches(".chat-msg")).length === 1 ? "" : "s"}`;
+    syncClear();
+    fitHeight();
+}
+function showEarlierChat() {
+    const more = chatLog.querySelector(".chat-earlier");
+    if (more) more.after(...(chat.hiddenLog ?? []));
+    more?.remove();
+    chat.hiddenLog = [];
+    syncClear();
+    scrollChat();
+}
+chatClear.onclick = clearChatView;
+chatClear.addEventListener("mousedown", (e) => e.preventDefault()); // keep the caret in the input
+new MutationObserver(syncClear).observe(chatLog, { childList: true });
 
 function autosize() {
     chatText.style.height = "auto";
