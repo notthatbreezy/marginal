@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-27
+
 ### Added
 
 - Fronts have stages: planned, implementing, review, blocked and complete. The orchestrator declares every front the plan needs up front (`command_front {op:"plan"}`), shown as planned until its worktree is registered; the rail lists fronts by stage and the header counts each. The old `active`/`done` names are still accepted and read.
