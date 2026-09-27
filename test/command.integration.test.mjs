@@ -123,6 +123,21 @@ test("front registration validates worktrees", async () => {
     assert.equal(missing.issues[0].code, "worktree_not_repo");
     assert.ok((await call("command_front", { op: "register", id: "runner", label: "runner-retry", worktree: wt1 })).ok);
     assert.ok((await call("command_front", { op: "register", id: "tests", label: "tests", worktree: wt2 })).ok);
+    // Planned fronts: declared without worktrees, can't start working without one, pick one up on register.
+    const planned = await call("command_front", { op: "plan", fronts: [{ id: "later", label: "later", note: "after P1" }, { id: "tests", label: "tests" }] });
+    assert.ok(planned.ok, JSON.stringify(planned));
+    const st0 = readState(doc.documentId);
+    assert.equal(st0.fronts.find((f) => f.id === "later").status, "planned");
+    assert.equal(st0.fronts.find((f) => f.id === "later").worktree, undefined);
+    assert.equal(st0.fronts.find((f) => f.id === "tests").status, "implementing", "an existing front keeps its stage");
+    const early = await call("command_front", { op: "status", id: "later", status: "implementing" });
+    assert.equal(early.ok, false);
+    assert.equal(early.issues[0].code, "worktree_required");
+    assert.ok((await call("command_front", { op: "status", id: "later", status: "blocked", note: "waiting on P1" })).ok, "a planned front can be blocked");
+    assert.ok((await call("command_front", { op: "status", id: "runner", status: "active" })).ok, "old names still accepted");
+    assert.equal(readState(doc.documentId).fronts.find((f) => f.id === "runner").status, "implementing");
+    assert.ok((await call("command_front", { op: "status", id: "runner", status: "review" })).ok);
+    assert.ok((await call("command_front", { op: "remove", id: "later" })).ok);
     const dup = await call("command_front", { op: "register", id: "runner2", label: "dup", worktree: wt1 });
     assert.equal(dup.issues[0].code, "duplicate_worktree");
     const st = readState(doc.documentId);

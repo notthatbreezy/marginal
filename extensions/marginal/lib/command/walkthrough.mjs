@@ -67,6 +67,7 @@ export async function resolveRef(r, v, path, { state, repo } = {}) {
         if (!front) return null;
         try {
             // No ref yet: callers pin the commit (keepRef) only once their whole request has validated.
+            if (!front.worktree) return void issues.add(`${path}.frontId`, "ref_unresolvable", `front "${frontId}" is still planned (no worktree)`);
             const snap = await snapshotWorktree(front.worktree, { message: `marginal live snapshot ${frontId}` });
             return { sha: snap.sha, label: `live · ${front.label}`, live: true };
         } catch (e) {

@@ -403,6 +403,10 @@ function frontRows(st, changes) {
 }
 
 function whereOf(plan, frontId) {
+    // A front that hasn't started: which checkpoint it's planned for.
+    const planned = (plan?.phases ?? []).find((ph) => ph.state.status !== "done" && ph.state.status !== "active" && (ph.state.frontIds ?? []).includes(frontId));
+    const active = (plan?.phases ?? []).some((ph) => ph.state.status === "active" && (ph.state.frontIds ?? []).includes(frontId));
+    if (planned && !active) return { phase: `Planned for ${planned.id.toUpperCase()} · ${planned.title ?? planned.id}` };
     for (const ph of plan?.phases ?? []) {
         if (ph.state.status !== "active") continue;
         const step = ph.steps.find((s) => s.state.status === "active" && s.state.frontId === frontId);

@@ -153,6 +153,7 @@ const holdsLease = (docId) => {
 };
 
 export function startPolling(docId, front, { cadence = CADENCE } = {}) {
+    if (!front?.worktree) return null; // a planned front has nothing to watch yet
     const key = `${docId}\0${front.id}`;
     if (loops.has(key)) return loops.get(key);
     const loop = { docId, frontId: front.id, prev: null, base: null, running: false, again: false, stopped: false, timer: null, lastChange: 0, delay: cadence.fast, finalDone: false };
@@ -199,8 +200,8 @@ export async function pollOnce(loop) {
     if (!holdsLease(loop.docId)) return stopAll(loop.docId);
     const state = readState(loop.docId);
     const front = state.fronts.find((f) => f.id === loop.frontId);
-    if (!front || !state.plan) return stopPolling(loop.docId, loop.frontId);
-    if (front.status === "done" && loop.finalDone) return;
+    if (!front || !state.plan || !front.worktree) return stopPolling(loop.docId, loop.frontId);
+    if (front.status === "complete" && loop.finalDone) return;
     const info = await effectiveBase(front.worktree, state.plan.base);
     if (!info) return;
     const next = await observe(front.worktree, info.base);
@@ -217,14 +218,16 @@ export async function pollOnce(loop) {
     const firstEver = loop.prev === null && !eventsSince(loop.docId, since).some((e) => e.frontId === front.id);
     const initial = firstEver || rebased;
     const prev = loop.prev ?? totalsFromLog(loop.docId, front.id, since);
-    const events = computeEvents({ prev, next, frontId: front.id, plan: state.plan, at: new Date().toISOString(), initial });
+    // The git calls take a while; attribute against the plan as it is now (a phase may have started meanwhile).
+    const plan = readState(loop.docId).plan ?? state.plan;
+    const events = computeEvents({ prev, next, frontId: front.id, plan, at: new Date().toISOString(), initial });
     loop.prev = next;
     loop.base = info.base;
     if (events.length) {
         appendEvents(loop.docId, events);
         if (!initial) loop.lastChange = Date.now();
     }
-    if (front.status === "done") loop.finalDone = true; // one final observation, then pause
+    if (front.status === "complete") loop.finalDone = true; // one final observation, then pause
 }
 
 export function stopPolling(docId, frontId) {

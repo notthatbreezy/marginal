@@ -41,7 +41,7 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 ![The Command center](docs/images/command-center.png)
 
 - **Territory map:** every file in the repository, sized by lines of code. Changed files take their worktree's colour and warm with churn, and a ring pings on each change. Dashed outlines show the plan's footprint and blue shows the active checkpoint. Edits outside the plan get a yellow hatch.
-- **Fronts:** one per worktree, attributed by watching git, never by agent self-report. Each has its status, place in the plan, recent pace and off-plan count.
+- **Fronts:** one per worktree, attributed by watching git, never by agent self-report. The orchestrator lists every planned front up front, so you see the whole team before most of it starts. Each has a stage (planned, implementing, in review, blocked with a reason, complete), place in the plan, recent pace and off-plan count.
 - **Checkpoints and replay:** the plan's phases on a timeline. Scrub the histogram to see the map as it was at any moment.
 - **Views, follow, pins and monitors:** the agent can suggest a view per checkpoint, and it applies automatically while you follow. You can pin areas to draw them 3× larger, or open live diff-feed monitors on folders.
 - **Checkpoint walkthroughs:** ask "walk me through the last checkpoint" to get a stepper with one stop per idea, each with its diff. The map zooms and badges each stop's files. The Command chat docks under the walkthrough, and Copilot revises or expands stops in place when you ask about them.

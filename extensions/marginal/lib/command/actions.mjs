@@ -6,7 +6,7 @@ import { isAbsolute, resolve } from "node:path";
 import { gitOut } from "./gitx.mjs";
 import { Issues, listHint } from "./issues.mjs";
 import { locIndex } from "./loc.mjs";
-import { FRONT_COLORS, FRONT_STATUS, LIMITS, MISSION_STATUS, PHASE_STATUS, Reader, findPhase, findStep, frontIdsHint, parsePlan, parseViewSpec, phaseIdsHint, stepIdsHint } from "./model.mjs";
+import { FRONT_COLORS, FRONT_STATUS, WORKING_STATUS, frontStatus, LIMITS, MISSION_STATUS, PHASE_STATUS, Reader, findPhase, findStep, frontIdsHint, parsePlan, parseViewSpec, phaseIdsHint, stepIdsHint } from "./model.mjs";
 import { claim, isOwner, readLease } from "./owner.mjs";
 import { refFor, snapshotWorktree } from "./snapshot.mjs";
 import { isPresentChange, offPlanMatcher, planPatterns } from "./patterns.mjs";
@@ -15,7 +15,7 @@ import { appendEvents, eventsSince, lastSeq, readPrefs, readState, writeState } 
 import { commandDiff, commandWalkthrough } from "./walkthrough.mjs";
 
 const now = () => new Date().toISOString();
-const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+const samePath = (a, b) => !!a && !!b && (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
 
 async function commonDir(dir) {
     const out = await gitOut(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"], { kind: "rev-parse" });
@@ -105,7 +105,9 @@ export async function commandPlan(input, ctx) {
         let checkpoint = null;
         if (status === "done") {
             const fronts = frontIds ?? phase.state.frontIds ?? [];
-            const frontId = fronts.find((f) => state.fronts.some((x) => x.id === f));
+            // Attribute to a front that has a worktree when it has to be snapshotted.
+            const known = fronts.filter((f) => state.fronts.some((x) => x.id === f));
+            const frontId = commit ? known[0] : (known.find((f) => state.fronts.find((x) => x.id === f)?.worktree) ?? known[0]);
             if (!frontId) {
                 issues.add("frontIds", "required", `phase "${phaseId}" has no front to attribute its checkpoint to`, `pass frontIds (${frontIdsHint(state.fronts)})`);
                 return issues.result();
@@ -113,6 +115,10 @@ export async function commandPlan(input, ctx) {
             if (commit) checkpoint = { source: "commit", sha: commit, frontId };
             else {
                 const front = state.fronts.find((f) => f.id === frontId);
+                if (!front.worktree) {
+                    issues.add("commit", "required", `front "${frontId}" is still planned (no worktree to snapshot)`, "pass commit, or register the front's worktree first");
+                    return issues.result();
+                }
                 const ref = refFor(docId, phaseId);
                 try {
                     const snap = await snapshotWorktree(front.worktree, { message: `marginal checkpoint ${state.plan.id}/${phaseId}`, ref });
@@ -158,19 +164,49 @@ export async function commandPlan(input, ctx) {
 // ---------- command_front ----------
 export async function commandFront(input, ctx) {
     const r = new Reader(new Issues());
-    const op = r.enumOf(input.op, "op", ["register", "status", "remove", "list"]);
+    const op = r.enumOf(input.op, "op", ["plan", "register", "status", "remove", "list"]);
     if (!r.issues.ok) return r.issues.result();
     const { docId, repo } = ctx;
     if (op === "list") return { ok: true, fronts: readState(docId).fronts };
     if (!isOwner(docId, ctx.sessionId)) return notOwner(docId, "Command state");
     const state = readState(docId);
     const issues = r.issues;
+    const colorFor = (s) => {
+        const used = new Set(s.fronts.map((x) => x.color));
+        return [...Array(FRONT_COLORS).keys()].find((c) => !used.has(c)) ?? s.fronts.length % FRONT_COLORS;
+    };
+
+    // Declare the fronts the plan will need, before any has a worktree. Existing fronts keep their stage.
+    if (op === "plan") {
+        const list = r.arr(input.fronts, "fronts") ?? [];
+        if (!list.length) issues.add("fronts", "required", "fronts must list at least one {id, label}");
+        const items = list.map((x, i) => ({ id: r.id(x?.id, `fronts[${i}].id`), label: r.str(x?.label, `fronts[${i}].label`, { max: 60 }), note: r.str(x?.note, `fronts[${i}].note`, { required: false, max: 240 }) }));
+        const ids = items.map((x) => x.id).filter(Boolean);
+        if (new Set(ids).size !== ids.length) issues.add("fronts", "duplicate_id", "each planned front needs its own id");
+        const adding = ids.filter((id) => !state.fronts.some((f) => f.id === id)).length;
+        if (state.fronts.length + adding > LIMITS.fronts) issues.add("fronts", "too_many", `at most ${LIMITS.fronts} fronts`);
+        if (!issues.ok) return issues.result();
+        const next = writeState(docId, (s) => {
+            for (const it of items) {
+                const f = s.fronts.find((x) => x.id === it.id);
+                if (f) {
+                    f.label = it.label;
+                    if (it.note !== undefined) f.note = it.note;
+                } else s.fronts.push({ id: it.id, label: it.label, ...(it.note ? { note: it.note } : {}), color: colorFor(s), status: "planned", registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
+            }
+        });
+        return { ok: true, revision: next.revision, summary: `${items.length} front${items.length === 1 ? "" : "s"} planned (${adding} new); register each with a worktree when its work starts` };
+    }
 
     if (op === "register") {
         const id = r.id(input.id, "id");
         const label = r.str(input.label, "label", { max: 60 });
-        const worktree = r.str(input.worktree, "worktree", { max: 1000 });
+        const worktree = r.str(input.worktree, "worktree", { required: false, max: 1000 });
         const sessionId = r.str(input.sessionId, "sessionId", { required: false, max: 200 });
+        const wanted = input.status === undefined ? undefined : r.enumOf(frontStatus(input.status), "status", FRONT_STATUS);
+        const note = r.str(input.note, "note", { required: false, max: 240 });
+        const priorFront = id && state.fronts.find((f) => f.id === id);
+        if (!worktree && !priorFront?.worktree && WORKING_STATUS.has(wanted)) issues.add("worktree", "required", `a front needs a worktree to be ${wanted}`, 'pass worktree, or register it as status "planned" for now');
         let top = null;
         if (worktree) {
             if (!isAbsolute(worktree)) issues.add("worktree", "format", "worktree must be an absolute path");
@@ -188,22 +224,27 @@ export async function commandFront(input, ctx) {
         if (top && issues.ok) {
             const dup = state.fronts.find((f) => samePath(f.worktree, top) && f.id !== id);
             if (dup) issues.add("worktree", "duplicate_worktree", `${top} is already registered as front "${dup.id}"`, `edits can't be told apart in one worktree; register it once and name it for both, or remove "${dup.id}" first`);
-            if (existing && !samePath(existing.worktree, top)) issues.add("id", "duplicate_id", `front "${id}" is already registered for ${existing.worktree}`, `choose another id, or remove "${id}" first`);
+            if (existing?.worktree && !samePath(existing.worktree, top)) issues.add("id", "duplicate_id", `front "${id}" is already registered for ${existing.worktree}`, `choose another id, or remove "${id}" first`);
         }
         if (!existing && state.fronts.length >= LIMITS.fronts) issues.add("id", "too_many", `at most ${LIMITS.fronts} fronts`);
         if (!issues.ok) return issues.result();
         const next = writeState(docId, (s) => {
             const f = s.fronts.find((x) => x.id === id);
-            if (f) Object.assign(f, { label, sessionId: sessionId ?? f.sessionId });
-            else {
-                const used = new Set(s.fronts.map((x) => x.color));
-                const color = [...Array(FRONT_COLORS).keys()].find((c) => !used.has(c)) ?? s.fronts.length % FRONT_COLORS;
+            // A worktree arriving for a planned front starts its work (unless a stage was given).
+            const stage = wanted ?? (top && (!f || f.status === "planned") ? "implementing" : (f?.status ?? "planned"));
+            if (f) {
+                const moved = f.status !== stage;
+                Object.assign(f, { label, sessionId: sessionId ?? f.sessionId, status: stage, ...(top ? { worktree: top } : {}), ...(moved ? { statusSince: now() } : {}) });
+                if (note !== undefined) f.note = note;
+                if (top && !existing.worktree) f.sinceSeq = lastSeq(docId);
+            } else {
                 // sinceSeq starts a new incarnation: a re-used id never inherits an earlier registration's baseline.
-                s.fronts.push({ id, label, worktree: top, ...(sessionId ? { sessionId } : {}), color, status: "active", registeredAt: now(), sinceSeq: lastSeq(docId) });
+                s.fronts.push({ id, label, ...(top ? { worktree: top } : {}), ...(sessionId ? { sessionId } : {}), ...(note ? { note } : {}), color: colorFor(s), status: stage, registeredAt: now(), statusSince: now(), sinceSeq: lastSeq(docId) });
             }
         });
-        if (next.plan) startPolling(docId, next.fronts.find((f) => f.id === id));
-        return { ok: true, revision: next.revision, summary: `front '${id}' ${existing ? "updated" : "registered"} at ${top}${next.plan ? "; polling" : "; polling starts once a plan is set"}` };
+        const saved = next.fronts.find((f) => f.id === id);
+        if (next.plan && saved.worktree) startPolling(docId, saved);
+        return { ok: true, revision: next.revision, summary: `front '${id}' ${existing ? "updated" : "registered"} as ${saved.status}${saved.worktree ? ` at ${saved.worktree}${next.plan ? "; polling" : "; polling starts once a plan is set"}` : " (no worktree yet)"}` };
     }
 
     const id = r.id(input.id, "id");
@@ -211,13 +252,14 @@ export async function commandFront(input, ctx) {
     if (id && !front) issues.add("id", "unknown_id", `no front "${id}"`, frontIdsHint(state.fronts));
 
     if (op === "status") {
-        const status = r.enumOf(input.status, "status", FRONT_STATUS);
+        const status = r.enumOf(frontStatus(input.status), "status", FRONT_STATUS);
         const note = r.str(input.note, "note", { required: false, max: 240 });
+        if (front && WORKING_STATUS.has(status) && !front.worktree) issues.add("status", "worktree_required", `front "${id}" has no worktree yet`, "register it with its worktree; that starts it as implementing");
         if (!issues.ok) return issues.result();
         const next = writeState(docId, (s) => {
             const f = s.fronts.find((x) => x.id === id);
+            if (f.status !== status) f.statusSince = now();
             f.status = status;
-            f.statusSince = now();
             if (note) f.note = note;
             else delete f.note;
         });

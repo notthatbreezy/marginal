@@ -4,7 +4,13 @@ import { classifyPattern, normalizeRepoPath } from "./patterns.mjs";
 import { ID_RE, listHint } from "./issues.mjs";
 
 export const LIMITS = { phases: 20, steps: 200, patterns: 2000, fronts: 16, stops: 40, rangesPerStop: 8, linesPerRange: 400, views: 50, monitors: 4, pins: 12 };
-export const FRONT_STATUS = ["active", "blocked", "done"];
+/** A front's stage. planned: declared up front, no worktree yet; implementing/review: work in its worktree. */
+export const FRONT_STATUS = ["planned", "implementing", "review", "blocked", "complete"];
+/** Earlier names, still accepted and read from older state files. */
+export const FRONT_STATUS_ALIASES = { active: "implementing", done: "complete" };
+export const frontStatus = (s) => FRONT_STATUS_ALIASES[s] ?? s;
+/** Stages that need a worktree (the canvas watches it). */
+export const WORKING_STATUS = new Set(["implementing", "review"]);
 export const PHASE_STATUS = ["pending", "active", "done"];
 export const MISSION_STATUS = ["working", "awaiting_operator", "complete"];
 export const FRONT_COLORS = 6; // palette size; colors resolved in CSS from tokens

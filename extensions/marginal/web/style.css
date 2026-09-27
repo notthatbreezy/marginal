@@ -5811,3 +5811,64 @@ body.prose-editing #center > :not(#edit-hint) {
     text-decoration: underline;
     background: transparent;
 }
+
+/* Front stages */
+.cc .st.implementing {
+    color: var(--purple);
+    background: var(--purple-muted);
+}
+.cc .st.review {
+    color: var(--blue);
+    background: var(--blue-muted);
+}
+.cc .st.planned {
+    color: var(--muted);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--border);
+}
+.cc .st.complete {
+    color: var(--green);
+    background: var(--green-muted);
+}
+.cc .st .eye {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+}
+.cc .front.s-planned .fdot {
+    background: transparent !important;
+    box-shadow: inset 0 0 0 1.5px var(--fc);
+}
+.cc .front.s-planned .lbl,
+.cc .front.s-complete .lbl {
+    color: var(--muted);
+}
+.cc .front .note:not(.why) {
+    color: var(--muted);
+}
+.cc .front .row3.muted {
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.cc .rail-h .n {
+    display: inline-flex;
+    gap: 8px;
+}
+.cc .rail-h .rc {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-variant-numeric: tabular-nums;
+}
+.cc .rail-h .rc i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+.cc .rail-h .rc.implementing i { background: var(--purple); }
+.cc .rail-h .rc.review i { background: var(--blue); }
+.cc .rail-h .rc.blocked i { background: var(--red); }
+.cc .rail-h .rc.planned i { box-shadow: inset 0 0 0 1.5px var(--muted); }
+.cc .rail-h .rc.complete i { background: var(--green); }

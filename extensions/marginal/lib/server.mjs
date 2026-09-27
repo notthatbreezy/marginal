@@ -174,7 +174,7 @@ export async function startServer({ chat, instances, getSessionId }) {
                     "4. Optionally add a suggestedView per phase with command_view.",
                     "5. If the goal is genuinely unclear, ask me one short question in this chat instead of guessing.",
                 ].join("\n"),
-                st.fronts.length ? `Fronts already registered: ${st.fronts.map((f) => `${f.id} (${f.worktree})`).join(", ")}.` : null,
+                st.fronts.length ? `Fronts already registered: ${st.fronts.map((f) => `${f.id} (${f.worktree ?? "planned, no worktree yet"})`).join(", ")}.` : null,
                 "(Reply in the Command chat popup: one or two sentences summarising the plan you set.)",
             ].filter(Boolean);
             const result = await chat.send({ instanceId: url.searchParams.get("instance") ?? "", prompt: lines.join("\n\n"), displayPrompt: `Initialize the command center${goal ? `: ${goal.slice(0, 300)}` : ""}\n\nCommand center on “${doc.title}”` });

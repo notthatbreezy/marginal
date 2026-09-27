@@ -22,7 +22,7 @@ Every `command_*` action validates its whole input first. On any problem it retu
 | Action | Ops |
 |---|---|
 | `command_plan` | `set {plan}` claims the lease and replaces the plan (states of surviving ids are kept) · `phase {phaseId, status, frontIds?, commit?}` · `step {stepId, status, frontId?}` · `read` |
-| `command_front` | `register {id, label, worktree}` · `status {id, status: active\|blocked\|done, note?}` · `remove {id}` · `list` |
+| `command_front` | `plan {fronts: [{id, label, note?}]}` (declare every front up front, as planned) · `register {id, label, worktree, status?, note?}` (a planned front becomes implementing) · `status {id, status: planned\|implementing\|review\|blocked\|complete, note?}` · `remove {id}` · `list` |
 | `command_view` | `set {view, phaseId?}` (with `phaseId` it becomes that phase's suggestion) · `apply {id}` · `remove {id}` · `list` |
 | `command_status` | `{status: working\|awaiting_operator\|complete, prompt?}`. This is a fallback; the lamp normally follows the session's own events. |
 | `command_diff` | `{from, to, format?: files\|patch, paths?, context?, maxBytes?}` over checkpoint refs: `{phaseId}` · `{sha}` · `{ref:"base"}` · `{ref:"live", frontId}` (a snapshot of that worktree now) |

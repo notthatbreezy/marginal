@@ -42,6 +42,9 @@ export function readState(docId) {
     if (hit && hit.mtimeMs === mtimeMs) return hit.state;
     try {
         const state = { ...emptyState(), ...JSON.parse(readFileSync(f, "utf8")) };
+        // Older files used active/done for fronts.
+        for (const fr of state.fronts ?? []) if (fr.status === "active") fr.status = "implementing";
+        else if (fr.status === "done") fr.status = "complete";
         stateCache.set(docId, { mtimeMs, state });
         return state;
     } catch {

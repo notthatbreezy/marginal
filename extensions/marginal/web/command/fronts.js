@@ -11,15 +11,26 @@ export function spark(values, w = 48, hgt = 14) {
 }
 
 /** fronts: [{front, add, del, files, offPlan, where:{phase, step}}]; opts: {focusId, onToggle, onHover, onAddChat, series: Map} */
+// Stages in the order the rail lists them: what's moving first, then what's waiting, then what's finished.
+export const STAGES = ["implementing", "review", "blocked", "planned", "complete"];
+const STAGE = {
+    implementing: { badge: () => [h("span", { class: "pulse" }), "Implementing"], count: "implementing" },
+    review: { badge: () => [h("span", { class: "eye", "aria-hidden": "true" }), "In review"], count: "in review" },
+    blocked: { badge: () => "Blocked", count: "blocked" },
+    planned: { badge: () => "Planned", count: "planned" },
+    complete: { badge: () => "✓ Complete", count: "complete" },
+};
+const stageOf = (s) => (s === "active" ? "implementing" : s === "done" ? "complete" : STAGE[s] ? s : "implementing");
+
 export function renderFronts(host, rows, opts) {
-    const counts = { active: 0, blocked: 0, done: 0 };
-    for (const r of rows) counts[r.front.status]++;
-    const label = [counts.active && `${counts.active} active`, counts.blocked && `${counts.blocked} blocked`, counts.done && `${counts.done} done`].filter(Boolean).join(" · ");
-    const status = { active: [h("span", { class: "pulse" }), "Active"], blocked: "Blocked", done: "✓ Done" };
+    rows = rows.map((r) => ({ ...r, stage: stageOf(r.front.status) })).sort((a, b) => STAGES.indexOf(a.stage) - STAGES.indexOf(b.stage));
+    const counts = Object.fromEntries(STAGES.map((s) => [s, 0]));
+    for (const r of rows) counts[r.stage]++;
+    const label = STAGES.filter((s) => counts[s]).map((s) => h("span", { class: `rc ${s}`, title: `${counts[s]} ${STAGE[s].count}` }, h("i"), counts[s]));
     const focused = document.activeElement?.closest?.(".front")?.dataset.front; // re-renders must not steal keyboard focus
     put(
         host,
-        h("div", { class: "rail-h" }, "Fronts", h("span", { class: "n" }, label || "none yet")),
+        h("div", { class: "rail-h" }, "Fronts", h("span", { class: "n" }, label.length ? label : "none yet")),
         rows.length
             ? h(
                   "ul",
@@ -29,7 +40,7 @@ export function renderFronts(host, rows, opts) {
                       const li = h(
                           "li",
                           {
-                              class: `front f${f.color + 1}${opts.focusId && opts.focusId !== f.id ? " dimmed" : ""}${opts.focusId === f.id ? " focused" : ""}`,
+                              class: `front f${f.color + 1} s-${r.stage}${opts.focusId && opts.focusId !== f.id ? " dimmed" : ""}${opts.focusId === f.id ? " focused" : ""}`,
                               tabindex: "0",
                               "aria-pressed": String(opts.focusId === f.id),
                               title: opts.focusId === f.id ? "Showing only this front on the map (click to show all)" : "Click to show only this front on the map",
@@ -39,18 +50,21 @@ export function renderFronts(host, rows, opts) {
                               onmouseenter: () => opts.onHover(f.id),
                               onmouseleave: () => opts.onHover(null),
                           },
-                          h("div", { class: "row1" }, h("span", { class: "fdot" }), h("span", { class: "lbl" }, f.label), h("span", { class: `st ${f.status}` }, status[f.status])),
+                          h("div", { class: "row1" }, h("span", { class: "fdot" }), h("span", { class: "lbl" }, f.label), h("span", { class: `st ${r.stage}`, title: f.statusSince ? `Since ${new Date(f.statusSince).toLocaleString()}` : null }, STAGE[r.stage].badge())),
                           r.where.phase || r.where.step ? h("div", { class: "where" }, r.where.phase ? h("b", {}, r.where.phase) : null, r.where.phase && r.where.step ? h("br") : null, r.where.step ?? null) : null,
-                          f.note ? h("div", { class: "note" }, f.note) : null,
+                          f.note ? h("div", { class: `note${r.stage === "blocked" ? " why" : ""}` }, f.note) : null,
                           f.baseDrift ? h("div", { class: "drift", title: "This worktree's HEAD no longer contains the plan base (rebased or merged); changes are measured from their merge-base." }, "⚠ base moved") : null,
-                          h("div", { class: "row3" }, h("span", { class: "add" }, `+${r.add}`), h("span", { class: "del" }, `−${r.del}`), h("span", { class: "files" }, `${r.files} file${r.files === 1 ? "" : "s"}`), f.status !== "done" && opts.series.get(f.id) ? spark(opts.series.get(f.id)) : null),
+                          // A planned front has no worktree yet, so nothing to count.
+                          r.stage === "planned" && !f.worktree
+                              ? h("div", { class: "row3 muted" }, "No worktree yet")
+                              : h("div", { class: "row3" }, h("span", { class: "add" }, `+${r.add}`), h("span", { class: "del" }, `−${r.del}`), h("span", { class: "files" }, `${r.files} file${r.files === 1 ? "" : "s"}`), r.stage !== "complete" && opts.series.get(f.id) ? spark(opts.series.get(f.id)) : null),
                           r.offPlan ? h("div", { class: "opc" }, h("span", { class: "hatch-swatch" }), `${r.offPlan} off-plan`) : null,
                           opts.onAddChat ? h("button", { class: "addchat", title: "Add front to chat", "aria-label": `Add ${f.label} to chat`, html: ADD_CHAT_SVG, onclick: () => opts.onAddChat(f.id) }) : null,
                       );
                       return li;
                   }),
               )
-            : h("p", { class: "rail-empty" }, "The orchestrator registers each worktree it edits as a front."),
+            : h("p", { class: "rail-empty" }, "The orchestrator lists the fronts it plans, then registers each one's worktree as its work starts."),
     );
     if (focused) host.querySelector(`.front[data-front="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }

@@ -14,6 +14,7 @@ export const ISSUE_CODES = [
     "path_not_in_diff",
     "range_out_of_bounds",
     "worktree_not_repo",
+    "worktree_required",
     "worktree_other_repo",
     "duplicate_worktree",
     "ref_unresolvable",
