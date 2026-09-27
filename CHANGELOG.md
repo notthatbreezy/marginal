@@ -4,6 +4,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- Comment (margin, top bar or selection button) always leaves the caret in the chat input, whether the chat was already open or not, so you can start typing right away.
+
 ### Changed
 
 - Contents follows the doc's real nesting instead of flattening everything below the top level into one list. A **Levels** control (1, 2, 3, All; remembered) sets how deep it opens, each group folds with its ▸ (Alt-click folds or opens everything inside), folded groups show how many entries they hold, and jumping with Ctrl/⌘-J opens the groups above the target. The card is capped at about 60% of the window height and scrolls.

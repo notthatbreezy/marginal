@@ -1370,7 +1370,7 @@ function openChat(ctx) {
         svc.onCommandChatOpen?.();
         markAsking(); // clears any doc-side marks and relabels the bar for the Command chat
         fitHeight();
-        if (!chat.blocked) chatText.focus();
+        if (!chat.blocked) focusChatInput();
         svc.onFocusChange?.(chat.focus);
         return;
     }
@@ -1394,8 +1394,29 @@ function openChat(ctx) {
     if (!peekEl.hidden) keepChatClear(peekEl.getBoundingClientRect().width);
     markAsking();
     fitHeight();
-    chatText.focus();
+    focusChatInput();
 }
+
+/** Put the caret in the chat input, ready to type. In the Copilot app's panel the click that opened the chat can
+ *  land focus back on the page after we set it, so re-assert it once the click has settled (unless the reader has
+ *  since moved focus somewhere real). */
+function focusChatInput() {
+    if (chatText.disabled || chatBox.hidden) return;
+    const put = () => {
+        if (chatBox.hidden || chatText.disabled) return;
+        const at = document.activeElement;
+        if (at === chatText || (at && at !== document.body && !at.closest?.("#gutter, #multibar, #ask-float, #chat"))) return;
+        if (!document.hasFocus()) window.focus();
+        chatText.focus({ preventScroll: true });
+        const end = chatText.value.length;
+        chatText.setSelectionRange(end, end);
+    };
+    chatText.focus({ preventScroll: true });
+    requestAnimationFrame(put);
+    setTimeout(put, 120);
+}
+// The buttons that open the chat must not take focus themselves (a click would otherwise pull it back to them).
+for (const sel of ["#gutter", "#multibar", "#ask-float"]) $(sel)?.addEventListener("mousedown", (e) => e.target.closest("button") && e.preventDefault());
 
 /** Command chat is only live in the orchestrator's session (the lease owner); elsewhere say where to go. */
 function syncBlocked() {
