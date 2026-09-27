@@ -170,7 +170,7 @@ const actions = [
     {
         name: "read",
         description: "Read a doc as an outline with element IDs, headings and the doc version. heading:\"Section > Heading\" returns just the text under that heading (or a section's contents); ref:\"m4.r1\" returns a region a chat message pointed at, as it is now; targetId returns one element in full (with lines:true, optionally fromLine/toLine, its text numbered by line); full:true returns the whole JSON; version reads history.",
-        inputSchema: { type: "object", properties: { documentId: docId, heading: { type: "string" }, ref: { type: "string" }, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" } } },
+        inputSchema: { type: "object", properties: { documentId: docId, heading: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: 'A path of titles: "Plan > Findings", or ["Plan", "Findings"] (exact, for titles that contain " > ")' }, ref: { type: "string" }, targetId: { type: "string" }, full: { type: "boolean" }, version: { type: "integer" }, lines: { type: "boolean" }, field: { type: "string" }, fromLine: { type: "integer" }, toLine: { type: "integer" } } },
         handler: wrap((i, ctx) => {
             const id = docIdFor(i, ctx);
             if (i.ref !== undefined) return store.readRegion(id, i.ref);

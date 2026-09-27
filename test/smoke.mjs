@@ -384,6 +384,25 @@ await test("addressing: heading paths (read, under) and message regions (read, r
     for (const x of [sec, plain]) await store.applyEdit(d, { type: "remove", targetId: x });
 });
 
+await test("heading paths: titles with > or › in them, exact arrays, escapes, and formatting kept apart from words", async () => {
+    const d = doc.documentId;
+    const sec = (await store.applyEdit(d, { type: "insert", content: { type: "section", title: "Plan", children: [{ type: "markdown", markdown: "# Inputs > Outputs\n\nmaps\n\n# Inputs\n\n## Outputs\n\nnested\n\n## parse_input_file\n\nsnake\n\n## a*b and **bold** and `code`\n\nmixed\n\n# Before › after\n\nchevron" }] } })).targetId;
+    const body = (q) => store.readHeading(d, q).markdown;
+    // One title containing " > " vs two levels: both exist, so the string is ambiguous and the error offers exact paths
+    assert.throws(() => store.resolveHeading(store.getDoc(d), "Inputs > Outputs"), /matches 2 headings: \["Plan","Inputs > Outputs"\], \["Plan","Inputs","Outputs"\]/);
+    assert.equal(body(["Plan", "Inputs > Outputs"]), "maps");
+    assert.equal(body(["Inputs", "Outputs"]), "nested");
+    assert.equal(body("Inputs \\> Outputs"), "maps");
+    assert.equal(store.readHeading(d, ["Plan", "Inputs > Outputs"]).path.join("|"), "Plan|Inputs > Outputs");
+    // a title with › is found whole
+    assert.equal(body("Before › after"), "chevron");
+    // underscores and single asterisks inside words are part of the title; formatting pairs are not
+    assert.equal(body("parse_input_file"), "snake");
+    assert.equal(body("a*b and bold and code"), "mixed");
+    assert.equal(store.readHeading(d, "parse_input_file").heading, "Plan > Inputs > parse_input_file");
+    await store.applyEdit(d, { type: "remove", targetId: sec });
+});
+
 await test("settings: defaults, partial merges, and bad values fall back", async () => {
     const { readSettings, writeSettings, parseSettings } = await import("../extensions/marginal/lib/settings.mjs");
     assert.deepEqual(readSettings().shortcuts, { jump: true, stepKeys: true, tourKey: true, markdown: true });

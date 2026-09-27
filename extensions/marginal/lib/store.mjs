@@ -483,16 +483,52 @@ function patchToUpdate(doc, edit) {
 }
 
 // ---------- addressing by heading ----------
+/**
+ * A heading as it reads: Markdown formatting removed, the words kept. Any character may appear in a title; only
+ * formatting pairs are stripped (so parse_input_file and a*b keep their underscores and asterisks).
+ */
 const plainHeading = (s) =>
     String(s ?? "")
         .replace(/\s+#+\s*$/, "")
-        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-        .replace(/[*_`~]/g, "")
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/`([^`]*)`/g, "$1")
+        .replace(/(\*\*|__|~~)(?=\S)(.+?)(?<=\S)\1/g, "$2")
+        .replace(/(^|[^\w*])\*(?=\S)([^*]+?)(?<=\S)\*(?![\w*])/g, "$1$2")
+        .replace(/(^|[^\w])_(?=\S)([^_]+?)(?<=\S)_(?!\w)/g, "$1$2")
         .replace(/\s+/g, " ")
         .trim();
 const headKey = (s) => plainHeading(s).toLowerCase();
-/** Split "Plan > Review findings" (or an array) into path segments. */
-const headSegments = (q) => (Array.isArray(q) ? q : String(q ?? "").split(/\s+>\s+|\s*›\s*/)).map(headKey).filter(Boolean);
+/**
+ * The ways to read a path. An array is exact: one title per level, no parsing. A string is split on " > " (or "›"),
+ * but a title may itself contain those, so every way of splitting it is tried: "Plan > Inputs > Outputs" can mean
+ * Plan / Inputs / Outputs or Plan / "Inputs > Outputs". \> keeps a ">" in a title for certain.
+ */
+function headReadings(q) {
+    if (Array.isArray(q)) {
+        const segs = q.map(headKey).filter(Boolean);
+        return segs.length ? [segs] : [];
+    }
+    const s = String(q ?? "").trim();
+    if (!s) return [];
+    const LIT = "\u0000";
+    const parts = s.replace(/\\>/g, LIT).split(/(\s+>\s+|\s*›\s*)/);
+    const words = parts.filter((_, i) => i % 2 === 0);
+    const seps = parts.filter((_, i) => i % 2 === 1);
+    const n = Math.min(seps.length, 9); // 2^9 readings at most; deeper paths split on every separator after that
+    const out = [];
+    for (let mask = 0; mask < 2 ** n; mask++) {
+        const segs = [words[0]];
+        for (let k = 0; k < seps.length; k++) {
+            if (k < n && !(mask & (1 << k))) segs[segs.length - 1] += seps[k] + words[k + 1];
+            else segs.push(words[k + 1]);
+        }
+        const keys = segs.map((x) => headKey(x.split(LIT).join(">"))).filter(Boolean);
+        if (keys.length) out.push(keys);
+    }
+    return out;
+}
+/** A path shown back to the agent: " > " between titles, or a JSON array when a title contains a separator itself. */
+const showPath = (e) => (e.path.some((t) => /\s>\s|›/.test(t)) ? JSON.stringify(e.path) : JSON.stringify(e.path.join(" > ")));
 
 /**
  * Every heading an agent can address, in doc order: sections and titled callouts (their whole content), and the
@@ -538,25 +574,28 @@ const pathText = (e) => e.path.join(" > ");
 
 /** Resolve a heading path: its last part names the heading; earlier parts, if given, must be among its ancestors. */
 export function resolveHeading(doc, query) {
-    const segs = headSegments(query);
-    if (!segs.length) throw new InputError('heading must name a heading, e.g. "Plan > Review findings".');
+    const readings = headReadings(query);
+    if (!readings.length) throw new InputError('heading must name a heading, e.g. "Plan > Review findings" or ["Plan", "Review findings"].');
     const all = headingIndex(doc);
-    const within = (e) => {
-        const keys = e.path.map(headKey);
+    // The last title names the heading; earlier ones, in order, must be among its ancestors (levels may be skipped).
+    const matches = (e, segs) => {
+        if (headKey(e.text) !== segs.at(-1)) return false;
+        const keys = e.path.slice(0, -1).map(headKey);
         let k = 0;
         for (const s of segs.slice(0, -1)) {
             k = keys.indexOf(s, k);
-            if (k < 0 || k >= keys.length - 1) return false;
+            if (k < 0) return false;
             k++;
         }
         return true;
     };
-    const hits = all.filter((e) => headKey(e.text) === segs.at(-1) && within(e));
+    const hits = all.filter((e) => readings.some((segs) => matches(e, segs)));
     if (hits.length === 1) return hits[0];
-    if (hits.length > 1) throw new InputError(`heading ${JSON.stringify(query)} matches ${hits.length} headings: ${hits.map((e) => JSON.stringify(pathText(e))).join(", ")}. Pass the full path.`);
-    const words = segs.at(-1).split(" ").filter((w) => w.length > 2);
+    const q = JSON.stringify(query);
+    if (hits.length > 1) throw new InputError(`heading ${q} matches ${hits.length} headings: ${hits.map((e) => JSON.stringify(e.path)).join(", ")}. Pass one of those (an array of titles is exact).`);
+    const words = readings[0].at(-1).split(" ").filter((w) => w.length > 2);
     const near = all.filter((e) => words.some((w) => headKey(e.text).includes(w))).slice(0, 8);
-    throw new InputError(`no heading ${JSON.stringify(query)}. ${near.length ? `Close: ${near.map((e) => JSON.stringify(pathText(e))).join(", ")}.` : `Headings: ${all.slice(0, 12).map((e) => JSON.stringify(pathText(e))).join(", ")}${all.length > 12 ? ", …" : ""}.`}`);
+    throw new InputError(`no heading ${q}. ${near.length ? `Close: ${near.map(showPath).join(", ")}.` : `Headings: ${all.slice(0, 12).map(showPath).join(", ")}${all.length > 12 ? ", …" : ""}.`}`);
 }
 
 /** The content under a heading: a Markdown span (text + its lines), or a section's children (text, and ids of the rest). */
@@ -567,11 +606,12 @@ function headingContent(doc, query) {
     const e = resolveHeading(doc, query);
     if (e.kind === "heading") {
         const lines = locate(doc.content, e.blockId).node.markdown.replace(/\r\n/g, "\n").split("\n");
-        return { heading: pathText(e), kind: "heading", blockId: e.blockId, version: doc.version, headingLine: e.line + 1, lines: [e.line + 2, e.end + 1], markdown: lines.slice(e.line + 1, e.end + 1).join("\n").replace(/^\n+|\n+$/g, "") };
+        return { heading: pathText(e), path: e.path, kind: "heading", blockId: e.blockId, version: doc.version, headingLine: e.line + 1, lines: [e.line + 2, e.end + 1], markdown: lines.slice(e.line + 1, e.end + 1).join("\n").replace(/^\n+|\n+$/g, "") };
     }
     const node = locate(doc.content, e.blockId).node;
     return {
         heading: pathText(e),
+        path: e.path,
         kind: e.kind,
         blockId: e.blockId,
         version: doc.version,
