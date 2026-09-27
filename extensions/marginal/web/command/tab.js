@@ -945,7 +945,16 @@ function fitMapHead() {
     const legend = head.querySelector(".legend");
     // Every part that can shrink must show all of itself, not just the header as a whole.
     const whole = (el) => el.scrollWidth <= el.clientWidth + 1;
-    const fits = () => whole(head) && whole(crumbs) && whole(legend);
+    // One line: nothing overflows sideways, and nothing has wrapped below the first row.
+    // (Items are centred on the line, so a wrapped one sits a row lower: compare centres, ignoring empty spacers.)
+    const oneRow = (el) => {
+        const mids = [...el.children]
+            .map((k) => k.getBoundingClientRect())
+            .filter((r) => r.width > 0 && r.height > 0)
+            .map((r) => r.top + r.height / 2);
+        return !mids.length || Math.max(...mids) - Math.min(...mids) < 10;
+    };
+    const fits = () => whole(head) && whole(crumbs) && whole(legend) && oneRow(head) && oneRow(legend.querySelector(".pins-legend") ?? legend);
     for (let level = 0; level <= 4; level++) {
         head.dataset.compact = String(level);
         if (fits()) break;

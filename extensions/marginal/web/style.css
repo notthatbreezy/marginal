@@ -6374,6 +6374,10 @@ del.sg-del {
     min-width: 0;
     overflow: hidden;
 }
+/* Pins stay on the header's line; when they don't fit they fold into the pill. */
+.cc .map-head .pins-legend {
+    flex-wrap: nowrap;
+}
 .cc .map-head .grow {
     min-width: 8px;
 }

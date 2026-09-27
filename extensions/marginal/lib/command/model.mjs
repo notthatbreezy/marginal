@@ -3,7 +3,7 @@
 import { classifyPattern, normalizeRepoPath } from "./patterns.mjs";
 import { ID_RE, listHint } from "./issues.mjs";
 
-export const LIMITS = { phases: 20, steps: 200, patterns: 2000, fronts: 16, stops: 40, rangesPerStop: 8, linesPerRange: 400, views: 50, monitors: 4, pins: 12 };
+export const LIMITS = { phases: 20, steps: 200, patterns: 2000, fronts: 16, stops: 40, rangesPerStop: 8, linesPerRange: 400, views: 50, monitors: 4, pins: 12, viewPins: 3 };
 /** A front's stage. planned: declared up front, no worktree yet; implementing/review: work in its worktree. */
 export const FRONT_STATUS = ["planned", "implementing", "review", "blocked", "complete"];
 /** Earlier names, still accepted and read from older state files. */
@@ -129,6 +129,9 @@ export function parseViewSpec(r, v, path) {
         if (n.error) r.issues.add(`${path}.root`, n.error, n.message, n.hint);
         else view.root = n.path;
     }
+    // A view suggests a few emphases, not a list of the phase's files (those are highlighted already).
+    if (Array.isArray(o.pins) && o.pins.length > LIMITS.viewPins)
+        r.issues.add(`${path}.pins`, "too_many", `a view pins at most ${LIMITS.viewPins} areas (it has ${o.pins.length})`, "pins draw an area 3× larger; the active phase's files are already highlighted on the map, so pin only the one or two folders worth enlarging. Zoom with root, and watch a folder's edits with monitors.");
     const pins = r.arr(o.pins, `${path}.pins`, { required: false, max: LIMITS.pins });
     if (pins?.length)
         view.pins = pins

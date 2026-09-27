@@ -621,6 +621,12 @@ test("phases are the unit: one watched worktree, stages with notes, phase diffs,
     assert.equal(readState(pdoc.documentId).revision, before);
     assert.equal(readState(pdoc.documentId).plan.title, "Phase first");
     git(repo, "worktree", "remove", "--force", wtQ);
+    // a phase view pins a few areas, not every file
+    const many = await run("command_view", { op: "set", phaseId: "p2", view: { id: "v2", title: "Tests", root: "tests", pins: ["tests/a.ts", "tests/b.ts", "tests/c.ts", "tests/d.ts"] } });
+    assert.equal(many.ok, false);
+    assert.equal(many.issues[0].code, "too_many");
+    assert.match(many.issues[0].hint, /highlighted already/);
+    assert.ok((await run("command_view", { op: "set", phaseId: "p2", view: { id: "v2", title: "Tests", root: "tests", pins: ["tests"] } })).ok);
     // a walkthrough of a phase
     const w = await run("command_walkthrough", { op: "show", walkthrough: { id: "p2-walk", title: "P2", phase: "p2", stops: [{ id: "a", title: "A", explanation: "x", ranges: [{ file: "tests/phase2.test.ts", startLine: 1, endLine: 1 }] }] } });
     assert.ok(w.ok, JSON.stringify(w));

@@ -25,6 +25,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Fixed
 
+- The Command map's header no longer grows to several lines when there are many pins: they fold into the "N pinned" pill whenever they don't fit on the one line (the fit check missed pins wrapping inside their row).
+- A suggested view pins at most 3 areas, and the orchestrator is told what pins are for: the active phase's files are highlighted already, so a view needs a root and maybe a monitor, not every file pinned.
 - Code blocks keep their line breaks (they rendered on one line).
 - The canvas opens with `null` input as well as `{}`.
 
