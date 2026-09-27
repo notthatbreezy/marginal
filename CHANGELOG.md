@@ -4,6 +4,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- The Command tab's fronts list can be scrolled again: it no longer jumps back to the top while you scroll, as the work updates, or when the pointer rests on a front.
+
 ## [0.4.0] - 2026-09-27
 
 ### Added

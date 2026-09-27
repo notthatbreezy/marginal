@@ -28,8 +28,7 @@ export function renderFronts(host, rows, opts) {
     for (const r of rows) counts[r.stage]++;
     const label = STAGES.filter((s) => counts[s]).map((s) => h("span", { class: `rc ${s}`, title: `${counts[s]} ${STAGE[s].count}` }, h("i"), counts[s]));
     const focused = document.activeElement?.closest?.(".front")?.dataset.front; // re-renders must not steal keyboard focus
-    put(
-        host,
+    const [header, body] = [
         h("div", { class: "rail-h" }, "Fronts", h("span", { class: "n" }, label.length ? label : "none yet")),
         rows.length
             ? h(
@@ -71,7 +70,18 @@ export function renderFronts(host, rows, opts) {
                   }),
               )
             : h("p", { class: "rail-empty" }, "The orchestrator lists the fronts it plans, then registers each one's worktree as its work starts."),
-    );
+    ];
+    // Keep the scrolling list element itself: replacing it mid-scroll strands the wheel's smooth scroll on a detached
+    // node, so the list snaps back to the top on every update.
+    const list = host.querySelector(":scope > ul.fronts");
+    if (list && body.tagName === "UL") {
+        const top = list.scrollTop;
+        const old = host.querySelector(":scope > .rail-h");
+        if (old) old.replaceWith(header);
+        else host.prepend(header);
+        list.replaceChildren(...body.childNodes);
+        list.scrollTop = top;
+    } else put(host, header, body);
     if (focused) host.querySelector(`.front[data-front="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }
 

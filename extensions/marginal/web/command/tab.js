@@ -503,6 +503,7 @@ function render() {
             schedule(true);
         },
         onHover: (id) => {
+            if (cc.ui.hoverFront === id) return; // a re-render under a still pointer re-fires mouseenter
             cc.ui.hoverFront = id;
             schedule(true);
         },
