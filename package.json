@@ -1,6 +1,6 @@
 {
   "name": "marginal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Code-linked docs and a live Command center for the GitHub Copilot app (canvas extension).",
   "author": "Chris Brown <chris-brown@notthatbreezy.io> (https://github.com/notthatbreezy)",

@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-27
+
 ### Added
 
 - Stacked fronts. Layers of a PR stack are declared up front like any planned front (`stacksOn` names the layer below), and each layer's changes are measured from the layer below it rather than the plan base, so layer 2 no longer claims layer 1's files. Layers can each have a worktree, or take turns in one checkout: once a layer is complete, registering the next one there takes the worktree over and measures from the commit it finished on. The rail shows what each layer stacks on (and who took a worktree over). `register` also takes an explicit `base`.
