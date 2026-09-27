@@ -5452,19 +5452,48 @@ body.peek-push #peek {
 
 /* ---------- prose editing: the text being edited, the margin toolbar, the link popover ---------- */
 :root {
-    --edit-edge: color-mix(in srgb, var(--green) 45%, var(--bg));
+    --edit-edge: color-mix(in srgb, var(--green) 55%, var(--bg));
+    --edit-edge-soft: color-mix(in srgb, var(--green) 30%, var(--bg));
     --edit-fill: color-mix(in srgb, var(--green) 5%, var(--bg));
 }
+/* Edges are drawn as inset lines per side (not an outline), so a run of neighbouring units shares one border:
+   inner edges and corners drop where they meet, and the area reads as one. The run being typed in is stronger. */
 .md [data-l].editing {
+    --ee: var(--edit-edge-soft);
     background: var(--edit-fill);
-    outline: 1px dashed var(--edit-edge);
-    outline-offset: 0;
+    outline: none;
+    box-shadow: inset 1px 0 0 var(--ee), inset -1px 0 0 var(--ee), inset 0 1px 0 var(--ee), inset 0 -1px 0 var(--ee);
     cursor: text;
     caret-color: var(--green);
 }
-.md [data-l].editing.edit-focus,
+.md [data-l].editing.edit-focus {
+    --ee: var(--edit-edge);
+}
 .md [data-l].editing:focus {
-    outline: 1.5px solid var(--edit-edge);
+    outline: none;
+}
+.md [data-l].editing.edit-join-top {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    box-shadow: inset 1px 0 0 var(--ee), inset -1px 0 0 var(--ee), inset 0 -1px 0 var(--ee);
+}
+.md [data-l].editing.edit-join-bottom {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: inset 1px 0 0 var(--ee), inset -1px 0 0 var(--ee), inset 0 1px 0 var(--ee);
+}
+.md [data-l].editing.edit-join-top.edit-join-bottom {
+    box-shadow: inset 1px 0 0 var(--ee), inset -1px 0 0 var(--ee);
+}
+/* A heading's space above it becomes padding inside the run, so the area has no gap in it (same layout). */
+.md h1[data-l].editing.edit-join-top,
+.md h2[data-l].editing.edit-join-top,
+.md h3[data-l].editing.edit-join-top,
+.md h4[data-l].editing.edit-join-top,
+.md h5[data-l].editing.edit-join-top,
+.md h6[data-l].editing.edit-join-top {
+    margin-top: 0;
+    padding-top: 15px;
 }
 .md [data-l].editing [contenteditable="false"] {
     opacity: 0.55;

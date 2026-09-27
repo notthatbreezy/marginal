@@ -219,6 +219,8 @@ export function createProseEditor(o) {
             u.html = u.el.innerHTML;
             u.snapshot = u.el.cloneNode(true);
         }
+        // Document order, so the first unit (caret) and the runs below follow the page.
+        list.sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
         units = list;
         for (const u of units) {
             u.el.classList.remove("picked", "unit-hover", "asking");
@@ -228,6 +230,7 @@ export function createProseEditor(o) {
             u.el.setAttribute("spellcheck", "true");
             u.el.addEventListener("focus", onFocus);
         }
+        joinRuns();
         document.body.classList.add("prose-editing");
         hint.replaceChildren(h("span", { class: "eh-dot" }), `Editing${units.length === 1 ? "" : ` ${units.length} parts`} · `, h("kbd", {}, "Shift"), "+", h("kbd", {}, "Enter"), " save · ", h("kbd", {}, "Esc"), " cancel");
         hint.hidden = false;
@@ -239,6 +242,7 @@ export function createProseEditor(o) {
             s.addRange(selection);
         } else caretToEnd(first);
         focused = units[0];
+        units.forEach((u) => u.el.classList.toggle("edit-focus", u.run === focused.run));
         bar.hidden = false;
         place();
         o.onChange?.(true);
@@ -253,15 +257,37 @@ export function createProseEditor(o) {
         s.removeAllRanges();
         s.addRange(r);
     }
+    /**
+     * Neighbouring units open together (adjacent in the same text) read as one editing area: one outline around the
+     * run, no inner edges or rounded notches where they meet. Each unit still saves as its own lines.
+     */
+    let runs = [];
+    function joinRuns() {
+        runs = [];
+        for (const u of units) {
+            const md = u.el.closest(".md");
+            const all = [...md.querySelectorAll("[data-l]")];
+            const prev = runs.at(-1)?.at(-1);
+            const adjacent = prev && prev.el.closest(".md") === md && all.indexOf(u.el) === all.indexOf(prev.el) + 1;
+            if (adjacent) runs.at(-1).push(u);
+            else runs.push([u]);
+        }
+        for (const run of runs)
+            run.forEach((u, k) => {
+                u.run = run;
+                u.el.classList.toggle("edit-join-top", k > 0);
+                u.el.classList.toggle("edit-join-bottom", k < run.length - 1);
+            });
+    }
     function onFocus(e) {
         focused = units.find((u) => u.el === e.currentTarget) ?? focused;
-        units.forEach((u) => u.el.classList.toggle("edit-focus", u === focused));
+        units.forEach((u) => u.el.classList.toggle("edit-focus", u.run === focused?.run));
         place();
     }
-    /** The toolbar sits in the margin beside the unit being typed in, where the comment/copy icons were. */
+    /** The toolbar sits in the margin at the top of the editing area being typed in, where the comment/copy icons were. */
     function place() {
         if (!active() || !focused) return;
-        const el = focused.el;
+        const el = (focused.run ?? [focused])[0].el;
         const col = el.closest(".md").getBoundingClientRect();
         const r = el.getBoundingClientRect();
         const view = o.main.getBoundingClientRect();
@@ -501,7 +527,7 @@ export function createProseEditor(o) {
             u.el.removeEventListener("focus", onFocus);
             u.el.removeAttribute("contenteditable");
             u.el.removeAttribute("spellcheck");
-            u.el.classList.remove("editing", "edit-focus");
+            u.el.classList.remove("editing", "edit-focus", "edit-join-top", "edit-join-bottom");
             if (restore) u.el.innerHTML = u.html;
             else for (const sub of u.el.querySelectorAll('[contenteditable="false"]')) sub.removeAttribute("contenteditable");
         }
