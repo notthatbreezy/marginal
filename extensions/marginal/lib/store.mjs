@@ -438,6 +438,23 @@ export function stable(v) {
     if (v && typeof v === "object") return `{${Object.keys(v).filter((k) => v[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
     return JSON.stringify(v);
 }
+/**
+ * Markdown code fences, as CommonMark reads them: a fence opens with 3+ backticks or tildes and closes only on a line
+ * of the same character, at least as long, with nothing after it. step(line) says whether the line is code.
+ */
+function fenceTracker() {
+    let open = null; // { ch, len }
+    return (line) => {
+        const m = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+        if (!open) {
+            if (m && !(m[1][0] === "`" && m[2].includes("`"))) open = { ch: m[1][0], len: m[1].length };
+            return !!open;
+        }
+        if (m && m[1][0] === open.ch && m[1].length >= open.len && !m[2].trim()) open = null;
+        return true; // the closing fence is still part of the code
+    };
+}
+
 const CHILD_KEYS = ["children", "steps", "nodes", "edges"];
 const ownFields = (n) => Object.fromEntries(Object.entries(n).filter(([k]) => !CHILD_KEYS.includes(k)));
 /**
@@ -449,6 +466,9 @@ function guardView(doc, id, type) {
     if (!hit) return null;
     if (type === "update" || type === "patch") return stable(ownFields(hit.node));
     if (type === "move") return stable({ node: hit.node, parent: hit.parent?.id ?? null, prev: hit.list?.[hit.index - 1]?.id ?? null });
+    // Removing a flow node removes the edges that touch it, so those are part of what it relies on.
+    if (type === "remove" && hit.kind === "unit" && hit.parent?.type === "flow_diagram" && hit.node.key !== undefined)
+        return stable({ node: hit.node, edges: hit.parent.edges.filter((e) => e.from === hit.node.key || e.to === hit.node.key) });
     return stable(hit.node);
 }
 /** baseVersion: the doc version the edit was written against. Refused only if what the edit relies on changed. */
@@ -641,10 +661,10 @@ export function headingIndex(doc) {
                 const lines = b.markdown.replace(/\r\n/g, "\n").split("\n");
                 const mine = [];
                 const stack = [];
-                let fence = false;
+                const inCode = fenceTracker();
                 lines.forEach((l, i) => {
-                    if (/^\s*(```|~~~)/.test(l)) return void (fence = !fence);
-                    const m = !fence && l.match(/^(#{1,6})\s+(.+?)\s*$/);
+                    if (inCode(l)) return;
+                    const m = l.match(/^(#{1,6})\s+(.+?)\s*$/);
                     if (!m) return;
                     const rank = m[1].length;
                     while (stack.length && stack.at(-1).rank >= rank) stack.pop();
@@ -1286,12 +1306,11 @@ const srcRef = (s) => (s ? `${s.file}#L${s.startLine}${s.endLine && s.endLine !=
 const plainLinks = (md) => md.replace(/\]\(review-source:(head|base)\/([^)\s]+)\)/g, (_, side, path) => `](${path})${side === "base" ? " (base)" : ""}`);
 /** Markdown's own headings sit under the section they're in. */
 function shiftHeadings(md, by) {
-    let fence = false;
+    const inCode = fenceTracker();
     return md
         .split("\n")
         .map((l) => {
-            if (/^\s*(```|~~~)/.test(l)) fence = !fence;
-            if (fence || !by) return l;
+            if (inCode(l) || !by) return l;
             const m = l.match(/^(#{1,6})(\s.*)$/);
             return m ? `${"#".repeat(Math.max(1, Math.min(6, m[1].length + by)))}${m[2]}` : l;
         })

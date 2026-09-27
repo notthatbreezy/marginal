@@ -453,6 +453,17 @@ await test("edit feedback: scoped conflicts, clear messages, atomic batches, exp
     assert.equal(rd(file, "utf8").includes(`sha256: ${ex.sha256}`), true);
     await rejects(() => store.exportDoc(d, { path: "relative.md" }), /absolute/);
     await rejects(() => store.exportDoc(d, { path: join(tmpdir(), "x.txt") }), /\.md/);
+    // fences: a four-backtick block holding a three-backtick line stays code (no heading shifted, none indexed)
+    const fenced = (await store.applyEdit(d, { type: "insert", parentId: sec, content: { type: "markdown", markdown: "# Real\n\n````md\n```\n# not a heading\n````\n\n## After" } })).targetId;
+    assert.match((await store.docMarkdown(d)).body, /\n# not a heading\n/);
+    assert.deepEqual(store.headingIndex({ content: [store.getDoc(d).content.find((b) => b.id === sec).children.find((k) => k.id === fenced)] }).map((e) => e.text), ["Real", "After"]);
+    // removing a flow node guards the edges it would take with it
+    const flow = (await store.applyEdit(d, { type: "insert", content: { type: "flow_diagram", title: "F", nodes: [{ key: "a", label: "A" }, { key: "b", label: "B" }], edges: [{ from: "a", to: "b", label: "go" }] } })).targetId;
+    const f0 = store.getDoc(d).content.find((b) => b.id === flow);
+    const vf = store.getDoc(d).version;
+    await store.applyEdit(d, { type: "update", targetId: f0.edges[0].id, changes: { label: "go now" } });
+    await rejects(() => store.applyEdit(d, { type: "remove", targetId: f0.nodes[0].id, baseVersion: vf }), /changed inside since version/);
+    await store.applyEdit(d, { type: "remove", targetId: flow });
     await store.applyEdit(d, { type: "remove", targetId: sec });
 });
 
