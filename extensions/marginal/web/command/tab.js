@@ -847,31 +847,8 @@ function renderMapHead(st, root, auto = false) {
 
     const L = cc.ui.layout;
     const legend = cc.host.querySelector(".legend");
-    // Rebuilt only when the pins change: the map re-renders often, and a rebuild would eat clicks and hovers on the chips.
-    const pinKey = JSON.stringify(L.pins);
-    if (legend.dataset.key !== pinKey || !legend.childElementCount) {
-        legend.dataset.key = pinKey;
-        const name = (p) => (p ? p.split("/").pop() : cc.data?.repository ?? "repo") + (findNode(cc.tree, p)?.dir ? "/" : "");
-        const pinsLegend = L.pins.length
-            ? h(
-                  "span",
-                  { class: "pins-legend" },
-                  h("button", { class: "pin-pill", title: `${L.pins.join("\n")}\nPinned areas are drawn ${PIN_WEIGHT}× larger. Click to find or unpin them`, "aria-haspopup": "menu", onclick: (e) => openPinMenu(e.currentTarget) }, h("span", { class: "pin-ic" }, "◆"), `${L.pins.length} pinned`),
-                  h("span", { class: "pin-ic chips-ic", title: `Pinned areas are drawn ${PIN_WEIGHT}× larger (P over a tile pins or unpins it)` }, "◆"),
-                  h("span", { class: "pl-h" }, "Pinned"),
-                  L.pins.map((p) =>
-                      h(
-                          "span",
-                          { class: "pin-chip", onmouseenter: () => findPin(p), onmouseleave: () => findPin(null) },
-                          h("button", { class: "pc-name", title: `${p || "(the whole repo)"}\nClick to show it on the map`, onclick: () => findPin(p, { flash: true }) }, name(p)),
-                          h("button", { class: "pc-x", title: `Unpin ${p}`, "aria-label": `Unpin ${p}`, onclick: () => (findPin(null), togglePin(p)) }, "×"),
-                      ),
-                  ),
-                  L.pins.length > 1 ? h("button", { class: "pc-clear", title: "Unpin every pinned area", onclick: clearPins }, "Clear all") : null,
-              )
-            : null;
-        put(legend, pinsLegend ?? [h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active checkpoint"), h("span", {}, h("i", { class: "lg op" }), "Off-plan")]);
-    }
+    // The colour key; pins live behind the pin button in the controls.
+    if (!legend.childElementCount) put(legend, h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active phase"), h("span", {}, h("i", { class: "lg op" }), "Off-plan"));
 
     const ctl = cc.host.querySelector(".view-ctl");
     // Rebuilt only when what it shows changes: a 4 Hz rebuild could swallow a click between mousedown and mouseup.
@@ -903,7 +880,7 @@ function renderMapHead(st, root, auto = false) {
     const view = st.walkthroughView;
     const walk = view && !cc.walk?.open ? st.walkthroughs.find((x) => x.id === view.id) : null;
     const revisingNow = cc.revising && Date.now() - cc.revising < 60_000 && !cc.walk?.open;
-    const key = JSON.stringify([choices.map((v) => [v.id, v.title, v.origin, v.phaseId]), select.value, custom, follow, !!showReturn, sugg?.id, walk && [walk.id, walk.stops.length, walk.title], st.walkthroughs.length, !!cc.walk?.open, !!revisingNow, current?.origin]);
+    const key = JSON.stringify([choices.map((v) => [v.id, v.title, v.origin, v.phaseId]), select.value, custom, follow, !!showReturn, sugg?.id, walk && [walk.id, walk.stops.length, walk.title], st.walkthroughs.length, !!cc.walk?.open, !!revisingNow, current?.origin, L.pins]);
     if (same(key)) return;
     put(
         ctl,
@@ -914,6 +891,18 @@ function renderMapHead(st, root, auto = false) {
         showReturn ? h("button", { class: "return", title: `Apply the view suggested for ${sugg.title}`, onclick: () => applyView(sugg.suggestedView, { phaseId: sugg.id }) }, "Return", h("span", { class: "long" }, " to suggested")) : null,
         custom ? h("button", { class: "return save-view", title: "Save this layout as a view", onclick: () => saveCurrentView() }, "Save", h("span", { class: "long" }, " view")) : null,
         h("label", { class: "viewpick", title: "Views set the zoom, pins and monitors" }, current?.origin && current.origin !== "user" ? h("span", { class: "spark-ic", "aria-hidden": "true" }, "✦") : null, h("span", { class: "long" }, "View:"), select),
+        h(
+            "button",
+            {
+                class: `follow pin-btn${L.pins.length ? " has" : ""}`,
+                title: L.pins.length ? `${L.pins.length} pinned (drawn ${PIN_WEIGHT}× larger): find or unpin them` : "Pinned areas (P over a tile pins it)",
+                "aria-label": `Pinned areas${L.pins.length ? `: ${L.pins.length}` : ""}`,
+                "aria-haspopup": "dialog",
+                onclick: (e) => (cc.ui.menu?.classList.contains("pin-pop") ? closeMenu() : openPinMenu(e.currentTarget)),
+            },
+            h("span", { html: PIN_SVG }),
+            L.pins.length ? h("span", { class: "pin-n" }, String(L.pins.length)) : null,
+        ),
         h("button", {
             class: `follow${follow ? " on" : ""}`,
             title: follow ? "Following: suggested views apply as checkpoints change (click to pause)" : "Paused: views won't change on their own (click to follow)",
@@ -931,8 +920,8 @@ function renderMapHead(st, root, auto = false) {
 }
 
 /**
- * The map header stays on one line. When it doesn't fit it gives way in steps, cheapest first: pins fold into a
- * "3 pinned" pill, the colour legend goes, the folders between the repo and the shown one fold into "…", and the
+ * The map header stays on one line. When it doesn't fit it gives way in steps, cheapest first: the colour legend
+ * goes, the folders between the repo and the shown one fold into "…", and the
  * controls drop their longer words; last, the names that remain end in an ellipsis.
  */
 function fitMapHead() {
@@ -954,8 +943,8 @@ function fitMapHead() {
             .map((r) => r.top + r.height / 2);
         return !mids.length || Math.max(...mids) - Math.min(...mids) < 10;
     };
-    const fits = () => whole(head) && whole(crumbs) && whole(legend) && oneRow(head) && oneRow(legend.querySelector(".pins-legend") ?? legend);
-    for (let level = 0; level <= 4; level++) {
+    const fits = () => whole(head) && whole(crumbs) && whole(legend) && oneRow(head);
+    for (let level = 0; level <= 3; level++) {
         head.dataset.compact = String(level);
         if (fits()) break;
     }
@@ -965,22 +954,25 @@ function openCrumbMenu(anchor, mids) {
     const menu = h("div", { class: "cc-menu crumb-menu", role: "menu", "aria-label": "Folders" }, mids.map((m) => h("button", { role: "menuitem", title: `${m.path}/`, onclick: () => (closeMenu(), zoomTo(m.path)) }, m.path.split("/").map((x, i) => (i ? [h("span", { class: "sepc" }, " › "), x] : x)))));
     placeMenu(menu, anchor);
 }
+const PIN_SVG = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><path d="M9.6 2.2l4.2 4.2-1.9.6-2.4 2.4.4 3.1-1.4 1.4-2.6-2.6-3.2 3.2M5.5 8.2L2.9 5.6l1.4-1.4 3.1.4 2.4-2.4z"/></svg>';
+/** The pins popover (like Settings): each pinned area to find or unpin, or how to pin when there are none. */
 function openPinMenu(anchor) {
     closeMenu();
     const pins = cc.ui.layout.pins;
     const menu = h(
         "div",
-        { class: "cc-menu pin-menu", role: "menu", "aria-label": "Pinned areas" },
-        h("div", { class: "cc-menu-h" }, "Pinned", h("span", { class: "grow" }), h("span", { class: "wm-n" }, `drawn ${PIN_WEIGHT}× larger`)),
+        { class: "cc-menu pin-menu pin-pop", role: "dialog", "aria-label": "Pinned areas" },
+        h("div", { class: "pp-head" }, h("span", {}, "Pinned areas"), h("button", { class: "chat-icon pp-x", title: "Close (Esc)", "aria-label": "Close", onclick: () => closeMenu(), html: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>' })),
+        pins.length ? null : h("p", { class: "pp-empty" }, "Nothing pinned. Press ", h("kbd", {}, "P"), " over a tile to pin it: pinned areas are drawn ", String(PIN_WEIGHT), "× larger, so the parts you care about stay readable when the map is busy."),
         pins.map((p) =>
             h(
                 "div",
                 { class: "wm-row", onmouseenter: () => findPin(p), onmouseleave: () => findPin(null) },
                 h("button", { role: "menuitem", class: "pm-name", title: "Show it on the map", onclick: () => (closeMenu(), findPin(p, { flash: true })) }, p || "(the whole repo)"),
-                h("button", { class: "pc-x", title: `Unpin ${p}`, "aria-label": `Unpin ${p}`, onclick: () => (findPin(null), togglePin(p), cc.ui.layout.pins.length ? openPinMenu(anchor) : closeMenu()) }, "×"),
+                h("button", { class: "pc-x", title: `Unpin ${p}`, "aria-label": `Unpin ${p}`, onclick: () => (findPin(null), togglePin(p), openPinMenu(cc.host.querySelector(".pin-btn") ?? anchor)) }, "×"),
             ),
         ),
-        pins.length > 1 ? h("button", { role: "menuitem", class: "pm-clear", onclick: () => (closeMenu(), clearPins()) }, "Clear all") : null,
+        pins.length ? h("div", { class: "pp-foot" }, h("span", {}, "Drawn ", String(PIN_WEIGHT), "× larger · ", h("kbd", {}, "P"), " on a tile toggles"), pins.length > 1 ? h("button", { class: "pm-clear", onclick: () => (closeMenu(), clearPins()) }, "Clear all") : null) : null,
     );
     placeMenu(menu, anchor);
 }
@@ -990,7 +982,9 @@ function placeMenu(menu, anchor) {
     const hr = cc.host.getBoundingClientRect();
     cc.host.querySelector(".cc").append(menu);
     const w = menu.offsetWidth || 240;
-    menu.style.left = `${Math.max(8, Math.min(r.left - hr.left, hr.width - w - 8))}px`;
+    // Under the control, opening towards the middle: right-aligned for controls on the right.
+    const x = r.left - hr.left > hr.width / 2 ? r.right - hr.left - w : r.left - hr.left;
+    menu.style.left = `${Math.max(8, Math.min(x, hr.width - w - 8))}px`;
     menu.style.top = `${r.bottom - hr.top + 6}px`;
     cc.ui.menu = menu;
     menu.querySelector("button")?.focus();

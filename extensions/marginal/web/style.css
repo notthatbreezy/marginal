@@ -3518,62 +3518,6 @@ svg .muted {
 .cc .crumbs .auto-btn:hover {
     background: var(--blue-muted);
 }
-.cc .pins-legend {
-    color: var(--fg);
-}
-.cc .pins-legend .pin-ic {
-    color: var(--blue);
-}
-.cc .pins-legend {
-    flex-wrap: wrap;
-    gap: 4px;
-    min-width: 0;
-}
-.cc .legend .pin-chip {
-    gap: 0;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    max-width: 180px;
-}
-.cc .pin-chip button {
-    border: none;
-    background: none;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-}
-.cc .pin-chip .pc-name {
-    padding: 0 2px 0 8px;
-    line-height: 18px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.cc .pin-chip .pc-x {
-    padding: 0 7px 0 3px;
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 18px;
-}
-.cc .pin-chip .pc-x:hover {
-    color: var(--red);
-}
-.cc .pin-chip:hover {
-    border-color: color-mix(in srgb, var(--blue) 55%, var(--border));
-}
-.cc .pins-legend .pc-clear {
-    border: none;
-    background: none;
-    color: var(--muted);
-    font: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
-}
-.cc .pins-legend .pc-clear:hover {
-    color: var(--fg);
-}
 /* The tile a pin chip points at. */
 .cc .tn.pin-find {
     outline: 2px solid var(--blue);
@@ -6374,10 +6318,6 @@ del.sg-del {
     min-width: 0;
     overflow: hidden;
 }
-/* Pins stay on the header's line; when they don't fit they fold into the pill. */
-.cc .map-head .pins-legend {
-    flex-wrap: nowrap;
-}
 .cc .map-head .grow {
     min-width: 8px;
 }
@@ -6387,70 +6327,45 @@ del.sg-del {
 .cc .map-head .crumbs {
     flex: 0 1 auto;
 }
-.cc .pins-legend .pin-pill,
 .cc .crumbs .crumb-more,
 .cc .crumbs .sepc.more {
     display: none;
 }
-.cc .pins-legend .pin-pill {
-    align-items: center;
-    gap: 5px;
-    padding: 0 9px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface);
-    color: var(--fg);
-    font: inherit;
-    line-height: 20px;
-    cursor: pointer;
+/* A long repo name never crowds the header (its tooltip has it whole). */
+.cc .crumbs .root {
+    max-width: 26ch;
 }
-.cc .pins-legend .pin-pill:hover {
-    border-color: color-mix(in srgb, var(--blue) 55%, var(--border));
-}
-/* 1: pins fold into a pill */
-.cc .map-head[data-compact="1"] .pins-legend > :not(.pin-pill),
-.cc .map-head[data-compact="2"] .pins-legend > :not(.pin-pill),
-.cc .map-head[data-compact="3"] .pins-legend > :not(.pin-pill),
-.cc .map-head[data-compact="4"] .pins-legend > :not(.pin-pill) {
+/* 1: the colour legend goes (the tour explains it) */
+.cc .map-head[data-compact="1"] .legend,
+.cc .map-head[data-compact="2"] .legend,
+.cc .map-head[data-compact="3"] .legend {
     display: none;
 }
-.cc .map-head[data-compact="1"] .pin-pill,
-.cc .map-head[data-compact="2"] .pin-pill,
-.cc .map-head[data-compact="3"] .pin-pill,
-.cc .map-head[data-compact="4"] .pin-pill {
-    display: inline-flex;
-}
-/* 2: the colour legend goes (the tour explains it) */
-.cc .map-head[data-compact="2"] .legend > :not(.pins-legend),
-.cc .map-head[data-compact="3"] .legend > :not(.pins-legend),
-.cc .map-head[data-compact="4"] .legend > :not(.pins-legend) {
+/* 2: folders between the repo and the shown one fold into "…" */
+.cc .map-head[data-compact="2"] .crumbs .mid,
+.cc .map-head[data-compact="3"] .crumbs .mid {
     display: none;
 }
-/* 3: folders between the repo and the shown one fold into "…" */
-.cc .map-head[data-compact="3"] .crumbs .mid,
-.cc .map-head[data-compact="4"] .crumbs .mid {
-    display: none;
-}
+.cc .map-head[data-compact="2"] .crumbs .crumb-more,
+.cc .map-head[data-compact="2"] .crumbs .sepc.more,
 .cc .map-head[data-compact="3"] .crumbs .crumb-more,
-.cc .map-head[data-compact="3"] .crumbs .sepc.more,
-.cc .map-head[data-compact="4"] .crumbs .crumb-more,
-.cc .map-head[data-compact="4"] .crumbs .sepc.more {
+.cc .map-head[data-compact="3"] .crumbs .sepc.more {
     display: inline;
 }
-/* 4: controls drop their longer words; the repo name gives way first, then the shown folder */
+/* 3: controls drop their longer words; the repo name gives way first, then the shown folder */
 .cc .map-head .view-ctl .short {
     display: none;
 }
-.cc .map-head[data-compact="4"] .view-ctl .short {
+.cc .map-head[data-compact="3"] .view-ctl .short {
     display: inline;
 }
-.cc .map-head[data-compact="4"] .view-ctl .long {
+.cc .map-head[data-compact="3"] .view-ctl .long {
     display: none;
 }
-.cc .map-head[data-compact="4"] .crumbs .root {
+.cc .map-head[data-compact="3"] .crumbs .root {
     max-width: 12ch;
 }
-.cc .map-head[data-compact="4"] .viewpick select {
+.cc .map-head[data-compact="3"] .viewpick select {
     max-width: 150px;
 }
 .cc .viewpick select {
@@ -6576,4 +6491,78 @@ del.sg-del {
 .cc .seg.blocked .gl {
     border-color: var(--red);
     background: var(--red);
+}
+
+/* ---------- pins: a button in the map's controls and a popover (like Settings) ---------- */
+.cc .pin-btn {
+    position: relative;
+}
+.cc .pin-btn.has {
+    color: var(--blue);
+}
+.cc .pin-btn .pin-n {
+    position: absolute;
+    top: -3px;
+    right: -4px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: var(--bg);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 15px;
+    text-align: center;
+    pointer-events: none;
+}
+.cc .pin-pop {
+    width: 320px;
+    max-height: min(60vh, 460px);
+    overflow-y: auto;
+    padding: 0 4px 4px;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+    animation: chat-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cc .pin-pop .pp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 4px 6px 12px;
+    font-weight: 600;
+}
+.cc .pin-pop .pp-x {
+    width: 24px;
+    height: 24px;
+}
+.cc .pin-pop .pp-empty {
+    margin: 0 12px 10px;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: normal;
+}
+.cc .pin-pop .pp-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 8px 8px 4px 12px;
+    border-top: 1px solid var(--cc-hair);
+    color: var(--muted);
+    font-size: 11.5px;
+    white-space: normal;
+}
+.cc .pin-pop .pp-foot .pm-clear {
+    flex: none;
+    white-space: nowrap;
+    margin: 0 0 0 auto;
+    width: auto;
+    border: none !important;
+    padding: 2px 8px;
+    color: var(--muted);
+}
+.cc .pin-pop .pp-foot .pm-clear:hover {
+    color: var(--fg);
 }
