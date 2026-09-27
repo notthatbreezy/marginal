@@ -140,6 +140,7 @@ export function createChat(getSession) {
         if (p) threads.get(threadId).proposals.delete(proposalId);
         return p ?? null;
     }
+    const peekProposal = (threadId, proposalId) => threads.get(threadId)?.proposals.get(proposalId) ?? null;
     const note = (threadId, text) => threads.get(threadId)?.notes.push(text);
 
     return {
@@ -150,6 +151,7 @@ export function createChat(getSession) {
         heldEdits,
         hold,
         takeProposal,
+        peekProposal,
         note,
         subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)),
         /** The side-chat thread that owns the current turn (null = the user's own main-chat work). */

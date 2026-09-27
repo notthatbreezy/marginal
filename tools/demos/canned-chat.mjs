@@ -52,6 +52,7 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
             proposals.delete(`${threadId}\0${id}`);
             return p;
         },
+        peekProposal: (threadId, id) => proposals.get(`${threadId}\0${id}`) ?? null,
         note: () => {},
         activeThread: () => null,
     };

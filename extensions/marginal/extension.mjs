@@ -199,7 +199,7 @@ const actions = [
                 return {
                     applied: false,
                     held,
-                    note: `Not applied: the user asked this in Discuss mode (answer in the chat; don't change the doc). The edit${edits.length === 1 ? " was" : "s were"} checked and held as a suggestion (${held} edit${held === 1 ? "" : "s"} so far) that the user can apply with one click under your reply. Don't retry or work around it; say in a sentence what the suggestion would change.`,
+                    note: `Not applied: the user asked this in Discuss mode (answer in the chat; don't change the doc). The edit${edits.length === 1 ? " was" : "s were"} checked and held as a suggestion (${held} edit${held === 1 ? "" : "s"} so far) that the user can preview in the doc (as a diff) and apply with one click. Don't retry or work around it, and don't restate the change: the preview shows it. Say in a line what it's for.`,
                 };
             }
             const results = [];

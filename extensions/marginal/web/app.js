@@ -5,6 +5,7 @@ import { createToc } from "./toc.js";
 import { createTables } from "./tables.js";
 import { createProseEditor, editableKind } from "./edit.js";
 import { loadSettings, onSettings, settingsChanged, shortcut } from "./settings.js";
+import { captureGone, decorate as decorateSuggestion } from "./suggest.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 
@@ -15,6 +16,7 @@ const state = {
     repository: null,
     tab: "board",
     viewVersion: null, // historical snapshot being viewed
+    preview: null, // { threadId, proposalId, doc, changes, gone, hits, at }: a held suggestion shown in the doc, not applied
     collapsed: new Map(), // blockId -> bool (user overrides)
     lastSeenVersion: null,
     catalog: [],
@@ -362,6 +364,7 @@ function illustrativeCode(code, label) {
 $("#peek-close").onclick = () => hidePeek();
 document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+        if (state.preview) return; // Esc closes the preview first (below), and nothing else
         if (activeLineSel) activeLineSel.clear();
         else if (picks.size) clearPicks();
         else if (!$("#chat").hidden && !chat.docked && !chat.min) closeChat();
@@ -964,7 +967,20 @@ function setHeader() {
         btn.classList.toggle("on", tab === state.tab);
     }
     const banner = $("#banner");
-    if (state.viewVersion !== null) {
+    document.body.classList.toggle("previewing", !!state.preview);
+    banner.classList.toggle("sg-bar", !!state.preview);
+    if (state.preview) {
+        banner.hidden = false;
+        const p = state.preview;
+        const n = p.hits?.length ?? 0;
+        const btn = (cls, label, title, fn, extra = {}) => h("button", { class: cls, title, onclick: fn, ...extra }, label);
+        put(
+            banner,
+            h("span", { class: "sg-title" }, "Previewing Copilot's suggestion", h("span", { class: "sg-sub" }, ` · not applied · ${n} change${n === 1 ? "" : "s"}`)),
+            n > 1 ? h("span", { class: "sg-step" }, btn("sg-nav", "‹", "Previous change", () => stepPreview(-1), { "aria-label": "Previous change" }), h("span", { class: "sg-at" }, `${(p.at ?? 0) + 1} / ${n}`), btn("sg-nav", "›", "Next change", () => stepPreview(1), { "aria-label": "Next change" })) : null,
+            h("span", { class: "sg-acts" }, btn("cs-apply", "Apply", "Make this change in the doc", () => chat.suggestionActs.get(p.proposalId)?.("apply")), btn("cs-dismiss", "Dismiss", "Leave the doc as it is", () => chat.suggestionActs.get(p.proposalId)?.("discard")), btn("sg-close", "Close preview", "Back to the doc as it is (Esc)", () => closePreview())),
+        );
+    } else if (state.viewVersion !== null) {
         banner.hidden = false;
         banner.replaceChildren(`Viewing version ${state.viewVersion} (read-only). `, h("a", { href: "#", onclick: (e) => (e.preventDefault(), (state.viewVersion = null), loadDoc()) }, "Back to latest"));
     } else banner.hidden = true;
@@ -1103,7 +1119,7 @@ function renderHome() {
 }
 
 function renderBoard() {
-    const doc = state.doc;
+    const doc = state.preview?.doc ?? state.doc;
     const main = $("#main");
     const container = h("div", { class: "doc" });
     if (!doc.content.length)
@@ -1138,6 +1154,7 @@ function renderBoard() {
     // that made it lists it, and the Contents card marks it, for when they want to go look.
     if (animate?.scrollTo) toc?.fresh(animate.scrollTo);
     animate = null;
+    if (state.preview) markPreview(main);
     markAsking(); // keep the discussed paragraph marked across live re-renders
     paintPicks();
     if (insp.blockId) decorateDiagram(); // the inspected diagram was just re-rendered
@@ -1309,6 +1326,7 @@ async function loadDoc(lastEdit) {
 
 function showDoc(documentId) {
     clearPicks();
+    state.preview = null; // a suggestion belongs to the doc it was made on
     state.documentId = documentId;
     state.viewVersion = null;
     state.tab = "board";
@@ -1332,6 +1350,7 @@ $("#home").onclick = async () => {
 for (const btn of document.querySelectorAll("#tabs button"))
     btn.onclick = () => {
         if (finishEditingFirst()) return;
+        state.preview = null;
         state.tab = btn.dataset.tab;
         if (state.tab !== "board") state.viewVersion = state.viewVersion;
         render();
@@ -1348,7 +1367,8 @@ function scheduleRefresh() {
     // Coalesce bursts of edits; each version still animates its own lastEdit when it is the newest.
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => {
-        if (state.viewVersion === null) loadDoc(true);
+        if (state.preview) refreshPreview();
+        else if (state.viewVersion === null) loadDoc(true);
     }, 60);
 }
 
@@ -1366,6 +1386,7 @@ function connect() {
                 const first = !state.booted;
                 state.booted = true;
                 clearPicks();
+                state.preview = null;
                 state.catalog = await api("/catalog").catch(() => state.catalog);
                 state.documentId = ev.documentId;
                 state.viewVersion = null;
@@ -1406,7 +1427,7 @@ function connect() {
 // Two modes share the popup: "board" (side-chat about the doc: one conversation from open to close; pointing at
 // something else refocuses the next message and keeps the history) and "command" (the Command tab's
 // persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
-const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), suggestions: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
+const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), suggestions: new Map(), suggestionActs: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
 const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
 const chatLog = $("#chat-log");
 const chatText = $("#chat-text");
@@ -1441,6 +1462,8 @@ function endThread() {
     Object.assign(chat, { threadId: null, awaiting: false, statusEl: null });
     chat.bubbles.clear();
     chat.suggestions?.clear();
+    chat.suggestionActs?.clear();
+    if (state.preview) closePreview();
     chatLog.replaceChildren();
     fitHeight();
 }
@@ -1909,6 +1932,81 @@ async function showChange(le) {
     toc?.reveal(el, { flash: el.matches(".block") ? el : (el.closest(".block") ?? el) });
 }
 
+// ---- previewing a held suggestion in the doc ----
+async function openPreview(threadId, proposalId) {
+    if (finishEditingFirst()) return;
+    if (state.preview?.proposalId === proposalId) return stepPreview(0);
+    let res;
+    try {
+        res = await api(`/ask/preview?threadId=${encodeURIComponent(threadId)}&proposalId=${encodeURIComponent(proposalId)}`);
+    } catch (e) {
+        return toast(e.message);
+    }
+    if (state.tab !== "board" || state.viewVersion !== null) {
+        state.tab = "board";
+        state.viewVersion = null;
+        await loadDoc();
+    }
+    clearPicks();
+    state.preview = { threadId, proposalId, doc: res.doc, changes: res.changes, gone: captureGone($("#main"), res.changes), at: 0 };
+    await render();
+    stepPreview(0);
+}
+/** The doc changed underneath the preview: show the suggestion against the doc as it is now. */
+async function refreshPreview() {
+    const p = state.preview;
+    if (!p) return;
+    try {
+        const [res, data] = await Promise.all([api(`/ask/preview?threadId=${encodeURIComponent(p.threadId)}&proposalId=${encodeURIComponent(p.proposalId)}`), api(`/docs/${encodeURIComponent(state.documentId)}`)]);
+        if (state.preview !== p) return;
+        state.doc = data.doc;
+        state.lastSeenVersion = data.doc.version;
+        // What a removal would take away is read from the doc as it is now, rendered off the page.
+        const base = h("div", { class: "doc" }, data.doc.content.map((b) => renderBlock(b)));
+        Object.assign(p, { doc: res.doc, changes: res.changes, gone: captureGone(base, res.changes) });
+        await render();
+    } catch (e) {
+        toast(e.message);
+        closePreview();
+    }
+}
+function closePreview({ reload = true } = {}) {
+    if (!state.preview) return;
+    state.preview = null;
+    if (reload) loadDoc();
+    else setHeader();
+}
+function markPreview(main) {
+    const p = state.preview;
+    const base = new Map();
+    // What each changed Markdown block says now, rendered off the page for its text.
+    const oldBlock = (id) => {
+        if (!base.has(id)) {
+            const b = findBlock(state.doc?.content, id);
+            base.set(id, b?.type === "markdown" ? renderBlock(b) : null);
+        }
+        return base.get(id);
+    };
+    p.hits = decorateSuggestion(main, p.changes, { oldBlock, gone: p.gone });
+    p.at = Math.min(p.at ?? 0, Math.max(0, p.hits.length - 1));
+    setHeader();
+}
+function stepPreview(d) {
+    const p = state.preview;
+    if (!p?.hits?.length) return;
+    p.at = (p.at + d + p.hits.length) % p.hits.length;
+    for (const x of p.hits) x.classList.toggle("sg-cur", x === p.hits[p.at]);
+    const el = p.hits[p.at];
+    const r = el.getBoundingClientRect();
+    const m = $("#main").getBoundingClientRect();
+    if (r.top < m.top + 40 || r.bottom > m.bottom - 40) $("#main").scrollBy({ top: r.top - m.top - Math.max(60, (m.height - r.height) / 3), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    setHeader();
+}
+addEventListener("keydown", (e) => {
+    if (!state.preview || e.defaultPrevented || e.target.closest?.("input, textarea, [contenteditable]")) return;
+    if (e.key === "Escape") (e.preventDefault(), closePreview());
+});
+
 // ---- Discuss / Edit: whether Copilot may change the doc while it answers (remembered per doc) ----
 const MAC_KEYS = /Mac|iPhone|iPad/.test(navigator.platform);
 const modeKey = () => `marginal.chat.mode.${state.documentId ?? "none"}`;
@@ -1953,7 +2051,9 @@ function showSuggestion(ev) {
     }
     const threadId = chat.threadId;
     const act = async (what) => {
+        chat.suggestionActs.delete(ev.proposalId);
         for (const b of el.querySelectorAll("button")) b.disabled = true;
+        if (state.preview?.proposalId === ev.proposalId) closePreview({ reload: what !== "apply" });
         // Edits landing now are listed right under the suggestion, like a reply's changes.
         const t = what === "apply" && !chat.turn?.open ? (chat.turn = { open: true, changes: new Map(), el: null, anchor: el }) : null;
         try {
@@ -1965,9 +2065,11 @@ function showSuggestion(ev) {
             if (t) setTimeout(() => (t.open = false), 2500);
         }
     };
+    chat.suggestionActs.set(ev.proposalId, act);
     put(
         el,
         h("span", { class: "cs-h" }, h("span", { class: "cs-ic", "aria-hidden": "true" }, "✎"), "Suggested change ", h("span", { class: "cs-n" }, `· ${count}`)),
+        h("button", { class: "cs-preview", title: "Show it in the doc, marked like tracked changes, before deciding", onclick: () => openPreview(threadId, ev.proposalId) }, "Preview"),
         h("button", { class: "cs-apply", title: "Make this change in the doc", onclick: () => act("apply") }, "Apply"),
         h("button", { class: "cs-dismiss", title: "Leave the doc as it is", onclick: () => act("discard") }, "Dismiss"),
     );
@@ -2063,7 +2165,7 @@ const gWidth = $("#g-width");
 const gEdit = $("#g-edit");
 /** The units the pencil would edit: the selection's prose, or the hovered unit. */
 function editTargets() {
-    if (state.viewVersion !== null || state.tab !== "board") return [];
+    if (state.viewVersion !== null || state.tab !== "board" || state.preview) return [];
     if (picks.size) return picks.keys().map(elOf).filter((el) => editableKind(el));
     const el = gutterState.unit ?? gutterState.placedFor;
     return editableKind(el) ? [el] : [];
@@ -2930,7 +3032,7 @@ $("#open-external").onclick = async () => {
 // ---------------- contents + jump (Ctrl/⌘-J) ----------------
 toc = createToc({
     main: $("#main"),
-    getDoc: () => (state.documentId ? state.doc : null),
+    getDoc: () => (state.documentId ? (state.preview?.doc ?? state.doc) : null),
     active: () => state.tab === "board" && !!state.documentId && !!state.doc,
     expand: (id) => state.collapsed.set(id, false),
     showBoard: async () => {

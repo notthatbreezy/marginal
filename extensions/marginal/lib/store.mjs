@@ -389,6 +389,17 @@ export function applyEdit(docId, edit) {
     return withLock(docId, () => applyEditInner(getDoc(docId), edit));
 }
 
+/** The doc as it would be after a batch of edits (nothing saved), and what each edit touched. */
+export async function previewEdits(docId, edits) {
+    let doc = getDoc(docId);
+    const changes = [];
+    for (const e of edits) {
+        ({ draft: doc } = await applyEditInner(doc, e, { dryRun: true }));
+        changes.push(doc.lastEdit);
+    }
+    return { doc, changes, baseVersion: getDoc(docId).version };
+}
+
 /** Check a batch of edits against the doc without saving anything (each sees the ones before it). */
 export async function checkEdits(docId, edits) {
     let doc = getDoc(docId);

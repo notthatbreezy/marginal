@@ -293,6 +293,18 @@ export async function startServer({ chat, instances, getSessionId }) {
             return send(res, 200, { ended: true });
         }
 
+        // A suggestion Copilot made in a Discuss turn, shown in the doc before it's applied (against the doc as it is now).
+        if (parts[1] === "ask" && parts[2] === "preview" && method === "GET") {
+            const p = chat.peekProposal?.(url.searchParams.get("threadId") ?? "", url.searchParams.get("proposalId") ?? "");
+            if (!p) throw new InputError("That suggestion is no longer available.");
+            try {
+                return send(res, 200, await store.previewEdits(p.docId, p.edits));
+            } catch (err) {
+                if (!(err instanceof InputError)) throw err;
+                throw new InputError(`It no longer fits the doc (it changed since): ${err.message} Ask Copilot to redo it.`);
+            }
+        }
+
         // A suggestion Copilot made in a Discuss turn: apply it as it was checked, or drop it.
         if (parts[1] === "ask" && (parts[2] === "apply" || parts[2] === "discard") && method === "POST") {
             const { threadId, proposalId } = await readBody(req);
@@ -342,8 +354,8 @@ export async function startServer({ chat, instances, getSessionId }) {
             if (discuss)
                 lines.push(
                     kind === "inspect"
-                        ? "(Discuss mode: the user is inspecting that diagram and wants an answer in the chat popup, not doc changes; what they change may depend on your answer. Reply briefly there. If notes on the step would help, you may still add them with edit as usual: they aren't applied but held as a suggestion the user can apply with one click, so mention it in a line.)"
-                        : "(Discuss mode: the user wants an answer in the chat popup, not doc changes; what they decide to change may depend on your answer. Keep it short and conversational. Don't change the doc. If your answer points to a specific change worth making, you may still send it with edit as usual: it isn't applied but held as a suggestion the user can apply with one click, so mention it in a line. Other doc-changing actions are refused.)",
+                        ? "(Discuss mode: the user is inspecting that diagram and wants an answer in the chat popup, not doc changes; what they change may depend on your answer. Reply briefly there. If notes on the step would help, you may still add them with edit as usual: they aren't applied but held as a suggestion the user can preview and apply with one click. Don't restate the notes in the chat.)"
+                        : "(Discuss mode: the user wants an answer in the chat popup, not doc changes; what they decide to change may depend on your answer. Keep it short and conversational. Don't change the doc. If your answer points to a specific change worth making, you may still send it with edit as usual: it isn't applied but held as a suggestion the user can preview in the doc (as a diff) and apply with one click, so don't restate the change in the chat. Other doc-changing actions are refused.)",
                 );
             else if (kind === "inspect")
                 lines.push(
