@@ -1847,42 +1847,7 @@ svg .muted {
     border-bottom: none;
 }
 
-/* ---------- tour ---------- */
-.tour-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 1px 10px 1px 8px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 11.5px;
-    font-weight: 600;
-}
-.tour-btn span {
-    display: grid;
-    color: var(--blue);
-}
-.tour-btn:hover {
-    border-color: color-mix(in srgb, var(--blue) 45%, var(--border));
-    background: var(--bg);
-}
-#tour {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-    display: grid;
-    grid-template-columns: minmax(300px, 36%) minmax(0, 1fr);
-    background: var(--bg);
-    animation: tour-open 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes tour-open {
-    from {
-        opacity: 0;
-        transform: scale(0.995);
-    }
-}
+/* ---------- steppers (Command walkthrough) and step content ---------- */
 .tour-stage {
     overflow: auto;
     padding: 22px 20px 40px 22px;
@@ -1895,7 +1860,7 @@ svg .muted {
     font-size: 14px;
     text-wrap: balance;
 }
-/* Sequence as a numbered rail */
+/* Numbered rail (the Command walkthrough's stops) */
 .rail {
     position: relative;
     list-style: none;
@@ -1982,35 +1947,12 @@ svg .muted {
     line-height: 19px;
     white-space: nowrap;
 }
-.tour-arrow {
+.step-arrow {
     display: inline-grid;
     color: var(--muted);
 }
-.tour-arrow.async {
+.step-arrow.async {
     color: var(--purple);
-}
-/* Flow re-laid top-to-bottom; everything but the current node steps back. */
-.tour-flow svg {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    margin: 0 auto;
-}
-.tour-flow .node,
-.tour-flow .edge {
-    transition: opacity 0.25s;
-}
-.tour-flow .node {
-    cursor: pointer;
-}
-.tour-flow svg:has(.tour-active) .node:not(.tour-active),
-.tour-flow svg:has(.tour-active) .edge {
-    opacity: 0.45;
-}
-.tour-flow .node.tour-active .shape {
-    stroke: var(--blue);
-    stroke-width: 2.2;
-    fill: color-mix(in srgb, var(--blue) 10%, var(--bg));
 }
 .tour-pane {
     display: flex;
@@ -2090,20 +2032,20 @@ svg .muted {
     font-weight: var(--font-weight-semibold, 600);
     text-wrap: balance;
 }
-.tour-meta {
+.step-meta {
     display: flex;
     align-items: center;
     gap: 7px;
     margin-bottom: 18px;
 }
-.tour-text {
+.step-text {
     max-width: 72ch;
     margin-bottom: 18px;
 }
-.tour-empty {
+.step-empty {
     color: var(--muted);
 }
-.tour-leads {
+.step-leads {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -2111,16 +2053,16 @@ svg .muted {
     margin-top: 18px;
     font-size: 12.5px;
 }
-.tour-leads-h {
+.step-leads-h {
     color: var(--muted);
     margin-right: 2px;
 }
-.tour-lead {
+.step-lead {
     border-radius: 999px;
     padding: 2px 11px;
     font-size: 12.5px;
 }
-.tour-lead .muted {
+.step-lead .muted {
     color: var(--muted);
 }
 .tour-nav {
@@ -2207,93 +2149,7 @@ svg .muted {
 }
 
 /* ---------- call-stack focus: one merged tree ---------- */
-.stack-legend {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin: -6px 0 12px 2px;
-    font-size: 11.5px;
-}
-.stack-legend .muted {
-    color: var(--muted);
-}
-.stack-tree {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-.stack-tree li {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 10px 6px calc(10px + var(--d) * 18px);
-    border-radius: 7px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: background-color 0.15s, box-shadow 0.2s;
-}
-.stack-tree .tree {
-    color: var(--muted);
-    font-family: var(--mono);
-}
-.stack-tree .fn {
-    font-family: var(--mono);
-    font-size: 12.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.stack-tree .loc {
-    margin-left: auto;
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: 11px;
-    white-space: nowrap;
-}
-.stack-tree .via {
-    font-size: 10px;
-    color: var(--purple);
-    border: 1px solid color-mix(in srgb, var(--purple) 50%, transparent);
-    border-radius: 999px;
-    padding: 0 6px;
-}
-.stack-tree li.s-new {
-    background: var(--green-muted);
-}
-.stack-tree li.s-removed {
-    background: var(--red-muted);
-}
-.stack-tree li.s-removed .fn {
-    text-decoration: line-through;
-    text-decoration-color: color-mix(in srgb, var(--red) 60%, transparent);
-}
-.stack-tree li:hover {
-    background: var(--surface-2);
-}
-.stack-tree li.s-new:hover {
-    background: color-mix(in srgb, var(--green) 22%, transparent);
-}
-.stack-tree li.s-removed:hover {
-    background: color-mix(in srgb, var(--red) 20%, transparent);
-}
-.stack-tree li.s-new:has(+ li.s-new),
-.stack-tree li.s-removed:has(+ li.s-removed) {
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-}
-.stack-tree li.s-new + li.s-new,
-.stack-tree li.s-removed + li.s-removed {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-}
 /* The current frame: an inset ring, so it never changes geometry or breaks a joined run. */
-.stack-tree li.active {
-    box-shadow: inset 0 0 0 1.5px var(--blue);
-}
-.stack-tree li.active .fn {
-    font-weight: 600;
-}
-
 /* ==========================================================================
    Command tab. Design stylesheet scoped under .cc (tools/scope-css.mjs) + integration rules.
    Tokens only; every selector lives under .cc so nothing leaks into the doc.
@@ -4667,12 +4523,12 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     margin-left: 22px;
 }
 /* Notes & examples under a tour stop */
-.tour-notes {
+.step-notes {
     margin-top: 22px;
     padding-top: 14px;
     border-top: 1px dashed var(--border);
 }
-.tour-notes-h {
+.step-notes-h {
     margin-bottom: 10px;
     font-size: 11.5px;
     font-weight: 600;
@@ -4680,19 +4536,19 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     text-transform: uppercase;
     color: var(--muted);
 }
-.tour-note + .tour-note {
+.step-note + .step-note {
     margin-top: 16px;
 }
-.tour-note h3 {
+.step-note h3 {
     margin: 0 0 6px;
     font-size: 14px;
     line-height: 20px;
     font-weight: 600;
 }
-.tour-note .cv {
+.step-note .cv {
     margin-top: 8px;
 }
-.tour-note.fresh {
+.step-note.fresh {
     animation: note-in 1.8s ease-out;
     border-radius: 8px;
 }
@@ -4703,7 +4559,7 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     }
 }
 @media (prefers-reduced-motion: reduce) {
-    .tour-note.fresh {
+    .step-note.fresh {
         animation: none;
     }
 }
@@ -4874,9 +4730,6 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     border-radius: 12px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
     animation: chat-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}
-body:has(#tour) #toc {
-    display: none;
 }
 .toc-bar {
     flex: none;
@@ -5288,4 +5141,235 @@ html.col-resizing * {
     border-top: 1px solid var(--border);
     font-size: 11px;
     color: var(--muted);
+}
+
+/* ---------- Inspect: a diagram's steps in the side panel, in sync with the diagram ---------- */
+#gutter {
+    z-index: 22; /* above the side panel, whose prose has margin controls too */
+}
+body.peek-push #main {
+    padding-right: calc(var(--peek-w, 0px) + 22px);
+}
+body.peek-push #peek {
+    box-shadow: none;
+}
+.insp-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11.5px;
+}
+.insp-btn-ic {
+    display: grid;
+}
+.insp-btn:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+.block.inspecting .insp-btn {
+    color: var(--blue);
+}
+.msg {
+    cursor: pointer;
+}
+/* The inspected diagram keeps its natural size and scrolls sideways (to its current part) when it doesn't fit. */
+.block.inspecting .diagram svg {
+    max-width: none;
+}
+.block.inspecting .msg,
+.block.inspecting .node,
+.block.inspecting .edge,
+.block.inspecting .fr {
+    transition: opacity 0.2s;
+}
+.block.inspecting svg:has(.insp-on) .msg:not(.insp-on),
+.block.inspecting svg:has(.insp-on) .node:not(.insp-on),
+.block.inspecting svg:has(.insp-on) .edge {
+    opacity: 0.4;
+}
+.msg.insp-on .hit {
+    fill: var(--blue-muted);
+}
+.msg.insp-on text.lbl,
+.msg.insp-on .num {
+    fill: var(--blue);
+}
+.msg.insp-on text.lbl {
+    font-weight: 600;
+}
+.msg.insp-on line,
+.msg.insp-on path {
+    stroke: var(--blue);
+    stroke-width: 2;
+}
+.node.insp-on .shape {
+    stroke: var(--blue);
+    stroke-width: 2.2;
+    fill: color-mix(in srgb, var(--blue) 10%, var(--bg));
+}
+.block.inspecting .stack:has(.insp-on) .fr:not(.insp-on) {
+    opacity: 0.55;
+}
+.stack .fr.insp-on {
+    background: var(--blue-muted);
+    box-shadow: inset 2px 0 0 var(--blue);
+}
+#peek.insp #peek-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.insp-kind {
+    flex: none;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.insp-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.insp-nav {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 1px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+.insp-nav .chat-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+}
+.insp-count {
+    min-width: 42px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+#peek.insp #peek-body {
+    padding: 18px 44px 0 18px; /* the right lane holds the margin controls */
+    --cv-max: 440px;
+}
+.insp-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 14px;
+    padding-bottom: 30px;
+}
+.insp-step::before {
+    content: "";
+    position: absolute;
+    left: 13px;
+    top: 34px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--border);
+}
+.insp-step:last-of-type::before {
+    display: none;
+}
+.insp-num {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1.5px solid var(--border);
+    border-radius: 50%;
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.insp-step.on .insp-num {
+    border-color: var(--blue);
+    background: var(--blue);
+    color: var(--color-white, #fff);
+    box-shadow: 0 0 0 4px var(--blue-muted);
+}
+.insp-main {
+    min-width: 0;
+}
+.insp-head {
+    --px: 10px;
+    margin: -4px calc(-1 * var(--px)) 0;
+    padding: 4px var(--px) 6px;
+    border-radius: var(--hl-radius);
+    outline: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 0.12s, outline-color 0.12s;
+}
+.insp-head.unit-hover {
+    outline-color: var(--hover-line);
+}
+.insp-head.picked {
+    background: var(--pick-fill);
+    outline-color: transparent;
+}
+.insp-head.asking {
+    background: var(--ask-fill);
+    outline-color: transparent;
+}
+.insp-kicker {
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.insp-t {
+    margin: 2px 0 6px;
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 600;
+    text-wrap: balance;
+    transition: color 0.2s;
+}
+.insp-step.on .insp-t {
+    color: var(--blue);
+}
+.insp-head .step-meta {
+    margin-bottom: 0;
+}
+.insp-main > .step-text {
+    max-width: none;
+    margin: 6px 0 10px;
+}
+.insp-main > .cv,
+.insp-main > .cv-lazy {
+    margin: 10px 0;
+}
+.cv-lazy {
+    height: 160px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+.insp-main .step-notes {
+    margin-top: 16px;
+}
+.insp-empty {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 13px;
 }

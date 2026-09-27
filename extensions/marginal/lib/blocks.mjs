@@ -84,7 +84,7 @@ export const sourceSchema = refine(
 const codeFields = { language: dflt(text, "text"), text };
 
 /**
- * Notes: extra material attached to a tour stop (sequence step, flow node, call-stack frame), usually added when the
+ * Notes: extra material attached to a diagram step (sequence step, flow node, call-stack frame), usually added when the
  * reader asks for more: prose (markdown), a real example from the codebase (source), or an illustrative sketch (code).
  */
 export const noteSchema = refine(

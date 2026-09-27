@@ -204,7 +204,7 @@ await test("call_stack_diff: base column defaults to base side; parentKey order 
     await rejects(() => store.applyEdit(doc.documentId, { type: "insert", content: { type: "call_stack_diff", title: "t", base: [], head: [{ parentKey: "later", source: { file: "src/api.ts", startLine: 1 } }] } }), /earlier frame/);
 });
 
-await test("tour notes: steps and frames take verified notes; frames update in place only", async () => {
+await test("step notes: steps and frames take verified notes; frames update in place only", async () => {
     const seq = store.getDoc(doc.documentId).content.find((b) => b.id === seqId);
     const stepId = seq.steps[0].id;
     await store.applyEdit(doc.documentId, { type: "update", targetId: stepId, changes: { notes: [{ title: "Example", text: "A cart looks like this.", source: { file: "src/api.ts", startLine: 1, endLine: 2 } }, { code: { language: "ts", text: "checkout({ total: 3 })" } }] } });

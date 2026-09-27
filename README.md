@@ -13,7 +13,7 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 ### Docs
 
 - **Blocks the agent can draw:** Markdown, sections, callouts, code, `code_peek` (verified slices of real files at pinned commits), sequence diagrams, flow diagrams, call-stack diffs, database schema views ("data lenses": which code reads and writes which tables and fields), trace quotes and images. Blocks are validated at write time, so every file reference resolves.
-- **Code tours:** sequence and flow diagrams have a **Tour** mode that steps through the diagram beside the code. Call-stack diffs have a **Focus** view. A chat is docked under every tour and keeps one conversation for the whole walk. Ask "can you show an example of this interface?" and Copilot adds it to that step as **notes and examples**, which appear in place.
+- **Inspect diagrams:** click any step of a sequence diagram, flow diagram or call-stack diff (or its **Inspect** button) and every step opens in a side panel with its explanation, code and notes. When there's room the doc moves over, so the whole diagram stays visible; on a narrow window the panel covers the doc and the diagram scrolls sideways instead. The two stay in sync: click the diagram to jump to a step, scroll the steps (or press ↑/↓) and the diagram highlights where you are. Step text has the same margin controls as the doc. Ask "can you show an example of this interface?" and Copilot adds it to that step as **notes and examples**, which appear in place.
 - **Comment in the margin:** hover a paragraph, list item, diagram or code range to get margin controls for *Comment* and *Copy*. Ctrl/Cmd-click or Shift-click selects several at once. Code views support GitHub-style gutter line selection.
 - **Side chat:** a small, draggable chat whose replies stream from your Copilot session. It keeps one conversation from when you open it until you close it: comment on something else and the next message is about that instead, labelled in the history so you can click back to it. Ctrl/Cmd-click adds to what the chat is about. Minimize it to a pill to keep reading.
 - **Table width:** tables that don't fit the reading column go wide on their own. The width button in a table's margin switches between *Text width*, *Wide* and *Full width*, and you can drag column borders (double-click one to reset). Your choices are remembered per table.
@@ -26,13 +26,13 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 
 ![Selecting two list items, commenting, a streamed reply, minimizing the chat and opening a code link](docs/images/demo-docs-comment.webp)
 
-**Tour a diagram, and ask for more.** Step through a sequence diagram beside its code. The tour's chat stays docked for the whole walk, and when you ask for an example Copilot adds it to the step.
+**Inspect a diagram, and ask for more.** Click a step and the steps open beside the diagram, in sync as you scroll or step through. Comment on a step and ask for an example, and Copilot adds it to the step.
 
-![Opening a tour, stepping through, asking for an example and seeing it added to the step](docs/images/demo-docs-tour.webp)
+![Inspecting a sequence diagram: the steps open beside it, scrolling and arrow keys move the highlight, and a requested example is added to a step](docs/images/demo-docs-inspect.webp)
 
-| Code tour | Call-stack focus |
+| Inspecting a sequence diagram | Inspecting a call-stack diff |
 |---|---|
-| ![Code tour](docs/images/code-tour.png) | ![Call-stack focus](docs/images/call-stack-focus.png) |
+| ![Inspecting a sequence diagram](docs/images/inspect-sequence.png) | ![Inspecting a call-stack diff](docs/images/inspect-call-stack.png) |
 
 ### Command center
 

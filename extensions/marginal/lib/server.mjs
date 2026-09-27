@@ -295,15 +295,15 @@ export async function startServer({ chat, instances, getSessionId }) {
                         .map((l) => `> ${l}`)
                         .join("\n"),
                 );
-            // Docked chats (tour, walkthrough) say where the reader is on every message, since they move between steps.
+            // Inspecting a diagram (and the docked Command walkthrough) says where the reader is on every message, since they move between steps.
             if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
             lines.push(message.trim().slice(0, 8000));
-            if (kind === "tour")
+            if (kind === "inspect")
                 lines.push(
-                    "(The user is in the full-screen tour of that diagram, with this chat docked under the step. When they ask for more explanation, an example, or what something looks like, add it to that step as notes: edit {type:\"update\", targetId:<the step/node/frame id>, changes:{notes:[...existing, {title?, text?, source? | code?}]}}. Use source for a real example from the code (read it first) and code for an illustrative sketch. The tour updates in place. Reply briefly in the chat.)",
+                    "(The user is inspecting that diagram: a side panel lists every step with its explanation, code and notes, beside the diagram. When they ask for more explanation, an example, or what something looks like, add it to the step as notes: edit {type:\"update\", targetId:<the step/node/frame id>, changes:{notes:[...existing, {title?, text?, source? | code?}]}}. Use source for a real example from the code (read it first) and code for an illustrative sketch. The panel updates in place. Reply briefly in the chat popup.)",
                 );
             else lines.push("(The user reads your reply in a small chat popup on the doc: keep it short and conversational. Make any changes with the Marginal canvas actions; they appear live.)");
-            const where = doc ? `On doc “${doc.title}”${kind === "tour" ? " · tour" : blockId ? ` (${blockId})` : ""}` : "From the doc";
+            const where = doc ? `On doc “${doc.title}”${kind === "inspect" ? ` · inspecting${blockId ? ` ${blockId}` : ""}` : blockId ? ` (${blockId})` : ""}` : "From the doc";
             const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}` });
             return send(res, 200, result);
         }

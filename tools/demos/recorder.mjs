@@ -19,6 +19,8 @@ export const overlayScript = `(() => {
       #demo-caption { position: fixed; z-index: 2147483645; left: 50%; bottom: 18px; transform: translateX(-50%); max-width: 80%; padding: 8px 16px; border-radius: 999px; pointer-events: none;
         font: 600 14px/20px -apple-system, "Segoe UI", sans-serif; color: #fff; background: rgba(31,35,40,.88); box-shadow: 0 6px 20px rgba(0,0,0,.22); white-space: nowrap; }
       #demo-caption:empty { display: none; }
+      #demo-caption[data-pos="left"] { left: 18px; transform: none; }
+      #demo-caption[data-pos="top"] { top: 64px; bottom: auto; }
       #demo-keys { display: inline-block; margin-left: 8px; padding: 0 6px; border-radius: 4px; background: rgba(255,255,255,.18); font-weight: 600; }\`;
     document.head.append(st);
     const c = document.createElement("div"); c.id = "demo-cursor"; c.innerHTML = ${JSON.stringify(CURSOR_SVG)};
@@ -28,6 +30,7 @@ export const overlayScript = `(() => {
     window.__demo = {
       move(x, y) { c.style.left = x + "px"; c.style.top = y + "px"; },
       ripple(x, y, on) { r.style.left = x + "px"; r.style.top = y + "px"; r.style.opacity = on ? "1" : "0"; },
+      place(pos) { cap.dataset.pos = pos || ""; },
       caption(text, keys) { cap.textContent = text || ""; if (keys) { const k = document.createElement("span"); k.id = "demo-keys"; k.textContent = keys; cap.append(k); } },
       hide(on) { c.style.display = on ? "none" : ""; },
     };
@@ -53,6 +56,10 @@ export async function createRecorder(page, { width, height } = {}) {
         },
         async caption(text, keys) {
             await demo("caption", text, keys);
+        },
+        /** Where captions sit: "" (bottom centre), "left" (bottom left) or "top", to stay clear of what's being shown. */
+        async captionAt(pos) {
+            await demo("place", pos);
         },
         /** Glide the cursor to (x, y) (or a locator's centre), capturing a few frames on the way. */
         async move(target, { steps = 7, frameMs = 32, offset = { x: 0, y: 0 } } = {}) {

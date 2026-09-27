@@ -12,16 +12,17 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- **Inspect** replaces the diagram Tour and Focus modes. Clicking a sequence step, flow node or call-stack frame (or the diagram's Inspect button) opens every step in the side panel with its explanation, code and notes, in sync with the diagram: clicking the diagram scrolls to a step, and scrolling or ↑/↓ moves the highlight. With room to spare the side panel moves the doc over instead of covering it; otherwise the inspected diagram shrinks to the uncovered part and scrolls sideways to the current step. Step text has the doc's comment/copy margin controls and Ctrl/Shift-click. The side panel no longer covers the header.
 - The doc chat keeps its conversation while it's open. Commenting on something else refocuses the next message instead of starting a new chat, and each change of focus is labelled in the history (click it to scroll back). Ctrl/Cmd-click extends what the chat is about.
 
 ### Fixed
 
 - A scrollbar no longer stays behind when you drag or resize the chat while it's showing.
-- Illustrative code in notes, tour steps and peeks keeps its line breaks and indentation instead of running together on one line.
+- Illustrative code in notes, diagram steps and peeks keeps its line breaks and indentation instead of running together on one line.
 
 ### Docs
 
-- Animated demos in the README for commenting and chat, doc tours, and the Command center, recorded with `tools/demos/record.mjs`.
+- Animated demos in the README for commenting and chat, inspecting diagrams, and the Command center, recorded with `tools/demos/record.mjs`.
 
 ## [0.1.1] - 2026-09-26
 

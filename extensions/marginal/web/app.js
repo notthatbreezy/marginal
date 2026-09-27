@@ -1,6 +1,5 @@
 // Marginal canvas renderer. Vanilla JS, no dependencies.
 import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
-import { createStepper } from "./stepper.js";
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
 import { createToc } from "./toc.js";
 import { createTables } from "./tables.js";
@@ -72,8 +71,13 @@ async function loadInto(container, src, opts = {}) {
     }
 }
 
-// ---------------- peek drawer ----------------
+// ---------------- side panel: code, and Inspect for diagrams ----------------
+// With room to spare the panel moves the doc over instead of covering it (the doc re-centres beside it). Otherwise it
+// overlays the doc, and an inspected diagram shrinks to the part left uncovered, scrolling sideways to its current step.
+const peekEl = $("#peek");
+const PUSH_MIN = 980; // width the doc keeps beside the panel for the panel to move it over rather than cover it
 function openPeek(title, sections) {
+    endInspect();
     $("#peek-title").textContent = title;
     const body = $("#peek-body");
     body.replaceChildren();
@@ -86,10 +90,54 @@ function openPeek(title, sections) {
             body.append(h("div", { class: "peek-section pad" }, codeView(sec.source, { diff: !!sec.diff, label: sec.heading && sec.heading !== srcLabel(sec.source) ? sec.heading.split(" · ")[0] : undefined })));
         }
     }
-    $("#peek").hidden = false;
+    showPeek();
+}
+function showPeek() {
+    peekEl.hidden = false;
+    layoutPeek();
+}
+function hidePeek() {
+    if (peekEl.hidden) return;
+    peekEl.hidden = true;
+    endInspect();
+    if (gutterState.unit?.closest?.("#peek")) hideGutter();
+    layoutPeek();
+}
+let peekRelayout = false;
+function layoutPeek() {
+    const open = !peekEl.hidden;
+    peekEl.style.top = `${Math.round($("#main").getBoundingClientRect().top)}px`; // under the header, never over the tabs
+    const w = open ? peekEl.getBoundingClientRect().width : 0;
+    const push = open && innerWidth - w >= PUSH_MIN;
+    const was = document.body.classList.contains("peek-push");
+    document.body.classList.toggle("peek-push", push);
+    document.documentElement.style.setProperty("--peek-w", `${Math.round(w)}px`);
+    coverInspected();
+    if (open) keepChatClear(w);
+    if (push !== was) {
+        // The doc column changed width: let tables, contents and scrollbars re-measure.
+        peekRelayout = true;
+        dispatchEvent(new Event("resize"));
+        peekRelayout = false;
+    }
+}
+addEventListener("resize", () => !peekRelayout && !peekEl.hidden && layoutPeek());
+/** Overlay mode: the inspected diagram ends where the panel begins, so all of it stays reachable. */
+function coverInspected() {
+    const el = inspBlockEl();
+    if (!el) return;
+    el.style.marginRight = "";
+    if (peekEl.hidden || document.body.classList.contains("peek-push")) return;
+    const cover = el.getBoundingClientRect().right - peekEl.getBoundingClientRect().left;
+    if (cover > 0) el.style.marginRight = `${Math.ceil(cover + 16)}px`;
+}
+/** The chat popup steps out from under the panel. */
+function keepChatClear(w) {
+    if (chatBox.hidden || chat.docked) return;
+    if (chatBox.getBoundingClientRect().right > innerWidth - w - 8) applyBox({ ...anchor(), right: w + 16 });
 }
 
-// ---------------- code view (shared by peeks and tours) ----------------
+// ---------------- code view (shared by peeks and Inspect) ----------------
 // A readable file path + range header with a Code/Diff switch; the cited lines are tinted and the
 // surrounding context is dimmed so the eye lands on what the explanation is about.
 const detab = (t) => t.replace(/\t/g, "    ");
@@ -306,14 +354,13 @@ function illustrativeCode(code, label) {
         h("div", { class: "cv-body" }, h("div", { class: "cv-code illus", html: highlight(detab(code.text), code.language) })),
     );
 }
-$("#peek-close").onclick = () => ($("#peek").hidden = true);
+$("#peek-close").onclick = () => hidePeek();
 document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         if (activeLineSel) activeLineSel.clear();
         else if (picks.size) clearPicks();
         else if (!$("#chat").hidden && !chat.docked && !chat.min) closeChat();
-        else if (tour.root) closeTour();
-        else $("#peek").hidden = true;
+        else hidePeek();
     }
 });
 const hasBase = (src) => !!((src.pins ?? state.doc?.target)?.base && (src.pins ?? state.doc?.target)?.base !== (src.pins ?? state.doc?.target)?.head);
@@ -588,21 +635,12 @@ function renderSequence(b) {
                 t.style.animationDelay = `${plan.delay(st.id) + 150}ms`;
             });
         }
-        if (linked)
-            g.addEventListener("click", () => {
-                const title = `${idx + 1}. ${b.actors[st.from]} → ${b.actors[st.to]}: ${st.label}`;
-                const sections = [];
-                if (st.explanation) sections.push({ text: st.explanation });
-                if (st.source) sections.push({ source: st.source, diff: hasBase(st.source) });
-                else if (st.code) sections.push({ code: st.code, heading: st.code.language });
-                sections.push(...noteSections(st.notes));
-                openPeek(title, sections);
-            });
-        g.append(s("title", {}, linked ? "Click to see details" : st.label));
+        g.addEventListener("click", () => openInspect(b.id, st.id));
+        g.append(s("title", {}, `Inspect step ${idx + 1}`));
         svg.append(g);
         y += rh + stepGap;
     });
-    return frame("sequence", b.title, h("div", { class: "diagram" }, svg), { right: tourButton(b) });
+    return frame("sequence", b.title, h("div", { class: "diagram" }, svg), { right: inspectButton(b) });
 }
 
 // ---------------- flow diagram (layered layout) ----------------
@@ -781,18 +819,11 @@ function renderFlow(b) {
         if (n.attachments?.length) g.append(s("text", { class: "clip", x: p.x + p.w / 2, y: ty, "text-anchor": "middle" }, `‹/› ${n.attachments.length === 1 ? n.attachments[0].label : `${n.attachments.length} code links`}`));
         g.append(s("title", {}, n.description ?? n.label));
         popAnim(g, plan, n.id);
-        if (linked)
-            g.addEventListener("click", () => {
-                const sections = [];
-                if (n.description) sections.push({ text: n.description });
-                for (const att of n.attachments ?? []) for (const src of att.sources) sections.push({ source: src, heading: `${att.label} · ${srcLabel(src)}` });
-                sections.push(...noteSections(n.notes));
-                openPeek(n.label, sections);
-            });
+        if (linked || n.notes?.length) g.addEventListener("click", () => openInspect(b.id, n.id));
         if (linked) g.style.cursor = "pointer";
         svg.append(g);
     }
-    return frame("flow", b.title, h("div", { class: "diagram" }, b.description ? h("p", { class: "desc" }, b.description) : null, svg), { right: b.tourStage ? null : tourButton(b) });
+    return frame("flow", b.title, h("div", { class: "diagram" }, b.description ? h("p", { class: "desc" }, b.description) : null, svg), { right: inspectButton(b) });
 }
 
 // ---------------- call stack diff ----------------
@@ -816,14 +847,7 @@ function renderStack(b) {
                     class: `fr ${status}`,
                     title: status ? `${status} in this change` : "",
                     "data-unit": f.id,
-                    onclick: () => {
-                        const sections = [];
-                        if (f.via) sections.push({ text: `**via ${f.via.kind}** — ${f.via.reason}` });
-                        sections.push({ source: f.source, diff: hasBase(f.source), heading: `${side} · ${srcLabel(f.source)}` });
-                        if (f.callSite) sections.push({ source: f.callSite, heading: `called from · ${srcLabel(f.callSite)}` });
-                        sections.push(...noteSections(f.notes));
-                        openPeek(name, sections);
-                    },
+                    onclick: () => openInspect(b.id, f.id),
                 },
                 h("span", { class: "tree" }, d ? `${"  ".repeat(d - 1)}└ ` : ""),
                 h("span", { class: "fn" }, name),
@@ -835,7 +859,7 @@ function renderStack(b) {
         }
         return el;
     };
-    return frame("call stack", b.title, h("div", { class: "stack" }, col("base", b.base), col("head", b.head)), { right: tourButton(b) });
+    return frame("call stack", b.title, h("div", { class: "stack" }, col("base", b.base), col("head", b.head)), { right: inspectButton(b) });
 }
 
 // ---------------- database lens ----------------
@@ -1005,6 +1029,7 @@ function renderBoard() {
     animate = null;
     markAsking(); // keep the discussed paragraph marked across live re-renders
     paintPicks();
+    if (insp.blockId) decorateDiagram(); // the inspected diagram was just re-rendered
 }
 
 async function renderDiff() {
@@ -1123,7 +1148,10 @@ async function render() {
     } catch (e) {
         $("#main").replaceChildren(h("div", { class: "doc error" }, e.message));
     }
-    if (state.tab !== "board") toc?.rebuild(); // hides the Contents card off the Doc tab
+    if (state.tab !== "board") {
+        toc?.rebuild(); // hides the Contents card off the Doc tab
+        if (insp.blockId) hidePeek(); // Inspect belongs to the doc's diagrams
+    }
 }
 
 /** The Command tab lives in web/command/ and loads on first use. */
@@ -1159,7 +1187,7 @@ async function loadDoc(lastEdit) {
             state.lastSeenVersion = data.doc.version;
         }
         await render();
-        refreshTour();
+        refreshInspect();
     } catch (e) {
         state.doc = null;
         $("#main").replaceChildren(h("div", { class: "doc error" }, e.message));
@@ -1173,7 +1201,7 @@ function showDoc(documentId) {
     state.tab = "board";
     state.lastSeenVersion = null;
     state.collapsed.clear();
-    $("#peek").hidden = true;
+    hidePeek();
     api(`/instance/${encodeURIComponent(INSTANCE)}/show`, { method: "POST", body: { documentId } }).catch(() => {});
     loadDoc();
 }
@@ -1363,6 +1391,7 @@ function openChat(ctx) {
     }
     $("#chat").hidden = false;
     $("#chat-fab").hidden = true;
+    if (!peekEl.hidden) keepChatClear(peekEl.getBoundingClientRect().width);
     markAsking();
     fitHeight();
     chatText.focus();
@@ -1378,7 +1407,7 @@ function syncBlocked() {
     $("#chat-send").disabled = !!chat.blocked || !chatText.value.trim() || chat.awaiting;
 }
 
-// ---- docking: the same chat, embedded at the bottom of a stepper (tour, walkthrough) for the whole walk ----
+// ---- docking: the same chat, embedded at the bottom of a stepper (the Command walkthrough) for the whole walk ----
 const chatHome = { parent: $("#chat").parentNode, next: $("#chat").nextSibling };
 /** ctx: { mode: "board"|"command", blockId?, kind?, placeholder?, ref(): string, context(): string } */
 function dockChat(slot, ctx) {
@@ -1411,7 +1440,7 @@ function undockChat() {
     if (d.floating.style) chatBox.setAttribute("style", d.floating.style);
     chatText.placeholder = d.placeholder;
     if (chat.mode === "command") chatBox.hidden = true; // the Command chat persists; it just stops being docked
-    else closeChat(); // a tour's conversation ends with the tour
+    else closeChat(); // a docked doc conversation ends with its walk
     syncChatFab();
 }
 
@@ -1449,6 +1478,7 @@ function sectionOf(el) {
 const UNIT_KIND = { P: "paragraph", LI: "list item", H1: "heading", H2: "heading", H3: "heading", H4: "heading", BLOCKQUOTE: "quote", TABLE: "table", PRE: "code", UL: "list", OL: "list" };
 /** Label for a comment target: where it is (section · kind of text), or the block kind + title for diagrams and code. */
 function refOf(t, selection, el) {
+    if (el?.dataset.pk) return selection ? `${el.dataset.ref.split(" · ").slice(0, 2).join(" · ")} · selection` : el.dataset.ref;
     if (t.unit || (selection && el?.matches?.("[data-l]"))) {
         const kind = UNIT_KIND[el?.tagName] ?? "text";
         const where = sectionOf(el);
@@ -1505,7 +1535,7 @@ function closeChat() {
 /** The chat button is the way in when nothing is selected: shown on a doc whenever the chat is closed. */
 function syncChatFab() {
     const tabOk = state.tab === "board" || (state.tab === "command" && !!state.doc?.target);
-    $("#chat-fab").hidden = !$("#chat").hidden || !state.documentId || !tabOk || !!tour.root;
+    $("#chat-fab").hidden = !$("#chat").hidden || !state.documentId || !tabOk;
     $("#chat-fab").title = state.tab === "command" ? "Chat with the orchestrator" : "Chat about this doc";
 }
 $("#chat-fab").onclick = () => openChat({});
@@ -1671,7 +1701,7 @@ async function sendChat() {
             method: "POST",
             body: cmd
                 ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: docked?.context?.() }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.(), kind: chat.docked?.kind },
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined) },
         });
         chat.threadId = res.threadId;
         if (!cmd && chat.focusGen === gen) chat.quoteFresh = false; // unless the focus moved while this was sending
@@ -1750,6 +1780,14 @@ function findBlock(list, id) {
 
 /** The unit's source: a paragraph's exact Markdown lines, or a block's text form. */
 function unitSource(el) {
+    if (el.dataset.pk) {
+        // Inspect panel: a step heading carries its own text; prose gives its exact Markdown lines.
+        const md = el.closest(".md");
+        const src = md && panelMd.get(md);
+        const [from, to] = (el.dataset.l ?? "").split("-").map(Number);
+        const text = el.dataset.src ?? (src && el.dataset.l ? src.replace(/\r\n/g, "\n").split("\n").slice(from, to + 1).join("\n").trim() : el.innerText.trim());
+        return { blockId: el.dataset.uid, text };
+    }
     const blockEl = el.closest(".block[data-id]");
     const b = blockEl && findBlock(state.doc?.content, blockEl.dataset.id);
     if (!el.dataset.l) {
@@ -1764,15 +1802,16 @@ function unitSource(el) {
 
 function placeGutter(el) {
     // Prose aligns to its text column; a block aligns to its visible frame (a callout is narrower than its wrapper).
-    const box = el.dataset.l ? el : (el.firstElementChild ?? el);
+    const panel = !!el.dataset.pk;
+    const box = el.dataset.l || panel ? el : (el.firstElementChild ?? el);
     const r = box.getBoundingClientRect();
-    const col = (el.dataset.l ? el.closest(".md") : box).getBoundingClientRect();
+    const col = (panel ? el.closest(".insp-main") : el.dataset.l ? el.closest(".md") : box).getBoundingClientRect();
     const column = { right: Math.max(col.right, el.matches("table") ? r.right : -Infinity) };
-    const view = $("#main").getBoundingClientRect();
+    const view = (panel ? $("#peek-body") : $("#main")).getBoundingClientRect();
     if (r.bottom < view.top || r.top > view.bottom) return hideGutter();
     // Align with the unit's first line (or a frame's header), in a column just outside it.
     const top = Math.max(view.top + 4, Math.min(r.top + (el.dataset.l ? 2 : 4), view.bottom - 60));
-    gutter.style.left = `${Math.min(column.right + (el.dataset.l ? 22 : 14), view.right - 34)}px`;
+    gutter.style.left = `${Math.min(column.right + (el.dataset.l ? 22 : panel ? 8 : 14), view.right - 34)}px`;
     gutter.style.top = `${top}px`;
     gutter.hidden = false;
     gutterState.placedFor = el;
@@ -1830,8 +1869,11 @@ function hideGutter() {
 }
 
 // Prose units (paragraph, list item, heading…) win; otherwise the nearest non-prose block is the unit.
-const unitAt = (target) =>
-    target instanceof Element && !target.closest("#chat, #peek, #gutter, #bar, #toc, #jump") ? target.closest("#main .md [data-l]") ?? target.closest("#main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider)") : null;
+const unitAt = (target) => {
+    if (!(target instanceof Element)) return null;
+    if (target.closest("#peek")) return target.closest("#peek-body [data-pk]"); // Inspect panel prose and step headings
+    return !target.closest("#chat, #gutter, #bar, #toc, #jump") ? target.closest("#main .md [data-l]") ?? target.closest("#main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider)") : null;
+};
 const nodeElement = (n) => (n?.nodeType === Node.ELEMENT_NODE ? n : n?.parentElement ?? null);
 
 function inCorridor(x, y) {
@@ -1844,7 +1886,7 @@ function inCorridor(x, y) {
 // The hover zone of a unit extends right through the margin to the far edge of the icons.
 const GUTTER_REACH = 22 + 26 + 6; // gap + button + slack
 function unitNearMargin(x, y) {
-    const columns = document.querySelectorAll("#main .md, #main .md table.tw-out, #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider) > :first-child");
+    const columns = document.querySelectorAll("#main .md, #main .md table.tw-out, #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider) > :first-child, #peek .insp-main");
     for (const col of columns) {
         const r = col.getBoundingClientRect();
         if (y < r.top || y > r.bottom || x <= r.right || x > r.right + GUTTER_REACH) continue;
@@ -1935,7 +1977,8 @@ gComment.onclick = (e) => {
     const t = currentTarget();
     const sel = getSelection();
     const range = gutterState.selection && sel?.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-    openChat({ blockId: t.blockId, unit: t.unit, quote: t.text, ref: refOf(t, gutterState.selection, gutterState.unit), range });
+    const inPanel = !!gutterState.unit?.dataset.pk && !range;
+    openChat({ blockId: t.blockId, unit: t.unit, quote: t.text, ref: refOf(t, gutterState.selection, gutterState.unit), range, picks: inPanel ? [keyOf(gutterState.unit)] : undefined });
     sel?.removeAllRanges();
     hideGutter();
 };
@@ -1969,19 +2012,23 @@ gCopy.onclick = async (e) => {
 };
 
 // ---------------- multi-select (Ctrl/Cmd+click toggles, Shift+click selects a range) ----------------
-const keyOf = (el) => `${el.closest(".block[data-id]").dataset.id}|${el.dataset.l ?? "*"}`;
+const keyOf = (el) => el.dataset.pk ?? `${el.closest(".block[data-id]").dataset.id}|${el.dataset.l ?? "*"}`;
 function elOf(key) {
+    if (key.startsWith("P:")) return document.querySelector(`#peek [data-pk="${CSS.escape(key)}"]`); // Inspect panel prose
     const [bid, l] = key.split("|");
     const block = document.querySelector(`#main .block[data-id="${CSS.escape(bid)}"]`);
     return l === "*" ? block : block?.querySelector(`.md [data-l="${l}"]`);
 }
 /** Every selectable unit in document order; a block that holds prose is selected through its paragraphs. */
 function allUnits() {
-    return [...document.querySelectorAll("#main .md [data-l], #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider)")].filter((el) => !(el.matches(".block") && el.querySelector(".md [data-l]")));
+    const doc = [...document.querySelectorAll("#main .md [data-l], #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider)")].filter((el) => !(el.matches(".block") && el.querySelector(".md [data-l]")));
+    return [...doc, ...document.querySelectorAll("#peek [data-pk]")];
 }
 /** Square the meeting corners of touching units that share a highlight, so a run reads as one band. */
 function joinRuns() {
-    const units = [...document.querySelectorAll("#main .md [data-l]")];
+    for (const scope of ["#main .md [data-l]", "#peek .md [data-pk]"]) joinRunsIn([...document.querySelectorAll(scope)]);
+}
+function joinRunsIn(units) {
     units.forEach((el) => el.classList.remove("join-top", "join-bottom"));
     const tone = (el) => (el.classList.contains("asking") ? "asking" : el.classList.contains("picked") ? "picked" : null);
     for (let i = 1; i < units.length; i++) {
@@ -2037,32 +2084,34 @@ function pickedParts() {
             // 1-based lines and ASCII only: labels travel through the chat, which may not render typographic dashes.
             const [from, to] = (s.unit ?? "").split("-").map((n) => Number(n) + 1);
             const lines = s.unit ? (from === to ? `line ${from}` : `lines ${from}-${to}`) : null;
-            return { key: keyOf(el), label: lines ? `${s.blockId}, ${lines}` : s.blockId, text: s.text };
+            return { key: keyOf(el), id: s.blockId, label: lines ? `${s.blockId}, ${lines}` : s.blockId, text: s.text };
         });
 }
 
 // Capture phase: a modified click on a unit selects it instead of following links, opening peeks or extending text selection.
-$("#main").addEventListener(
-    "mousedown",
-    (e) => {
-        if (withModifier(e) && unitAt(e.target)) e.preventDefault();
-    },
-    true,
-);
-$("#main").addEventListener(
-    "click",
-    (e) => {
-        const el = unitAt(e.target);
-        if (withModifier(e) && el) {
-            e.preventDefault();
-            e.stopPropagation();
-            getSelection()?.removeAllRanges();
-            if (e.shiftKey) rangePick(el);
-            else togglePick(el);
-        } else if (!el && picks.size && !e.target.closest("button, a")) clearPicks();
-    },
-    true,
-);
+for (const host of [$("#main"), $("#peek")]) {
+    host.addEventListener(
+        "mousedown",
+        (e) => {
+            if (withModifier(e) && unitAt(e.target)) e.preventDefault();
+        },
+        true,
+    );
+    host.addEventListener(
+        "click",
+        (e) => {
+            const el = unitAt(e.target);
+            if (withModifier(e) && el) {
+                e.preventDefault();
+                e.stopPropagation();
+                getSelection()?.removeAllRanges();
+                if (e.shiftKey) rangePick(el);
+                else togglePick(el);
+            } else if (!el && picks.size && !e.target.closest("button, a, .cv")) clearPicks();
+        },
+        true,
+    );
+}
 
 const pickedText = () =>
     pickedParts()
@@ -2073,7 +2122,9 @@ function multiComment() {
     if (!parts.length) return;
     const quote = parts.map((p) => `[${p.label}]\n${p.text}`).join("\n\n");
     const one = parts.length === 1 ? elOf(parts[0].key) : null;
-    openChat({ blockId: parts.length === 1 ? parts[0].key.split("|")[0] : null, picks: parts.map((p) => p.key), quote, ref: one ? refOf(unitSource(one), null, one) : `${parts.length} selections` });
+    // One step (in the Inspect panel) or one doc block: tell Copilot which element; several: the quote labels each part.
+    const ids = [...new Set(parts.map((p) => p.id))];
+    openChat({ blockId: ids.length === 1 ? ids[0] : null, picks: parts.map((p) => p.key), quote, ref: one ? refOf(unitSource(one), null, one) : `${parts.length} selections` });
     clearPicks();
     hideGutter();
 }
@@ -2118,14 +2169,15 @@ document.addEventListener("mouseup", (e) => {
     }, 0);
 });
 
-// ---------------- code tour ----------------
-// A diagram becomes a guided walk: the diagram, re-shaped vertically, on the left; one stop at a time on the
-// right with its explanation and code. Sequence steps become a numbered rail (a wide ladder does not fit a
-// column); flow diagrams re-lay top-to-bottom with the current node emphasized.
-const tour = { root: null, block: null, stops: [], stepper: null };
+// ---------------- Inspect: a diagram's steps in the side panel ----------------
+// Sequence diagrams, flow diagrams and call-stack diffs open their steps in the side panel: every step in one scroll,
+// each with its explanation, code and notes. The diagram stays in view (the doc moves over when there's room) and the
+// two stay in sync: clicking a part of the diagram scrolls to its step, and scrolling the steps highlights the part.
+const insp = { blockId: null, block: null, stops: [], i: 0, auto: false, autoTimer: 0, pin: null };
 const ACTOR_HUES = ["--blue", "--purple", "--green", "--yellow", "--red"];
+const INSPECT_KIND = { sequence: "Sequence", flow_diagram: "Flow", call_stack_diff: "Call stack" };
 
-function tourStops(b) {
+function stopsOf(b) {
     if (b.type === "sequence") return b.steps.map((st) => ({ id: st.id, title: st.label, from: st.from, to: st.to, style: st.style, text: st.explanation, code: st.code, sources: st.source ? [{ src: st.source }] : [], notes: st.notes ?? [] }));
     if (b.type === "flow_diagram") {
         const byKey = new Map(b.nodes.map((n) => [n.key, n]));
@@ -2138,7 +2190,7 @@ function tourStops(b) {
                 title: n.label,
                 kind: n.kind,
                 text: n.description,
-                sources: n.attachments.flatMap((a) => a.sources.map((src) => ({ src, label: a.label }))),
+                sources: (n.attachments ?? []).flatMap((a) => a.sources.map((src) => ({ src, label: a.label }))),
                 next: b.edges.filter((e) => e.from === n.key && e.to !== n.key).map((e) => ({ label: e.label, node: byKey.get(e.to) })),
                 notes: n.notes ?? [],
             }));
@@ -2151,12 +2203,12 @@ function tourStops(b) {
 function stackStops(b) {
     const k = (f) => f.key ?? `${f.source.file}:${f.source.startLine}`;
     const depths = (frames) => {
-            const d = new Map();
-            return frames.map((f) => {
-                const x = f.parentKey ? (d.get(f.parentKey) ?? 0) + 1 : 0;
-                if (f.key) d.set(f.key, x);
-                return x;
-            });
+        const d = new Map();
+        return frames.map((f) => {
+            const x = f.parentKey ? (d.get(f.parentKey) ?? 0) + 1 : 0;
+            if (f.key) d.set(f.key, x);
+            return x;
+        });
     };
     const baseBy = new Map(b.base.map((f) => [k(f), f]));
     const headKeys = new Set(b.head.map(k));
@@ -2164,34 +2216,35 @@ function stackStops(b) {
     const bd = depths(b.base);
     const rows = b.head.map((f, i) => ({ f, old: baseBy.get(k(f)), depth: hd[i], status: baseBy.has(k(f)) ? "both" : "new" }));
     b.base.forEach((f, i) => {
-            if (headKeys.has(k(f))) return;
-            let at = rows.length;
-            const pi = f.parentKey ? rows.findIndex((r) => r.f.key === f.parentKey) : -1;
-            if (pi >= 0) {
-                at = pi + 1;
-                while (at < rows.length && rows[at].depth > rows[pi].depth) at++;
-            }
-            rows.splice(at, 0, { f, depth: bd[i], status: "removed" });
+        if (headKeys.has(k(f))) return;
+        let at = rows.length;
+        const pi = f.parentKey ? rows.findIndex((r) => r.f.key === f.parentKey) : -1;
+        if (pi >= 0) {
+            at = pi + 1;
+            while (at < rows.length && rows[at].depth > rows[pi].depth) at++;
+        }
+        rows.splice(at, 0, { f, depth: bd[i], status: "removed" });
     });
-    return rows.map(({ f, depth, status }) => {
-            const name = f.label ?? `${f.source.file.split("/").pop()}:${f.source.startLine}`;
-            const sources = [{ src: f.source, label: status === "removed" ? "Before" : status === "new" ? "Added" : "Now" }];
-            if (f.callSite) sources.push({ src: f.callSite, label: "Called from" });
-            for (const c of f.contextSources ?? []) sources.push({ src: c, label: "Context" });
-            return { id: f.id, title: name, status, depth, via: f.via, text: f.via ? `Reached **via ${f.via.kind}**: ${f.via.reason}` : undefined, sources, notes: f.notes ?? [] };
+    return rows.map(({ f, old, depth, status }) => {
+        const name = f.label ?? `${f.source.file.split("/").pop()}:${f.source.startLine}`;
+        const sources = [{ src: f.source, label: status === "removed" ? "Before" : status === "new" ? "Added" : "Now" }];
+        if (f.callSite) sources.push({ src: f.callSite, label: "Called from" });
+        for (const c of f.contextSources ?? []) sources.push({ src: c, label: "Context" });
+        // A frame on both sides is one step; either side's row selects it.
+        return { id: f.id, ids: [f.id, old?.id].filter(Boolean), title: name, status, depth, via: f.via, text: f.via ? `Reached **via ${f.via.kind}**: ${f.via.reason}` : undefined, sources, notes: f.notes ?? [] };
     });
 }
 
 const STACK_STATUS = { new: ["added", "new"], removed: ["deleted", "removed"], both: [null, "unchanged path"] };
+const MAGNIFIER = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.4"/><path d="m10.4 10.4 3.4 3.4"/></svg>';
 
-function tourButton(b) {
-    if (tourStops(b).length < 2) return null;
-    const focus = b.type === "call_stack_diff";
+function inspectButton(b) {
+    if (!stopsOf(b).length) return null;
     return h(
-            "button",
-            { class: "tour-btn", title: focus ? "Walk this call path frame by frame with its code" : "Step through this diagram with its code", onclick: (e) => (e.stopPropagation(), openTour(b.id)) },
-            h("span", { html: '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" fill="currentColor"/></svg>' }),
-            focus ? "Focus" : "Tour",
+        "button",
+        { class: "insp-btn", title: "Inspect: every step with its code, beside the diagram", "aria-label": `Inspect ${b.title}`, onclick: (e) => (e.stopPropagation(), openInspect(b.id)) },
+        h("span", { class: "insp-btn-ic", html: MAGNIFIER }),
+        "Inspect",
     );
 }
 
@@ -2202,189 +2255,333 @@ function actorChip(b, key) {
 
 function arrowGlyph(style) {
     const dash = style === "return" ? ' stroke-dasharray="3 2.5"' : "";
-    return h("span", { class: `tour-arrow ${style}`, "aria-label": style, html: `<svg viewBox="0 0 22 10" width="22" height="10" aria-hidden="true"><path d="M1 5h18"${dash} stroke="currentColor" stroke-width="1.4"/><path d="M15.5 1.5L20 5l-4.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>` });
+    return h("span", { class: `step-arrow ${style}`, "aria-label": style, html: `<svg viewBox="0 0 22 10" width="22" height="10" aria-hidden="true"><path d="M1 5h18"${dash} stroke="currentColor" stroke-width="1.4"/><path d="M15.5 1.5L20 5l-4.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>` });
 }
 
-function tourStage(b) {
-    if (b.type === "call_stack_diff") {
-        const count = (s) => tour.stops.filter((x) => x.status === s).length;
-        return h(
-            "div",
-            {},
-            h("div", { class: "stack-legend" }, h("span", { class: "st added" }, `${count("new")} new`), h("span", { class: "st deleted" }, `${count("removed")} removed`), h("span", { class: "muted" }, `${count("both")} unchanged`)),
-            h(
-                "ol",
-                { class: "stack-tree" },
-                tour.stops.map((st, i) =>
-                    h(
-                        "li",
-                        { "data-i": i, class: `s-${st.status}`, style: `--d:${st.depth}` },
-                        st.depth ? h("span", { class: "tree" }, "└") : null,
-                        h("span", { class: "fn" }, st.title),
-                        st.via ? h("span", { class: "via", title: st.via.reason }, st.via.kind) : null,
-                        h("span", { class: "loc" }, `${st.sources[0].src.file.split("/").pop()}:${st.sources[0].src.startLine}`),
-                    ),
-                ),
-            ),
-        );
-    }
-    if (b.type === "sequence") {
-        return h(
-            "ol",
-            { class: "rail" },
-            tour.stops.map((st, i) => h("li", { "data-i": i }, h("span", { class: "dot" }, i + 1), h("div", { class: "rail-body" }, h("div", { class: "who" }, actorChip(b, st.from), arrowGlyph(st.style), st.to !== st.from ? actorChip(b, st.to) : null), h("div", { class: "lbl" }, st.title)))),
-        );
-    }
-    const svg = renderFlow({ ...b, direction: "down", tourStage: true }).querySelector("svg");
-    return h("div", { class: "tour-flow" }, svg);
-}
-
-function tourMeta(b, st) {
-    if (b.type === "sequence") return h("div", { class: "tour-meta" }, actorChip(b, st.from), arrowGlyph(st.style), st.to !== st.from ? actorChip(b, st.to) : null, st.style !== "call" ? h("span", { class: "badge" }, st.style) : null);
+function stepMeta(b, st) {
+    if (b.type === "sequence") return h("div", { class: "step-meta" }, actorChip(b, st.from), arrowGlyph(st.style), st.to !== st.from ? actorChip(b, st.to) : null, st.style !== "call" ? h("span", { class: "badge" }, st.style) : null);
     if (b.type === "call_stack_diff") {
         const [cls, label] = STACK_STATUS[st.status];
-        return h("div", { class: "tour-meta" }, cls ? h("span", { class: `st ${cls}` }, label) : h("span", { class: "badge" }, label), st.via ? h("span", { class: "badge" }, `via ${st.via.kind}`) : null);
+        return h("div", { class: "step-meta" }, cls ? h("span", { class: `st ${cls}` }, label) : h("span", { class: "badge" }, label), st.via ? h("span", { class: "badge" }, `via ${st.via.kind}`) : null);
     }
-    return st.kind && st.kind !== "process" ? h("div", { class: "tour-meta" }, h("span", { class: "badge" }, st.kind)) : null;
+    return st.kind && st.kind !== "process" ? h("div", { class: "step-meta" }, h("span", { class: "badge" }, st.kind)) : null;
 }
 
-/** Notes added to a stop (usually on request): prose, a real example (source) or an illustrative sketch (code). */
-function renderNotes(notes) {
+/** Notes added to a step (usually on request): prose, a real example (source) or an illustrative sketch (code). */
+function renderNotes(notes, prose = (text) => h("div", { class: "md step-text", html: markdown(text) })) {
     if (!notes?.length) return null;
     return h(
         "section",
-        { class: "tour-notes", "aria-label": "Notes and examples" },
-        h("div", { class: "tour-notes-h" }, "Notes & examples"),
-        notes.map((n) =>
+        { class: "step-notes", "aria-label": "Notes and examples" },
+        h("div", { class: "step-notes-h" }, "Notes & examples"),
+        notes.map((n, k) =>
             h(
                 "div",
-                { class: "tour-note" },
+                { class: "step-note" },
                 n.title ? h("h3", {}, n.title) : null,
-                n.text ? h("div", { class: "md tour-text", html: markdown(n.text) }) : null,
+                n.text ? prose(n.text, k) : null,
                 n.code ? illustrativeCode(n.code, n.title ? "Example" : undefined) : null,
-                n.source ? codeView(n.source, { diff: hasBase(n.source), context: 4, label: n.title ? undefined : "Example" }) : null,
+                n.source ? lazyCode(n.source, { diff: hasBase(n.source), context: 4, label: n.title ? undefined : "Example" }) : null,
             ),
         ),
     );
 }
-/** The same notes as peek-drawer sections. */
-const noteSections = (notes) =>
-    (notes ?? []).flatMap((n) => [
-        ...(n.text ? [{ text: n.text, heading: n.title }] : []),
-        ...(n.code ? [{ code: n.code, heading: n.text ? "Example" : (n.title ?? "Example") }] : []),
-        ...(n.source ? [{ source: n.source, diff: hasBase(n.source), heading: n.text ? "Example" : (n.title ?? "Example") }] : []),
-    ]);
 
-/** Stop body shared by tours (and reused by walkthroughs): title, meta, narration, code. */
-function renderTourStop(b, st, stepper) {
-    return [
-        h("h2", { class: "tour-h" }, st.title),
-        tourMeta(b, st),
-        st.text ? h("div", { class: "md tour-text", html: markdown(st.text) }) : null,
-        st.code ? illustrativeCode(st.code) : null,
-        ...st.sources.map((s) => codeView(s.src, { diff: true, label: s.label, context: 10 })),
-        renderNotes(st.notes),
-        !st.text && !st.code && !st.sources.length && !st.notes?.length ? h("p", { class: "tour-empty" }, "Nothing is attached to this step yet. Ask below for an explanation or an example.") : null,
-        st.next?.length
-            ? h(
-                  "div",
-                  { class: "tour-leads" },
-                  h("span", { class: "tour-leads-h" }, "Leads to"),
-                  st.next.map((x) => {
-                      const j = stepper.stops.findIndex((s) => s.id === x.node?.id);
-                      return h("button", { class: "tour-lead", disabled: j < 0, onclick: () => stepper.go(j) }, x.label ? h("span", { class: "muted" }, `${x.label} → `) : null, x.node?.label ?? "");
-                  }),
-              )
-            : null,
-    ];
+/** Code for steps further down loads as it scrolls near, so a long diagram doesn't fetch every file at once. */
+const lazyIO = new IntersectionObserver(
+    (entries) => {
+        for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            lazyIO.unobserve(e.target);
+            e.target.replaceWith(codeView(e.target._src, e.target._opts));
+        }
+    },
+    { root: $("#peek-body"), rootMargin: "800px 0px" },
+);
+/** Stop watching placeholders that are about to be discarded (the panel is rebuilt or closed). */
+function releaseLazy() {
+    document.querySelectorAll("#peek-body .cv-lazy").forEach((el) => lazyIO.unobserve(el));
+}
+function lazyCode(src, opts) {
+    const ph = h("div", { class: "cv-lazy", "aria-hidden": "true" });
+    ph._src = src;
+    ph._opts = opts;
+    lazyIO.observe(ph);
+    return ph;
 }
 
-function openTour(blockId) {
+// Panel prose is commentable like the doc's: every paragraph, list item and step heading is a unit with a key
+// ("P:<step id>:<part>:<lines>"), its source text and a label, so the margin controls and Ctrl/Shift-click work on it.
+const panelMd = new WeakMap(); // .md element -> its Markdown source
+function panelProse(text, st, part, where) {
+    const el = h("div", { class: "md step-text", html: markdown(text, true) });
+    panelMd.set(el, text);
+    for (const u of el.querySelectorAll("[data-l]")) {
+        u.dataset.pk = `P:${st.id}:${part}:${u.dataset.l}`;
+        u.dataset.uid = st.id;
+        u.dataset.ref = `${where} · ${UNIT_KIND[u.tagName] ?? "text"}`;
+    }
+    return el;
+}
+
+function renderStep(b, st, i, n) {
+    const where = `Step ${i + 1} · ${excerpt(st.title, 28)}`;
+    const headText = `${INSPECT_KIND[b.type]} "${b.title}", step ${i + 1} of ${n}: ${b.type === "sequence" ? `${b.actors[st.from] ?? st.from} -> ${b.actors[st.to] ?? st.to}: ` : ""}${st.title}${st.sources.length ? `\nCode: ${st.sources.map((s) => srcLabel(s.src)).join(", ")}` : ""}`;
+    const empty = !st.text && !st.code && !st.sources.length && !st.notes?.length;
+    return h(
+        "section",
+        { class: "insp-step", "data-i": i, "data-step": st.id },
+        h("button", { class: "insp-num", title: `Step ${i + 1}`, tabindex: -1, onclick: () => setStep(i, { scrollPanel: true }) }, i + 1),
+        h(
+            "div",
+            { class: "insp-main" },
+            h("div", { class: "insp-head", "data-pk": `P:${st.id}:head:0`, "data-uid": st.id, "data-ref": where, "data-src": headText, onclick: (e) => !withModifier(e) && !getSelection()?.toString() && setStep(i) }, h("div", { class: "insp-kicker" }, `Step ${i + 1} of ${n}`), h("h3", { class: "insp-t" }, st.title), stepMeta(b, st)),
+            st.text ? panelProse(st.text, st, "text", where) : null,
+            st.code ? illustrativeCode(st.code) : null,
+            ...st.sources.map((s) => lazyCode(s.src, { diff: true, label: s.label, context: 10 })),
+            renderNotes(st.notes, (text, k) => panelProse(text, st, `note${k}`, `${where} · note`)),
+            empty ? h("p", { class: "insp-empty" }, "Nothing is attached to this step yet. Comment on it to ask for an explanation or an example.") : null,
+            st.next?.length
+                ? h(
+                      "div",
+                      { class: "step-leads" },
+                      h("span", { class: "step-leads-h" }, "Leads to"),
+                      st.next.map((x) => {
+                          const j = insp.stops.findIndex((s) => s.id === x.node?.id);
+                          return h("button", { class: "step-lead", disabled: j < 0, onclick: () => setStep(j, { scrollPanel: true }) }, x.label ? h("span", { class: "muted" }, `${x.label} → `) : null, x.node?.label ?? "");
+                      }),
+                  )
+                : null,
+        ),
+    );
+}
+
+const inspecting = () => !!insp.blockId && !peekEl.hidden;
+const inspBlockEl = () => insp.blockId && document.querySelector(`#main .block[data-id="${CSS.escape(insp.blockId)}"]`);
+
+function openInspect(blockId, unitId) {
     const b = findBlock(state.doc?.content, blockId);
     if (!b) return;
-    closeTour();
-    hideGutter();
-    $("#peek").hidden = true;
-    tour.block = b;
-    tour.stops = tourStops(b);
-    tour.stepper = createStepper({
-        mount: document.body,
-        id: "tour",
-        label: `${b.title} tour`,
-        stops: tour.stops,
-        renderStage: () => h("div", {}, h("div", { class: "tour-stage-title" }, tour.block.title), tourStage(tour.block)),
-        renderStop: (st, i, stepper) => renderTourStop(tour.block, st, stepper),
-        dock: "stage", // the conversation lives under the diagram, so the stop's code and notes stay unobstructed
-        onStop: () => chat.docked && renderRef(),
-        onClose: () => {
-            undockChat();
-            Object.assign(tour, { root: null, block: null, stops: [], stepper: null });
-            syncChatFab();
-        },
-    });
-    tour.root = tour.stepper.root;
-    // One conversation for the whole tour: it follows you from step to step, and each message says where you are.
-    dockChat(tour.stepper.dock, {
-        mode: "board",
-        blockId: b.id,
-        kind: "tour",
-        placeholder: "Ask about this step, or ask for an example or more detail…",
-        ref: () => tourRef(),
-        context: () => tourContext(),
-    });
-    tour.stepper.root.querySelector(".tour-next")?.focus({ preventScroll: true }); // keep ←/→ on the tour
-    syncChatFab();
+    const same = inspecting() && insp.blockId === blockId;
+    if (!same) {
+        endInspect();
+        hideGutter();
+        insp.blockId = b.id;
+        insp.block = b;
+        insp.stops = stopsOf(b);
+        renderInspect();
+        showPeek();
+        sizeSpacer(); // needs the panel on screen to measure
+    }
+    const i = unitId ? insp.stops.findIndex((s) => s.id === unitId || s.ids?.includes(unitId)) : insp.i && same ? insp.i : 0;
+    setStep(Math.max(0, i), { scrollPanel: true, instant: !same });
 }
 
-function tourRef() {
-    const i = tour.stepper?.index ?? 0;
-    const st = tour.stops[i];
-    return st ? `Tour · step ${i + 1} of ${tour.stops.length} · ${excerpt(st.title, 36)}` : "Tour";
+function renderInspect() {
+    const b = insp.block;
+    const n = insp.stops.length;
+    peekEl.classList.add("insp");
+    const nav = h(
+        "div",
+        { class: "insp-nav", role: "group", "aria-label": "Steps" },
+        h("button", { class: "chat-icon insp-prev", title: "Previous step (↑)", "aria-label": "Previous step", onclick: () => setStep(insp.i - 1, { scrollPanel: true }), html: '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+        h("span", { class: "insp-count", "aria-live": "polite" }),
+        h("button", { class: "chat-icon insp-next", title: "Next step (↓)", "aria-label": "Next step", onclick: () => setStep(insp.i + 1, { scrollPanel: true }), html: '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' }),
+    );
+    put($("#peek-title"), h("span", { class: "insp-kind" }, INSPECT_KIND[b.type] ?? "Diagram"), h("span", { class: "insp-title", title: b.title }, b.title));
+    $("#peek-head .insp-nav")?.remove();
+    $("#peek-close").before(nav);
+    const body = $("#peek-body");
+    releaseLazy();
+    body.replaceChildren(...insp.stops.map((st, i) => renderStep(b, st, i, n)), h("div", { class: "insp-spacer", "aria-hidden": "true" }));
+    stepSizes.disconnect();
+    body.querySelectorAll(".insp-step").forEach((el) => stepSizes.observe(el));
+    body.scrollTop = 0;
+    sizeSpacer();
+    paintPicks();
+    markAsking();
 }
-/** Sent with every tour-chat message: which diagram, which step (with ids the agent can edit), and its code. */
-function tourContext() {
-    const b = tour.block;
-    const i = tour.stepper?.index ?? 0;
-    const st = tour.stops[i];
-    if (!b || !st) return "";
+
+// Code loads into steps after they render, so steps above the current one grow. Until the reader scrolls, keep the
+// current step where we put it.
+const stepSizes = new ResizeObserver(() => {
+    const body = $("#peek-body");
+    sizeSpacer();
+    if (insp.pin === null || !inspecting()) return;
+    const card = body.querySelector(".insp-step.on");
+    if (!card) return;
+    const drift = card.getBoundingClientRect().top - body.getBoundingClientRect().top - insp.pin;
+    if (Math.abs(drift) > 1) {
+        insp.auto = true;
+        body.scrollTop += drift;
+        clearTimeout(insp.autoTimer);
+        insp.autoTimer = setTimeout(() => (insp.auto = false), 80);
+    }
+});
+/** Room after the last step so it can scroll up to the reading line (so the last step can be the current one). */
+function sizeSpacer() {
+    const body = $("#peek-body");
+    const sp = body.querySelector(".insp-spacer");
+    const last = body.querySelectorAll(".insp-step");
+    if (!sp || !last.length) return;
+    sp.style.height = `${Math.max(0, body.clientHeight - last[last.length - 1].offsetHeight - 40)}px`;
+}
+new ResizeObserver(() => inspecting() && sizeSpacer()).observe($("#peek-body"));
+
+/** Make step i current: highlight it here and in the diagram, and bring both into view. */
+function setStep(i, { scrollPanel = false, instant = false } = {}) {
+    if (!insp.stops.length) return;
+    i = Math.max(0, Math.min(insp.stops.length - 1, i));
+    insp.i = i;
+    const body = $("#peek-body");
+    body.querySelectorAll(".insp-step.on").forEach((el) => el.classList.remove("on"));
+    const card = body.querySelector(`.insp-step[data-i="${i}"]`);
+    card?.classList.add("on");
+    $("#peek-head .insp-count").textContent = `${i + 1} / ${insp.stops.length}`;
+    $("#peek-head .insp-prev").disabled = i === 0;
+    $("#peek-head .insp-next").disabled = i === insp.stops.length - 1;
+    const parts = decorateDiagram();
+    if (scrollPanel && card) {
+        // Our own scroll must not be read back as the reader's (the scroll spy ignores it until it settles).
+        insp.auto = true;
+        clearTimeout(insp.autoTimer);
+        insp.autoTimer = setTimeout(() => (insp.auto = false), instant ? 60 : 900);
+        insp.pin = 12;
+        const top = card.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - insp.pin;
+        body.scrollTo({ top, behavior: instant || reduceMotion() ? "auto" : "smooth" });
+    }
+    if (parts[0]) revealPart(parts[0], instant);
+}
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Mark the inspected diagram and its current part (re-applied after every render of the doc). */
+function decorateDiagram() {
+    document.querySelectorAll("#main .inspecting").forEach((el) => el.classList.remove("inspecting"));
+    document.querySelectorAll("#main .insp-on").forEach((el) => el.classList.remove("insp-on"));
+    const el = inspBlockEl();
+    if (!el || !inspecting()) return [];
+    el.classList.add("inspecting");
+    const st = insp.stops[insp.i];
+    const parts = (st?.ids ?? [st?.id]).flatMap((id) => (id ? [...el.querySelectorAll(`[data-unit="${CSS.escape(id)}"]`)] : []));
+    parts.forEach((p) => p.classList.add("insp-on"));
+    coverInspected();
+    return parts;
+}
+
+/** Keep the current part visible: scroll the diagram sideways inside its frame, and the doc only when it's off screen. */
+function revealPart(part, instant) {
+    const behavior = instant || reduceMotion() ? "auto" : "smooth";
+    const r = part.getBoundingClientRect();
+    const sc = part.closest(".diagram, .stack");
+    if (sc && sc.scrollWidth > sc.clientWidth + 1) {
+        const s = sc.getBoundingClientRect();
+        if (r.left < s.left + 24 || r.right > s.right - 24) sc.scrollBy({ left: r.left + r.width / 2 - (s.left + s.width / 2), behavior });
+    }
+    const main = $("#main");
+    const m = main.getBoundingClientRect();
+    if (r.top < m.top + 40 || r.bottom > m.bottom - 40) main.scrollBy({ top: r.top - (m.top + m.height * 0.3), behavior });
+}
+
+// Scroll spy: the step whose top has passed the reading line is current. Only the reader's own scrolling counts:
+// scrolls from code loading in (or from us) don't move the current step.
+let scrollIntent = 0;
+const intent = () => {
+    scrollIntent = Date.now();
+    insp.pin = null; // the reader is scrolling: stop holding the current step in place
+};
+for (const ev of ["wheel", "touchmove"]) $("#peek-body").addEventListener(ev, intent, { passive: true });
+$("#peek-body").addEventListener("keydown", (e) => ["PageUp", "PageDown", "Home", "End", " "].includes(e.key) && intent());
+document.addEventListener("pointerdown", (e) => e.target.closest?.(".os-track") && intent(), true);
+$("#peek-body").addEventListener(
+    "scroll",
+    () => {
+        if (gutterState.unit?.closest?.("#peek")) hideGutter();
+        if (!inspecting() || insp.auto || Date.now() - scrollIntent > 1500) return;
+        const body = $("#peek-body");
+        const line = body.getBoundingClientRect().top + 90;
+        let at = 0;
+        body.querySelectorAll(".insp-step").forEach((el, i) => {
+            if (el.getBoundingClientRect().top <= line) at = i;
+        });
+        if (at !== insp.i) setStep(at);
+    },
+    { passive: true },
+);
+$("#peek-body").addEventListener("scrollend", () => (insp.auto = false));
+
+// ↑/↓ (or k/j) move between steps while inspecting, unless you're typing.
+document.addEventListener("keydown", (e) => {
+    if (!inspecting() || e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("textarea, input, select, [contenteditable], #jump")) return;
+    const d = ["ArrowDown", "j"].includes(e.key) ? 1 : ["ArrowUp", "k"].includes(e.key) ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    setStep(insp.i + d, { scrollPanel: true });
+});
+
+/** Sent with doc-chat messages while inspecting: which diagram and step (with ids Copilot can edit). */
+function inspContext() {
+    const b = insp.block;
+    const st = insp.stops[insp.i];
+    if (!b || !st || !inspecting()) return undefined;
     const where = b.type === "sequence" ? `${b.actors[st.from] ?? st.from} -> ${b.actors[st.to] ?? st.to}: ` : "";
     const unit = b.type === "sequence" ? "step" : b.type === "flow_diagram" ? "flow node" : "call-stack frame";
     const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
-    return `Tour of "${b.title}" (block ${b.id}), viewing step ${i + 1} of ${tour.stops.length}: ${where}${st.title} (${unit} id ${st.id})${refs ? `. Code: ${refs}` : ""}${st.notes?.length ? `. It has ${st.notes.length} note(s).` : ""}`;
+    return `Inspecting "${b.title}" (block ${b.id}) in the side panel, at step ${insp.i + 1} of ${insp.stops.length}: ${where}${st.title} (${unit} id ${st.id})${refs ? `. Code: ${refs}` : ""}${st.notes?.length ? `. It has ${st.notes.length} note(s).` : ""}`;
 }
 
-/** The doc changed (often: the agent answered in the tour chat): rebuild the stops in place, keeping the current one. */
-function refreshTour() {
-    if (!tour.stepper || !tour.block) return;
-    const b = findBlock(state.doc?.content, tour.block.id);
-    if (!b) return closeTour();
-    const next = tourStops(b);
-    tour.block = b;
-    if (JSON.stringify(next) === JSON.stringify(tour.stops)) return;
-    const cur = tour.stops[tour.stepper.index];
-    const before = cur?.notes?.length ?? 0;
-    tour.stops = next;
-    tour.stepper.update(next);
-    renderRef();
-    // New notes on the step you are reading (usually the answer to your question): bring them into view.
-    const now = next.find((s) => s.id === cur?.id);
-    if (now && (now.notes?.length ?? 0) > before) {
-        const fresh = [...tour.stepper.root.querySelectorAll(".tour-note")].slice(before);
+/** The doc changed (often: Copilot answered by adding notes): rebuild the steps in place, keeping your place. */
+function refreshInspect() {
+    if (!insp.blockId) return;
+    if (!inspecting()) return endInspect();
+    const b = findBlock(state.doc?.content, insp.blockId);
+    if (!b || !stopsOf(b).length) return hidePeek();
+    const next = stopsOf(b);
+    insp.block = b;
+    if (JSON.stringify(next) === JSON.stringify(insp.stops)) {
+        decorateDiagram();
+        return;
+    }
+    const body = $("#peek-body");
+    const top = body.scrollTop;
+    const curId = insp.stops[insp.i]?.id;
+    const before = new Map(insp.stops.map((s) => [s.id, s.notes?.length ?? 0]));
+    insp.stops = next;
+    renderInspect();
+    body.scrollTop = top;
+    const i = Math.max(0, next.findIndex((s) => s.id === curId));
+    setStep(i, { instant: true });
+    // New notes (usually the answer to your question) flash; on the current step they scroll into view.
+    for (const [k, st] of next.entries()) {
+        const had = before.get(st.id) ?? 0;
+        if ((st.notes?.length ?? 0) <= had) continue;
+        const fresh = [...body.querySelectorAll(`.insp-step[data-i="${k}"] .step-note`)].slice(had);
         fresh.forEach((el) => el.classList.add("fresh"));
-        fresh[0]?.scrollIntoView({ block: "start", behavior: "smooth" });
+        if (k === i && fresh[0]) {
+            insp.pin = null; // the new note, not the step's top, is what to look at
+            insp.auto = true;
+            clearTimeout(insp.autoTimer);
+            insp.autoTimer = setTimeout(() => (insp.auto = false), 900);
+            fresh[0].scrollIntoView({ block: "center", behavior: reduceMotion() ? "auto" : "smooth" });
+        }
     }
 }
 
-function closeTour() {
-    tour.stepper?.close();
-    tour.root = null;
+function endInspect() {
+    if (!insp.blockId) return;
+    releaseLazy();
+    stepSizes.disconnect();
+    insp.blockId = insp.block = null;
+    insp.stops = [];
+    insp.i = 0;
+    peekEl.classList.remove("insp");
+    $("#peek-head .insp-nav")?.remove();
+    document.querySelectorAll("#main .inspecting").forEach((el) => {
+        el.classList.remove("inspecting");
+        el.style.marginRight = "";
+    });
+    document.querySelectorAll("#main .insp-on").forEach((el) => el.classList.remove("insp-on"));
 }
 
-function askAboutStop(b, i, st) {
-    const where = b.type === "sequence" ? `${b.actors[st.from] ?? st.from} -> ${b.actors[st.to] ?? st.to}: ` : "";
-    const refs = st.sources.map((s) => srcLabel(s.src)).join(", ");
-    openChat({ blockId: b.id, quote: `Tour of "${b.title}", step ${i + 1} of ${tour.stops.length}: ${where}${st.title}${refs ? `\nCode: ${refs}` : ""}`, ref: `Tour step ${i + 1} · ${excerpt(st.title, 32)}` });
-}
 // ---------------- open in the default browser ----------------
 if (INSTANCE.startsWith("browser-")) document.documentElement.dataset.standalone = "";
 // The canvas iframe can't reliably open system windows, so the extension process launches the browser.
@@ -2411,7 +2608,7 @@ toc = createToc({
         state.tab = "board";
         await render();
     },
-    blocked: () => !!tour.root || !!document.querySelector(".stepper"),
+    blocked: () => !!document.querySelector(".stepper"),
 });
 
 tables = createTables({

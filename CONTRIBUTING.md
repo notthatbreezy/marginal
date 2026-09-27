@@ -37,7 +37,7 @@ The README's animated WebPs are recorded headlessly by `tools/demos/record.mjs`,
 
 ```sh
 npm i --no-save playwright-core sharp gifenc pngjs
-node tools/demos/record.mjs                 # all three; or name some: docs-comment docs-tour command
+node tools/demos/record.mjs                 # everything; or name some: docs-comment docs-inspect command stills
 node tools/demos/record.mjs --sheet --out=/tmp/demos   # review a take: contact sheet of the held frames
 ```
 

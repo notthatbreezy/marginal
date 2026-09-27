@@ -1,6 +1,6 @@
 // Records the README demo animations headlessly (nothing takes focus) into docs/images/demo-*.webp.
 //   npm i --no-save playwright-core sharp gifenc pngjs
-//   node tools/demos/record.mjs [docs-comment] [docs-tour] [command] [--gif] [--sheet] [--out=dir]
+//   node tools/demos/record.mjs [docs-comment] [docs-inspect] [command] [stills] [--gif] [--sheet] [--out=dir]
 // Doc demos run a private server over a COPY of your Marginal data (MARGINAL_DATA_DIR in a temp dir) with a canned
 // chat, so nothing reaches a real Copilot session. They use DEMO_DOC, which must exist in your data and whose repo
 // must be registered; the Command demo uses tools/devserver.mjs's fictional "relay" repo and needs nothing.
@@ -31,10 +31,11 @@ const browser = await chromium.launch({ channel: process.env.DEMO_BROWSER ?? "ms
 const temps = [];
 let lastPage = null;
 
-async function newPage(url, ready) {
-    const page = await browser.newPage({ viewport: { width: W, height: H } });
+async function newPage(url, ready, size = { width: W, height: H }) {
+    const page = await browser.newPage({ viewport: size });
     page.on("pageerror", (e) => console.error("page error:", e.message));
     await page.addInitScript(({ css }) => {
+        localStorage.setItem("marginal.toc", "closed"); // keep recordings about the feature they show
         addEventListener("DOMContentLoaded", () => {
             document.documentElement.dataset.colorMode = "light";
             const st = document.createElement("style");
@@ -153,41 +154,75 @@ async function docsComment() {
     await page.close();
 }
 
-async function docsTour() {
+// Inspect needs room beside the panel for the doc to move over, so this one records wider.
+const WIDE = { width: 1680, height: 860 };
+async function docsInspect() {
     const { url } = await docs();
-    const page = await newPage(url, `#main .block[data-id="seq-4"] .tour-btn`);
-    const rec = await createRecorder(page, { width: W, height: H });
+    const page = await newPage(url, `#main .block[data-id="seq-4"] .insp-btn`, WIDE);
+    const rec = await createRecorder(page, WIDE);
+    await rec.captionAt("left"); // the chat and the panel own the bottom right
     await page.locator(`#main .block[data-id="seq-4"]`).evaluate((el) => el.scrollIntoView({ block: "start" }));
     await page.mouse.wheel(0, -40);
     await page.waitForTimeout(400);
-    await rec.frame(1200);
-    await rec.caption("Diagrams have a guided tour");
-    await rec.click(page.locator(`#main .block[data-id="seq-4"] .tour-btn`), { settle: 600 });
-    await rec.frame(1400);
-    await rec.caption("Each step shows its code, with notes and examples");
-    await page.locator(".stepper .tour-note").first().evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
-    await page.waitForTimeout(250);
-    await rec.frame(2400);
-    await rec.caption("Step through with the arrow keys", "→");
-    await rec.key("ArrowRight", { settle: 450 });
+    await rec.frame(1300);
+    await rec.caption("Click any step in a diagram to inspect it");
+    await rec.frame(900);
+    await rec.click(page.locator(`#main .block[data-id="seq-4"] .msg[data-unit="step-6"]`), { settle: 900 });
     await rec.frame(1600);
-    await rec.caption("One chat for the whole tour, docked under the diagram");
-    await rec.click(page.locator("#chat-text"));
+    await rec.caption("Every step, with its code, beside the diagram; the doc moves over");
+    await rec.frame(2600);
+    await rec.caption("Scroll the steps and the diagram follows");
+    await rec.move({ x: WIDE.width - 380, y: 420 });
+    for (let k = 0; k < 8; k++) {
+        await page.mouse.wheel(0, 150);
+        await page.waitForTimeout(140);
+        await rec.frame(240);
+    }
+    await rec.frame(1800);
+    await rec.caption("Or step with the arrow keys", "↓");
+    await rec.key("ArrowDown", { settle: 900 });
+    await rec.frame(1700);
+    await rec.key("ArrowDown", { settle: 900 });
+    await rec.frame(1700);
+    await rec.caption("Click the diagram to jump back to a step");
+    await rec.click(page.locator(`#main .block[data-id="seq-4"] .msg[data-unit="step-6"]`), { settle: 900 });
+    await rec.frame(1800);
+    await rec.caption("Step text has the doc's margin controls: comment, copy, Ctrl-click");
+    await rec.move(page.locator('.insp-step[data-i="1"] .step-text [data-pk]').first(), { offset: { x: -120, y: 0 } });
+    await page.waitForTimeout(300);
+    await rec.frame(2000);
+    await rec.click(page.locator("#g-comment"), { settle: 500 });
+    await rec.frame(1600);
     await rec.type("What does startViewer return? Add an example.", { perFrame: 4 });
-    await rec.frame(500);
+    await rec.frame(900);
     await rec.click(page.locator("#chat-send"), { settle: 150 });
-    await rec.caption("Ask for an example — Copilot adds it to the step");
-    await rec.watch(async () => (await page.locator(".tour-note").count()) > 0, { max: 20_000, frameMs: 120 });
-    await page.waitForTimeout(500);
-    await rec.frame(1200);
-    await rec.caption("The example now lives on the step, for everyone who takes the tour");
-    await page.locator(".stepper .tour-note").first().evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
-    await page.waitForTimeout(250);
-    await rec.frame(3200);
+    await rec.caption("Ask for an example and Copilot adds it to the step");
+    await rec.watch(async () => (await page.locator('.insp-step[data-i="1"] .step-note').count()) > 0, { max: 20_000, frameMs: 120 });
+    await page.waitForTimeout(700);
+    await rec.frame(3400);
+    await rec.caption("Esc closes the chat, then the panel; the doc moves back", "Esc");
+    await rec.key("Escape", { settle: 500 });
+    await rec.frame(1300);
+    await rec.key("Escape", { settle: 700 });
+    await rec.frame(1600);
     await rec.caption("");
-    await rec.key("Escape", { settle: 400 });
-    await rec.frame(800);
-    await finish(rec, "docs-tour");
+    await rec.frame(500);
+    await finish(rec, "docs-inspect");
+    await page.close();
+}
+
+/** README stills: Inspect on a sequence diagram and on a call-stack diff. */
+async function stills() {
+    const { url } = await docs();
+    const page = await newPage(url, `#main .block[data-id="seq-4"] .insp-btn`, WIDE);
+    await page.addStyleTag({ content: "#demo-cursor,#demo-caption{display:none!important}" });
+    await page.locator(`#main .block[data-id="seq-4"] .msg[data-unit="step-7"]`).click();
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: join(out, "inspect-sequence.png") });
+    await page.locator(`#main .block[data-id="stack-31"] .fr`).nth(2).click();
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: join(out, "inspect-call-stack.png") });
+    console.log(`stills → ${join(out, "inspect-sequence.png")}, inspect-call-stack.png`);
     await page.close();
 }
 
@@ -241,8 +276,9 @@ async function command() {
 
 try {
     if (want("docs-comment")) await docsComment();
-    if (want("docs-tour")) await docsTour();
+    if (want("docs-inspect")) await docsInspect();
     if (want("command")) await command();
+    if (want("stills")) await stills();
 } catch (e) {
     console.error(e);
     await lastPage?.screenshot({ path: join(out, "demo-failure.png") }).catch(() => {});
