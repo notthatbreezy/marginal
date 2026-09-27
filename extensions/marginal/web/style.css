@@ -6409,10 +6409,123 @@ del.sg-del {
 .cc.walking .stage {
     margin-bottom: 10px;
 }
-/* The map header never overlaps itself: long folder names cut with an ellipsis, and the controls wrap below. */
+/* ---------- the map header: one line, giving way in steps (fitMapHead sets data-compact 0–4) ---------- */
 .cc .map-head {
-    flex-wrap: wrap;
-    row-gap: 4px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    min-width: 0;
+    white-space: nowrap;
+}
+.cc .map-head .legend {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+.cc .map-head .grow {
+    min-width: 8px;
+}
+.cc .map-head .view-ctl {
+    flex: none;
+}
+.cc .map-head .crumbs {
+    flex: 0 1 auto;
+}
+.cc .pins-legend .pin-pill,
+.cc .crumbs .crumb-more,
+.cc .crumbs .sepc.more {
+    display: none;
+}
+.cc .pins-legend .pin-pill {
+    align-items: center;
+    gap: 5px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--fg);
+    font: inherit;
+    line-height: 20px;
+    cursor: pointer;
+}
+.cc .pins-legend .pin-pill:hover {
+    border-color: color-mix(in srgb, var(--blue) 55%, var(--border));
+}
+/* 1: pins fold into a pill */
+.cc .map-head[data-compact="1"] .pins-legend > :not(.pin-pill),
+.cc .map-head[data-compact="2"] .pins-legend > :not(.pin-pill),
+.cc .map-head[data-compact="3"] .pins-legend > :not(.pin-pill),
+.cc .map-head[data-compact="4"] .pins-legend > :not(.pin-pill) {
+    display: none;
+}
+.cc .map-head[data-compact="1"] .pin-pill,
+.cc .map-head[data-compact="2"] .pin-pill,
+.cc .map-head[data-compact="3"] .pin-pill,
+.cc .map-head[data-compact="4"] .pin-pill {
+    display: inline-flex;
+}
+/* 2: the colour legend goes (the tour explains it) */
+.cc .map-head[data-compact="2"] .legend > :not(.pins-legend),
+.cc .map-head[data-compact="3"] .legend > :not(.pins-legend),
+.cc .map-head[data-compact="4"] .legend > :not(.pins-legend) {
+    display: none;
+}
+/* 3: folders between the repo and the shown one fold into "…" */
+.cc .map-head[data-compact="3"] .crumbs .mid,
+.cc .map-head[data-compact="4"] .crumbs .mid {
+    display: none;
+}
+.cc .map-head[data-compact="3"] .crumbs .crumb-more,
+.cc .map-head[data-compact="3"] .crumbs .sepc.more,
+.cc .map-head[data-compact="4"] .crumbs .crumb-more,
+.cc .map-head[data-compact="4"] .crumbs .sepc.more {
+    display: inline;
+}
+/* 4: controls drop their longer words; the repo name gives way first, then the shown folder */
+.cc .map-head .view-ctl .short {
+    display: none;
+}
+.cc .map-head[data-compact="4"] .view-ctl .short {
+    display: inline;
+}
+.cc .map-head[data-compact="4"] .view-ctl .long {
+    display: none;
+}
+.cc .map-head[data-compact="4"] .crumbs .root {
+    max-width: 12ch;
+}
+.cc .map-head[data-compact="4"] .viewpick select {
+    max-width: 150px;
+}
+.cc .viewpick select {
+    max-width: 240px;
+    text-overflow: ellipsis;
+}
+.cc .crumb-menu button {
+    white-space: nowrap;
+}
+.cc .pin-menu .pm-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 11.5px;
+}
+.cc .pin-menu .pc-x {
+    flex: none;
+    width: auto;
+    padding: 0 8px;
+    color: var(--muted);
+}
+.cc .pin-menu .pc-x:hover {
+    color: var(--red);
+}
+.cc .pin-menu .pm-clear {
+    margin-top: 4px;
+    border-top: 1px solid var(--cc-hair) !important;
+    border-radius: 0 0 6px 6px;
+    color: var(--muted);
 }
 .cc .crumbs {
     flex-wrap: nowrap;

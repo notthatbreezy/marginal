@@ -24,7 +24,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 - Your in-place prose saves follow their text when Copilot changed other lines of the same block meanwhile (a patch above them shifts line numbers); only text that itself changed is refused.
 - The agent is told that right after an extension reload a canvas action can briefly fail with "provider … not connected", and to retry rather than reopen the canvas.
 - A Command walkthrough now takes over the wall: it spans about two thirds of the width, with a roomier stop list, and the left keeps just the map (still zooming and badging each stop's files). The instruments, timeline, monitors, legend and view controls return when it closes.
-- The Command map's header no longer runs into itself: long folder names in the breadcrumbs end in an ellipsis (the tooltip has the full name), and the legend and view controls wrap below when there's no room.
+- The Command map's header stays on one line. When it runs short of room it gives way in steps: pins fold into a "3 pinned" pill (a menu to find, unpin or clear them), the colour legend steps aside, the folders between the repo and the one shown fold into "…" (a menu of them), and the controls drop their longer words; only then do names end in an ellipsis (tooltips have them in full).
 - Pins on the Command map are chips in the map's header instead of a line of names: hover one to outline its tile, click it to find it (the map zooms out if it's off screen, and the tile flashes), × unpins it, and **Clear all** unpins every one, including pins that came with a view.
 
 ## [0.5.0] - 2026-09-27

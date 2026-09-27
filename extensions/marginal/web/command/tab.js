@@ -480,6 +480,7 @@ function render() {
     const empty = cc.host.querySelector(".cc-empty");
     if (!st.plan) {
         renderMapHead(st, "");
+        fitMapHead();
         if (!empty) cc.host.querySelector(".stage").append(emptyState());
         renderInit();
         cc.host.querySelector(".rail-fronts").hidden = true;
@@ -495,6 +496,7 @@ function render() {
     let root = cc.walkLink ? cc.walkLink.root : auto ? autoRoot(st.plan, [...changes.keys()]) : L.root;
     if (root && !findNode(cc.tree, root)) root = "";
     renderMapHead(st, root, auto);
+    fitMapHead();
     const fronts = new Map(st.fronts.map((f) => [f.id, f]));
     const pins = new Map(L.pins.map((p) => [p, PIN_WEIGHT]));
     const onlyFront = cc.ui.hoverFront ?? cc.ui.focusFront;
@@ -749,6 +751,7 @@ function buildMap() {
     add.addEventListener("pointerenter", () => clearTimeout(hideT));
     add.addEventListener("pointerleave", () => (hideT = setTimeout(() => (add.hidden = true), 150)));
     stage.append(add);
+    new ResizeObserver(() => fitMapHead()).observe(section.querySelector(".map-head"));
     cc.tm = createTreemap(stage.querySelector(".tm"), {
         onZoom: (p) => zoomTo(p),
         onHover: (p, el) => {
@@ -784,18 +787,26 @@ function buildMap() {
 function renderMapHead(st, root, auto = false) {
     const crumbs = cc.host.querySelector(".crumbs");
     const parts = root ? root.split("/") : [];
-    const items = [h("button", { class: `path crumb${parts.length ? "" : " here"}`, title: `${cc.data.repository ?? "repo"}/\nZoom to the repository root`, onclick: () => zoomTo("") }, `${cc.data.repository ?? "repo"}/`)];
-    parts.forEach((p, i) => {
-        const path = parts.slice(0, i + 1).join("/");
-        items.push(h("span", { class: "sepc", "aria-hidden": "true" }, "›"), h("button", { class: `path crumb${i === parts.length - 1 ? " here" : ""}`, onclick: () => zoomTo(path) }, `${p}/`));
-    });
-    if (st.plan)
-        items.push(
-            auto
-                ? h("span", { class: "auto", title: "Zoom root chosen automatically to cover the plan and live edits" }, "auto")
-                : h("button", { class: "auto auto-btn", title: "Let the zoom follow the plan and live edits again", onclick: () => userLayout((l) => (l.root = null)) }, "↺ auto"),
+    const crumbKey = JSON.stringify([cc.data.repository, root, auto, !!st.plan]);
+    if (crumbs.dataset.key !== crumbKey) {
+        crumbs.dataset.key = crumbKey;
+        const repo = `${cc.data.repository ?? "repo"}/`;
+        // Short of room the middle folders fold into "…" (a menu of them); the repo and the folder shown stay.
+        const mids = parts.slice(0, -1).map((p, i) => ({ name: `${p}/`, path: parts.slice(0, i + 1).join("/") }));
+        const sep = (cls = "") => h("span", { class: `sepc${cls}`, "aria-hidden": "true" }, "›");
+        put(
+            crumbs,
+            h("button", { class: `path crumb root${parts.length ? "" : " here"}`, title: `${repo}\nZoom to the repository root`, onclick: () => zoomTo("") }, repo),
+            mids.length ? [sep(" more"), h("button", { class: "path crumb crumb-more", title: `${mids.map((m) => m.name).join(" › ")}\nShow the folders in between`, "aria-haspopup": "menu", onclick: (e) => openCrumbMenu(e.currentTarget, mids) }, "…")] : null,
+            mids.map((m) => [sep(" mid"), h("button", { class: "path crumb mid", title: `${m.path}/`, onclick: () => zoomTo(m.path) }, m.name)]),
+            parts.length ? [sep(), h("button", { class: "path crumb here", title: `${root}/`, onclick: () => zoomTo(root) }, `${parts.at(-1)}/`)] : null,
+            st.plan
+                ? auto
+                    ? h("span", { class: "auto", title: "Zoom root chosen automatically to cover the plan and live edits" }, "auto")
+                    : h("button", { class: "auto auto-btn", title: "Let the zoom follow the plan and live edits again", onclick: () => userLayout((l) => (l.root = null)) }, "↺ auto")
+                : null,
         );
-    put(crumbs, items);
+    }
 
     const L = cc.ui.layout;
     const legend = cc.host.querySelector(".legend");
@@ -808,7 +819,8 @@ function renderMapHead(st, root, auto = false) {
             ? h(
                   "span",
                   { class: "pins-legend" },
-                  h("span", { class: "pin-ic", title: `Pinned areas are drawn ${PIN_WEIGHT}× larger (P over a tile pins or unpins it)` }, "◆"),
+                  h("button", { class: "pin-pill", title: `${L.pins.join("\n")}\nPinned areas are drawn ${PIN_WEIGHT}× larger. Click to find or unpin them`, "aria-haspopup": "menu", onclick: (e) => openPinMenu(e.currentTarget) }, h("span", { class: "pin-ic" }, "◆"), `${L.pins.length} pinned`),
+                  h("span", { class: "pin-ic chips-ic", title: `Pinned areas are drawn ${PIN_WEIGHT}× larger (P over a tile pins or unpins it)` }, "◆"),
                   h("span", { class: "pl-h" }, "Pinned"),
                   L.pins.map((p) =>
                       h(
@@ -860,11 +872,11 @@ function renderMapHead(st, root, auto = false) {
         ctl,
         revisingNow ? h("span", { class: "revising", role: "status" }, h("span", { class: "pulse" }), "Agent is revising the walkthrough…") : null,
         st.walkthroughs.length && !cc.walk?.open
-            ? h("button", { class: "return walk-reopen", title: "Walkthroughs of this work: open one, or see what you've reviewed", "aria-haspopup": "menu", onclick: (e) => openWalkMenu(e.currentTarget, st) }, `▸ Walkthroughs · ${st.walkthroughs.length}`)
+            ? h("button", { class: "return walk-reopen", title: "Walkthroughs of this work: open one, or see what you've reviewed", "aria-haspopup": "menu", onclick: (e) => openWalkMenu(e.currentTarget, st) }, "▸ ", h("span", { class: "long" }, "Walkthroughs"), h("span", { class: "short" }, "Walks"), ` · ${st.walkthroughs.length}`)
             : null,
-        showReturn ? h("button", { class: "return", title: `Apply the view suggested for ${sugg.title}`, onclick: () => applyView(sugg.suggestedView, { phaseId: sugg.id }) }, "Return to suggested") : null,
-        custom ? h("button", { class: "return save-view", title: "Save this layout as a view", onclick: () => saveCurrentView() }, "Save view") : null,
-        h("label", { class: "viewpick", title: "Views set the zoom, pins and monitors" }, current?.origin && current.origin !== "user" ? h("span", { class: "spark-ic", "aria-hidden": "true" }, "✦") : null, "View:", select),
+        showReturn ? h("button", { class: "return", title: `Apply the view suggested for ${sugg.title}`, onclick: () => applyView(sugg.suggestedView, { phaseId: sugg.id }) }, "Return", h("span", { class: "long" }, " to suggested")) : null,
+        custom ? h("button", { class: "return save-view", title: "Save this layout as a view", onclick: () => saveCurrentView() }, "Save", h("span", { class: "long" }, " view")) : null,
+        h("label", { class: "viewpick", title: "Views set the zoom, pins and monitors" }, current?.origin && current.origin !== "user" ? h("span", { class: "spark-ic", "aria-hidden": "true" }, "✦") : null, h("span", { class: "long" }, "View:"), select),
         h("button", {
             class: `follow${follow ? " on" : ""}`,
             title: follow ? "Following: suggested views apply as checkpoints change (click to pause)" : "Paused: views won't change on their own (click to follow)",
@@ -879,6 +891,63 @@ function renderMapHead(st, root, auto = false) {
         }),
         tourButtons(),
     );
+}
+
+/**
+ * The map header stays on one line. When it doesn't fit it gives way in steps, cheapest first: pins fold into a
+ * "3 pinned" pill, the colour legend goes, the folders between the repo and the shown one fold into "…", and the
+ * controls drop their longer words; last, the names that remain end in an ellipsis.
+ */
+function fitMapHead() {
+    const head = cc.host?.querySelector(".map-head");
+    if (!head || !head.clientWidth) return;
+    const crumbs = head.querySelector(".crumbs");
+    const sig = `${head.clientWidth}|${crumbs.dataset.key}|${head.querySelector(".legend").dataset.key}|${head.querySelector(".view-ctl").dataset.key}`;
+    if (head.dataset.fit === sig) return;
+    head.dataset.fit = sig;
+    const legend = head.querySelector(".legend");
+    // Every part that can shrink must show all of itself, not just the header as a whole.
+    const whole = (el) => el.scrollWidth <= el.clientWidth + 1;
+    const fits = () => whole(head) && whole(crumbs) && whole(legend);
+    for (let level = 0; level <= 4; level++) {
+        head.dataset.compact = String(level);
+        if (fits()) break;
+    }
+}
+function openCrumbMenu(anchor, mids) {
+    closeMenu();
+    const menu = h("div", { class: "cc-menu crumb-menu", role: "menu", "aria-label": "Folders" }, mids.map((m) => h("button", { role: "menuitem", title: `${m.path}/`, onclick: () => (closeMenu(), zoomTo(m.path)) }, m.path.split("/").map((x, i) => (i ? [h("span", { class: "sepc" }, " › "), x] : x)))));
+    placeMenu(menu, anchor);
+}
+function openPinMenu(anchor) {
+    closeMenu();
+    const pins = cc.ui.layout.pins;
+    const menu = h(
+        "div",
+        { class: "cc-menu pin-menu", role: "menu", "aria-label": "Pinned areas" },
+        h("div", { class: "cc-menu-h" }, "Pinned", h("span", { class: "grow" }), h("span", { class: "wm-n" }, `drawn ${PIN_WEIGHT}× larger`)),
+        pins.map((p) =>
+            h(
+                "div",
+                { class: "wm-row", onmouseenter: () => findPin(p), onmouseleave: () => findPin(null) },
+                h("button", { role: "menuitem", class: "pm-name", title: "Show it on the map", onclick: () => (closeMenu(), findPin(p, { flash: true })) }, p || "(the whole repo)"),
+                h("button", { class: "pc-x", title: `Unpin ${p}`, "aria-label": `Unpin ${p}`, onclick: () => (findPin(null), togglePin(p), cc.ui.layout.pins.length ? openPinMenu(anchor) : closeMenu()) }, "×"),
+            ),
+        ),
+        pins.length > 1 ? h("button", { role: "menuitem", class: "pm-clear", onclick: () => (closeMenu(), clearPins()) }, "Clear all") : null,
+    );
+    placeMenu(menu, anchor);
+}
+/** Drop a menu under the header control that opened it, kept inside the map. */
+function placeMenu(menu, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const hr = cc.host.getBoundingClientRect();
+    cc.host.querySelector(".cc").append(menu);
+    const w = menu.offsetWidth || 240;
+    menu.style.left = `${Math.max(8, Math.min(r.left - hr.left, hr.width - w - 8))}px`;
+    menu.style.top = `${r.bottom - hr.top + 6}px`;
+    cc.ui.menu = menu;
+    menu.querySelector("button")?.focus();
 }
 
 // ---------- guided tour (discoverability) ----------
