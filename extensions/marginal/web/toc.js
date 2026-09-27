@@ -2,6 +2,7 @@
 // palette, both over the outline in outline.js.
 import { $, h, put } from "./core.js";
 import { KIND_LABEL, outlineOf, rank } from "./outline.js";
+import { onSettings, shortcut } from "./settings.js";
 
 const svg = (d, extra = "") => `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
 const ICON = {
@@ -68,6 +69,7 @@ export function createToc(o) {
     );
     const levels = h("div", { class: "toc-levels", role: "group", "aria-label": "Levels shown" });
     const card = h("aside", { id: "toc", hidden: true, "aria-label": "Contents" }, bar, levels, list);
+    onSettings(() => (bar.querySelector(".toc-kbd").hidden = !shortcut("jump")));
     document.body.append(card);
 
     // Sit just under the header (which wraps on narrow panels) and never run off the bottom.
@@ -403,7 +405,7 @@ export function createToc(o) {
     document.addEventListener(
         "keydown",
         (e) => {
-            if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "j") {
+            if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "j" && shortcut("jump")) {
                 e.preventDefault();
                 e.stopPropagation();
                 if (palette.hidden) openJump();

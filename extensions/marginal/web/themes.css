@@ -1,0 +1,1450 @@
+/* Browser-window themes (Settings → Theme). Every rule is scoped to :root[data-standalone], so none of this can
+   touch Marginal inside the Copilot app. Each retro theme is a full costume (palette, type, chrome); [data-effects]
+   adds its extras (desktops, boot screens, glow, scanlines, motion). Layout and behaviour never change. */
+
+/* ---------------- Light / Dark (System follows the OS; see style.css) ---------------- */
+:root[data-standalone][data-theme="light"] {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #656d76;
+    --border: #d0d7de;
+    --focus: #0969da;
+    --blue: #0969da;
+    --blue-muted: rgba(9, 105, 218, 0.12);
+    --green: #1a7f37;
+    --green-muted: rgba(26, 127, 55, 0.14);
+    --red: #cf222e;
+    --red-muted: rgba(207, 34, 46, 0.12);
+    --yellow: #9a6700;
+    --yellow-muted: rgba(154, 103, 0, 0.14);
+    --purple: #8250df;
+    --purple-muted: rgba(130, 80, 223, 0.12);
+    color-scheme: light;
+}
+:root[data-standalone][data-theme="dark"] {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #8d96a0;
+    --border: #30363d;
+    --focus: #4493f8;
+    --blue: #4493f8;
+    --blue-muted: rgba(68, 147, 248, 0.16);
+    --green: #3fb950;
+    --green-muted: rgba(63, 185, 80, 0.16);
+    --red: #f85149;
+    --red-muted: rgba(248, 81, 73, 0.16);
+    --yellow: #d29922;
+    --yellow-muted: rgba(210, 153, 34, 0.18);
+    --purple: #ab7df8;
+    --purple-muted: rgba(171, 125, 248, 0.16);
+    color-scheme: dark;
+}
+:root.theme-switch * {
+    transition: background-color 0.25s, color 0.25s, border-color 0.25s !important;
+}
+
+/* ---------------- Shared by Windows 3.0 and 95: square corners, bitmap-ish type, bevels ---------------- */
+:root[data-standalone]:is([data-theme="win3"], [data-theme="win95"]) {
+    --radius: 0px;
+    --mono: "Fixedsys Excelsior", Fixedsys, Terminal, "Lucida Console", "Courier New", monospace;
+    --font-sans: "MS Sans Serif", "Microsoft Sans Serif", "Pixelated MS Sans Serif", Tahoma, Arial, sans-serif;
+    --raised: inset -1px -1px #000, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+    --sunken: inset 1px 1px #808080, inset -1px -1px #fff, inset 2px 2px #000, inset -2px -2px #dfdfdf;
+    --pressed: inset 1px 1px #000, inset -1px -1px #fff, inset 2px 2px #808080, inset -2px -2px #dfdfdf;
+    --title: #000080;
+    color-scheme: light;
+
+    & *,
+    & *::before,
+    & *::after {
+        border-radius: 0 !important;
+    }
+    & body {
+        font-size: 13px;
+        -webkit-font-smoothing: none;
+        font-smooth: never;
+    }
+    & ::selection {
+        background: #000080;
+        color: #fff;
+    }
+    /* The header is the window's title bar. */
+    & #bar {
+        background: var(--title);
+        color: #fff;
+        border-bottom: 2px solid #000;
+    }
+    & #title {
+        font-weight: 700;
+    }
+    & #subtitle {
+        color: #c0c0c0;
+    }
+    & #bar .icon,
+    & #toc-btn,
+    & #settings-btn,
+    & #home {
+        color: #fff;
+    }
+    & #center .hint,
+    & #hint {
+        color: #fff;
+    }
+    & #center kbd,
+    & #hint kbd,
+    & #edit-hint kbd {
+        background: #c0c0c0;
+        color: #000;
+        border: none;
+        box-shadow: var(--raised);
+        padding: 0 4px;
+    }
+    & #multibar,
+    & #edit-hint,
+    & #activity {
+        background: #c0c0c0;
+        color: #000;
+        box-shadow: var(--raised);
+    }
+    & #multi-count {
+        color: #000080;
+    }
+    /* Push buttons */
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about),
+    & #tabs button,
+    & .insp-btn,
+    & .tour-btn {
+        background: #c0c0c0;
+        color: #000;
+        border: none;
+        box-shadow: var(--raised);
+        padding: 2px 10px;
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):active,
+    & #tabs button.on {
+        box-shadow: var(--pressed);
+        background: #c0c0c0;
+        color: #000;
+        font-weight: 700;
+    }
+    & #tabs {
+        gap: 4px;
+    }
+    & .chat-icon:hover:not(:disabled),
+    & #gutter button:hover,
+    & #editbar button:hover {
+        background: #c0c0c0;
+        box-shadow: var(--raised);
+        color: #000;
+    }
+    /* Fields are sunken wells. */
+    & .chat-input,
+    & .jump-head,
+    & .el-in,
+    & .title-in,
+    & input[type="text"] {
+        background: #fff;
+        border: none !important;
+        box-shadow: var(--sunken);
+    }
+    /* Windows: chat, contents, settings, jump, side panel, the margin tools. */
+    & #chat:not(.docked),
+    & #toc,
+    & #settings,
+    & .jump-box,
+    & #peek,
+    & #editbar,
+    & #gutter,
+    & #tw-menu,
+    & #editlink {
+        background: #c0c0c0;
+        border: none;
+        box-shadow: var(--raised);
+        animation: none;
+    }
+    & #gutter {
+        padding: 3px;
+    }
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head {
+        background: var(--title);
+        color: #fff;
+        margin: 3px 3px 0;
+        font-weight: 700;
+    }
+    & #chat-bar {
+        height: 22px;
+    }
+    & #chat-ref,
+    & .toc-bar,
+    & .toc-h,
+    & #peek-title,
+    & .insp-kind {
+        color: #fff !important;
+    }
+    & #chat-bar .chat-icon,
+    & .toc-bar .chat-icon,
+    & .set-head .chat-icon,
+    & #peek-close {
+        background: #c0c0c0;
+        color: #000;
+        box-shadow: var(--raised);
+        width: 16px;
+        height: 14px;
+    }
+    & #chat-log,
+    & .toc-list,
+    & .set-body,
+    & .jump-list,
+    & #peek-body {
+        background: #fff;
+        box-shadow: var(--sunken);
+        margin: 3px;
+    }
+    & #chat.min {
+        border-radius: 0 !important;
+    }
+    & .toc-kbd {
+        color: #000;
+        background: #c0c0c0;
+        border: none;
+        box-shadow: var(--raised);
+    }
+    /* Doc frames get a title bar. */
+    & .frame {
+        border: 1px solid #000;
+        box-shadow: 2px 2px 0 #000;
+    }
+    & .frame-head {
+        background: var(--title);
+        color: #fff;
+        border-bottom: 1px solid #000;
+    }
+    & .frame-head .kind,
+    & .frame-head .name,
+    & .frame-head a {
+        color: #fff;
+    }
+    & .cv,
+    & .md pre,
+    & .code {
+        border-color: #000;
+    }
+    & .cv-head {
+        background: #c0c0c0;
+        border-bottom: 1px solid #000;
+    }
+    & .md code {
+        background: #e0e0e0;
+    }
+    & .callout {
+        border: 1px solid #000;
+        box-shadow: 2px 2px 0 #000;
+    }
+    & .card {
+        border: 1px solid #000;
+        box-shadow: 2px 2px 0 #000;
+    }
+    & .card:hover {
+        background: #000080;
+        color: #fff;
+    }
+    & .card:hover .m {
+        color: #c0c0c0;
+    }
+    & .toc-i:hover,
+    & .jump-i.sel {
+        background: #000080;
+        color: #fff;
+    }
+    & .jump-i.sel .jump-k,
+    & .jump-i.sel .jump-trail,
+    & .jump-i.sel mark {
+        color: #fff;
+    }
+    & .set-theme {
+        background: #c0c0c0;
+        border: none;
+        box-shadow: var(--raised);
+    }
+    & .set-theme.on {
+        box-shadow: var(--pressed);
+    }
+    & .set-switch {
+        background: #fff;
+        box-shadow: var(--sunken);
+    }
+    & .set-switch.on {
+        background: #000080;
+    }
+    & .set-switch .knob {
+        background: #c0c0c0;
+        box-shadow: var(--raised);
+        top: 3px;
+        left: 3px;
+        width: 12px;
+        height: 12px;
+    }
+    & .os-thumb {
+        background: #c0c0c0;
+        box-shadow: var(--raised);
+    }
+    & #chat-fab {
+        background: #c0c0c0;
+        color: #000;
+        border: none;
+        box-shadow: var(--raised);
+    }
+    & #toast {
+        background: #c0c0c0;
+        color: #000;
+        box-shadow: var(--raised), 2px 2px 0 #000;
+    }
+    & .chat-msg.me {
+        background: #ffffe1;
+        border: 1px solid #000;
+    }
+}
+
+/* ---------------- Windows 3.0 (1990): white client areas, black hairlines, 16 colours ---------------- */
+:root[data-standalone][data-theme="win3"] {
+    --bg: #ffffff;
+    --fg: #000000;
+    --muted: #808080;
+    --border: #000000;
+    --focus: #000080;
+    --blue: #000080;
+    --blue-muted: rgba(0, 0, 128, 0.14);
+    --green: #008000;
+    --green-muted: rgba(0, 255, 0, 0.18);
+    --red: #800000;
+    --red-muted: rgba(255, 0, 0, 0.16);
+    --yellow: #808000;
+    --yellow-muted: rgba(255, 255, 0, 0.3);
+    --purple: #800080;
+    --purple-muted: rgba(128, 0, 128, 0.14);
+    --surface: #ffffff;
+    --surface-2: #c0c0c0;
+
+    /* 3.0's windows had a black frame and a thin border band; its buttons were flatter than 95's. */
+    & #chat:not(.docked),
+    & #toc,
+    & #settings,
+    & .jump-box,
+    & #peek {
+        background: #fff;
+        box-shadow: 0 0 0 1px #000, 0 0 0 4px #c0c0c0, 0 0 0 5px #000;
+    }
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head {
+        margin: 0;
+        justify-content: center;
+    }
+    & #chat-log,
+    & .toc-list,
+    & .set-body,
+    & .jump-list,
+    & #peek-body {
+        box-shadow: none;
+        margin: 0;
+    }
+}
+/* Effects: the dithered desktop behind the doc, which sits in a window of its own. */
+:root[data-standalone][data-theme="win3"][data-effects] {
+    & #main:not(.cc-host) {
+        background: repeating-conic-gradient(#c0c0c0 0 25%, #ffffff 0 50%) 0 0 / 2px 2px;
+    }
+    & #main:not(.cc-host) > .doc {
+        background: #fff;
+        box-shadow: 0 0 0 1px #000, 0 0 0 4px #c0c0c0, 0 0 0 5px #000;
+        padding: 16px 22px 24px;
+        margin-top: 6px;
+    }
+}
+
+/* ---------------- Windows 95: grey chrome, bevels, the teal desktop ---------------- */
+:root[data-standalone][data-theme="win95"] {
+    --bg: #ffffff;
+    --fg: #000000;
+    --muted: #7b7b7b;
+    --border: #808080;
+    --focus: #000080;
+    --blue: #000080;
+    --blue-muted: rgba(0, 0, 128, 0.14);
+    --green: #007000;
+    --green-muted: rgba(0, 128, 0, 0.16);
+    --red: #a00000;
+    --red-muted: rgba(255, 0, 0, 0.14);
+    --yellow: #7a6a00;
+    --yellow-muted: rgba(255, 255, 0, 0.32);
+    --purple: #800080;
+    --purple-muted: rgba(128, 0, 128, 0.14);
+    --surface: #ffffff;
+    --surface-2: #dfdfdf;
+    --title: #000080;
+    & body {
+        background: #c0c0c0;
+    }
+    & #bar {
+        margin: 3px 3px 0;
+    }
+}
+:root[data-standalone][data-theme="win95"][data-effects] {
+    /* The desktop wallpaper: that '90s paper-cup pattern. */
+    & #main:not(.cc-host) {
+        background: url("jazz.svg") 0 0 / 560px auto repeat, #f7f5ef;
+        background-attachment: local;
+    }
+    & #main:not(.cc-host) > .doc {
+        background: #fff;
+        box-shadow: inset -1px -1px #000, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #fff, 0 0 0 3px #c0c0c0, 0 0 0 4px #000;
+        padding: 16px 22px 24px;
+        margin-top: 8px;
+    }
+    /* 98 gave title bars a gradient; 95 users would have killed for it. */
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head,
+    & .frame-head {
+        background: linear-gradient(90deg, #000080, #1084d0);
+    }
+}
+
+/* ---------------- Vista: Aero glass, glossy buttons, the aurora ---------------- */
+:root[data-standalone][data-theme="vista"] {
+    --bg: #ffffff;
+    --fg: #1e1e1e;
+    --muted: #5b6b7c;
+    --border: #a9bcd0;
+    --focus: #3399ff;
+    --blue: #0066cc;
+    --blue-muted: rgba(51, 153, 255, 0.16);
+    --green: #3a8a1a;
+    --green-muted: rgba(80, 180, 40, 0.16);
+    --red: #c4262e;
+    --red-muted: rgba(220, 40, 50, 0.12);
+    --yellow: #a36a00;
+    --yellow-muted: rgba(255, 190, 40, 0.2);
+    --purple: #7a3fb0;
+    --purple-muted: rgba(130, 70, 190, 0.13);
+    --surface: #f3f7fb;
+    --surface-2: #dce8f4;
+    --radius: 6px;
+    --font-sans: "Segoe UI", Tahoma, "Lucida Grande", sans-serif;
+    --mono: Consolas, "Lucida Console", monospace;
+    --glass: linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.18) 48%, rgba(0, 0, 0, 0.1) 52%, rgba(0, 0, 0, 0.18) 100%), rgba(64, 108, 150, 0.78);
+    --gloss: linear-gradient(180deg, #fbfbfb 0%, #ececec 49%, #dcdcdc 50%, #cfcfcf 100%);
+    --gloss-hot: linear-gradient(180deg, #eaf6fd 0%, #d9f0fc 49%, #bee6fd 50%, #a7d9f5 100%);
+    color-scheme: light;
+
+    & #bar {
+        background: var(--glass);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.55);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
+    & #title {
+        color: #000;
+        text-shadow: 0 0 10px #fff, 0 0 4px #fff, 0 0 2px #fff;
+    }
+    & #subtitle,
+    & #center .hint,
+    & #hint {
+        color: #eaf2fa;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    }
+    & #bar .icon,
+    & #toc-btn,
+    & #settings-btn,
+    & #home,
+    & #open-external {
+        color: #fff;
+        filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+    }
+    & #tabs button {
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+        border: 1px solid transparent;
+        border-radius: 4px;
+    }
+    & #tabs button:hover {
+        background: rgba(255, 255, 255, 0.18);
+        border-color: rgba(255, 255, 255, 0.45);
+    }
+    & #tabs button.on {
+        background: rgba(255, 255, 255, 0.28);
+        border-color: rgba(255, 255, 255, 0.7);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 8px rgba(160, 220, 255, 0.7);
+        color: #fff;
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):not(#tabs button) {
+        background: var(--gloss);
+        border: 1px solid #707070;
+        border-radius: 3px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
+        color: #000;
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):not(#tabs button):hover {
+        background: var(--gloss-hot);
+        border-color: #3c7fb1;
+    }
+    & #center kbd,
+    & #hint kbd {
+        background: var(--gloss);
+        color: #000;
+        text-shadow: none;
+    }
+    & #multibar,
+    & #edit-hint {
+        background: var(--gloss-hot);
+        border: 1px solid #3c7fb1;
+        color: #000;
+        text-shadow: none;
+    }
+    & #chat:not(.docked),
+    & #toc,
+    & #settings,
+    & .jump-box,
+    & #editbar,
+    & #gutter,
+    & #tw-menu,
+    & #editlink {
+        border: 1px solid rgba(0, 0, 0, 0.55);
+        border-radius: 8px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 10px 30px rgba(0, 30, 60, 0.35);
+        overflow: hidden;
+    }
+    & #gutter {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 3px;
+    }
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head,
+    & .jump-head {
+        background: var(--glass);
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+    }
+    & #chat-ref,
+    & .toc-h,
+    & #peek-title,
+    & .insp-kind,
+    & .jump-in,
+    & .jump-in::placeholder {
+        color: #fff !important;
+    }
+    & #chat-bar .chat-icon,
+    & .toc-bar .chat-icon,
+    & .set-head .chat-icon,
+    & #peek-close {
+        color: #fff;
+    }
+    & #chat-close:hover,
+    & .toc-x:hover,
+    & .set-x:hover,
+    & #peek-close:hover {
+        background: linear-gradient(180deg, #e8a597, #c7503b 50%, #b3321d 51%, #d0714c);
+        color: #fff;
+    }
+    & .frame {
+        border-color: #9fb3c8;
+        box-shadow: 0 2px 10px rgba(0, 40, 80, 0.12);
+    }
+    & .frame-head {
+        background: linear-gradient(180deg, #fdfeff, #e6eef7);
+        border-bottom-color: #b6c7d8;
+    }
+    & .toc-i:hover,
+    & .jump-i.sel,
+    & .set-theme.on {
+        background: linear-gradient(180deg, #f1f8fd, #d5effc);
+        box-shadow: inset 0 0 0 1px #7da2ce;
+    }
+    & .set-switch.on {
+        background: linear-gradient(180deg, #6fb4f0, #2f7fd0);
+    }
+    & #chat-fab {
+        background: radial-gradient(circle at 50% 30%, #bfe6ff, #3a8ee0 60%, #1b5fa8);
+        color: #fff;
+        border: 1px solid #16457a;
+    }
+    & ::selection {
+        background: #3399ff;
+        color: #fff;
+    }
+}
+/* Effects: the aurora behind the doc, real glass (blur), and the glow Vista put on everything you touched. */
+:root[data-standalone][data-theme="vista"][data-effects] {
+    & body {
+        background: #0b2a3a;
+    }
+    & #main:not(.cc-host) {
+        background: radial-gradient(120% 80% at 20% 110%, rgba(80, 220, 140, 0.55), transparent 55%), radial-gradient(90% 70% at 90% -10%, rgba(40, 160, 255, 0.6), transparent 60%), linear-gradient(160deg, #0b3d2e 0%, #0e4d6c 45%, #1a2f5a 100%);
+        background-size: 200% 200%;
+        animation: aurora 40s ease-in-out infinite alternate;
+    }
+    & #main:not(.cc-host) > .doc {
+        background: rgba(255, 255, 255, 0.97);
+        border: 1px solid rgba(0, 0, 0, 0.5);
+        border-radius: 8px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 18px 50px rgba(0, 0, 0, 0.45);
+        padding: 18px 24px 26px;
+        margin-top: 6px;
+    }
+    & #bar,
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head,
+    & .jump-head {
+        backdrop-filter: blur(12px) saturate(1.3);
+    }
+    & #chat:not(.docked),
+    & #toc,
+    & #settings {
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(14px);
+    }
+    & #tabs button:hover,
+    & .chat-icon:hover:not(:disabled) {
+        box-shadow: 0 0 10px rgba(150, 215, 255, 0.9);
+    }
+}
+@keyframes aurora {
+    to {
+        background-position: 100% 100%;
+    }
+}
+
+/* ---------------- Retro-future: the HUD the '80s promised (Aliens, Blade Runner) ---------------- */
+:root[data-standalone][data-theme="future"] {
+    --bg: #05080c;
+    --fg: #cfe9ec;
+    --muted: #6e949b;
+    --border: rgba(0, 229, 255, 0.32);
+    --focus: #00e5ff;
+    --blue: #00e5ff;
+    --blue-muted: rgba(0, 229, 255, 0.14);
+    --green: #39ff88;
+    --green-muted: rgba(57, 255, 136, 0.13);
+    --red: #ff3b5c;
+    --red-muted: rgba(255, 59, 92, 0.14);
+    --yellow: #ffb000;
+    --yellow-muted: rgba(255, 176, 0, 0.16);
+    --purple: #ff7ad9;
+    --purple-muted: rgba(255, 122, 217, 0.14);
+    --surface: #0a1218;
+    --surface-2: #0f1d26;
+    --radius: 0px;
+    --font-sans: Bahnschrift, "DIN Alternate", Eurostile, "Segoe UI", sans-serif;
+    --mono: "Share Tech Mono", "OCR A Std", "Cascadia Mono", Consolas, monospace;
+    --hud: #00e5ff;
+    --amber: #ffb000;
+    color-scheme: dark;
+
+    & *,
+    & *::before,
+    & *::after {
+        border-radius: 0 !important;
+    }
+    & body {
+        letter-spacing: 0.01em;
+    }
+    /* The grid: the doc sits on a measured plane. */
+    & #main:not(.cc-host) {
+        background: linear-gradient(rgba(0, 229, 255, 0.06) 1px, transparent 1px) 0 0 / 40px 40px, linear-gradient(90deg, rgba(0, 229, 255, 0.06) 1px, transparent 1px) 0 0 / 40px 40px, #05080c;
+    }
+    & ::selection {
+        background: var(--hud);
+        color: #05080c;
+    }
+    & #bar {
+        background: #070c11;
+        border-bottom: 1px solid var(--hud);
+        box-shadow: 0 1px 0 rgba(0, 229, 255, 0.25), 0 8px 24px rgba(0, 229, 255, 0.06);
+    }
+    & #title {
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--hud);
+    }
+    & #subtitle {
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--amber);
+        opacity: 0.85;
+    }
+    & #tabs button,
+    & .frame-head,
+    & .toc-h,
+    & .set-h,
+    & .set-head,
+    & .insp-kind,
+    & .insp-kicker,
+    & .section-head h2,
+    & .step-notes-h,
+    & .cc-h,
+    & #chat-ref,
+    & .kind {
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+    }
+    & #tabs button.on {
+        background: transparent;
+        color: var(--hud);
+        box-shadow: inset 0 -2px 0 var(--hud);
+    }
+    & .section-head h2 {
+        color: var(--hud);
+        font-size: 16px;
+    }
+    & .section-head {
+        border-bottom-color: var(--hud) !important;
+    }
+    & .md h1,
+    & .md h2,
+    & .md h3,
+    & .md h4 {
+        color: var(--amber);
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+    & .md strong {
+        color: #ffffff;
+    }
+    & a {
+        color: var(--hud);
+    }
+    & button {
+        font-family: var(--mono);
+        letter-spacing: 0.06em;
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):not(#tabs button) {
+        background: transparent;
+        border: 1px solid var(--hud);
+        color: var(--hud);
+        text-transform: uppercase;
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):not(#tabs button):hover {
+        background: rgba(0, 229, 255, 0.12);
+    }
+    /* Panels: hairline frames with corner brackets. */
+    & #chat:not(.docked),
+    & #toc,
+    & #settings,
+    & .jump-box,
+    & #peek,
+    & .frame,
+    & .cv,
+    & #editbar,
+    & #gutter,
+    & #tw-menu,
+    & #editlink {
+        --c: var(--hud);
+        background:
+            linear-gradient(var(--c), var(--c)) top left / 14px 2px no-repeat,
+            linear-gradient(var(--c), var(--c)) top left / 2px 14px no-repeat,
+            linear-gradient(var(--c), var(--c)) top right / 14px 2px no-repeat,
+            linear-gradient(var(--c), var(--c)) top right / 2px 14px no-repeat,
+            linear-gradient(var(--c), var(--c)) bottom left / 14px 2px no-repeat,
+            linear-gradient(var(--c), var(--c)) bottom left / 2px 14px no-repeat,
+            linear-gradient(var(--c), var(--c)) bottom right / 14px 2px no-repeat,
+            linear-gradient(var(--c), var(--c)) bottom right / 2px 14px no-repeat,
+            rgba(6, 12, 17, 0.94);
+        border: 1px solid rgba(0, 229, 255, 0.28);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 12px 40px rgba(0, 0, 0, 0.6);
+    }
+    & #gutter {
+        padding: 3px;
+    }
+    & .frame-head,
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head,
+    & .cv-head {
+        background: rgba(0, 229, 255, 0.07);
+        border-bottom: 1px solid rgba(0, 229, 255, 0.28);
+        color: var(--hud);
+    }
+    & .frame-head .name {
+        color: var(--fg);
+    }
+    & .callout {
+        background: rgba(255, 176, 0, 0.06);
+        border: 1px solid rgba(255, 176, 0, 0.4);
+    }
+    & .callout-title {
+        color: var(--amber);
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+    & .md code {
+        background: rgba(0, 229, 255, 0.08);
+        color: #9ff6ff;
+    }
+    & .chat-input,
+    & .jump-head,
+    & .el-in {
+        background: #03060a;
+        border: 1px solid rgba(0, 229, 255, 0.35);
+    }
+    & #chat-text,
+    & .jump-in {
+        font-family: var(--mono);
+        color: var(--hud);
+        caret-color: var(--amber);
+    }
+    & .chat-msg.me {
+        background: rgba(255, 176, 0, 0.08);
+        border: 1px solid rgba(255, 176, 0, 0.35);
+        color: #ffe3a3;
+        font-family: var(--mono);
+    }
+    & .chat-msg.bot {
+        color: #cfe9ec;
+    }
+    & kbd {
+        font-family: var(--mono) !important;
+        background: transparent !important;
+        border: 1px solid rgba(0, 229, 255, 0.45) !important;
+        color: var(--hud) !important;
+    }
+    & .msg line,
+    & .msg path,
+    & .node .shape,
+    & .edge path {
+        stroke: var(--hud);
+    }
+    & .msg.return line,
+    & .msg.return path {
+        stroke: var(--muted);
+    }
+    & .msg.async line,
+    & .msg.async path {
+        stroke: var(--purple);
+    }
+    & .actor rect,
+    & .node .shape {
+        fill: rgba(0, 229, 255, 0.05);
+    }
+    & svg text {
+        font-family: var(--mono);
+    }
+    & .os-thumb {
+        background: rgba(0, 229, 255, 0.55);
+    }
+    & #chat-fab {
+        background: #05080c;
+        color: var(--hud);
+        border: 1px solid var(--hud);
+        box-shadow: 0 0 12px rgba(0, 229, 255, 0.35);
+    }
+    & #toast {
+        background: #05080c;
+        color: var(--amber);
+        border: 1px solid var(--amber);
+        font-family: var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+    & .set-switch.on {
+        background: var(--hud);
+    }
+    & .set-switch .knob {
+        background: #05080c;
+    }
+}
+/* Effects: glow, scanlines, a slow sweep across the grid, and the header's faint flicker. */
+:root[data-standalone][data-theme="future"][data-effects] {
+    & #title,
+    & .section-head h2,
+    & .frame-head .kind,
+    & #tabs button.on {
+        text-shadow: 0 0 6px rgba(0, 229, 255, 0.8), 0 0 18px rgba(0, 229, 255, 0.35);
+    }
+    & .md h1,
+    & .md h2,
+    & .md h3,
+    & .callout-title,
+    & #subtitle {
+        text-shadow: 0 0 6px rgba(255, 176, 0, 0.6);
+    }
+    & body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+        mix-blend-mode: multiply;
+    }
+    & body::before {
+        content: "";
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 30vh;
+        z-index: 2147482999;
+        pointer-events: none;
+        background: linear-gradient(180deg, transparent, rgba(0, 229, 255, 0.05) 60%, rgba(0, 229, 255, 0.1) 62%, transparent);
+        animation: hud-sweep 9s linear infinite;
+    }
+    & #bar {
+        animation: hud-flicker 7s steps(1) infinite;
+    }
+    & .frame,
+    & #chat:not(.docked),
+    & #toc {
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 229, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.6);
+    }
+}
+@keyframes hud-sweep {
+    from {
+        transform: translateY(-30vh);
+    }
+    to {
+        transform: translateY(100vh);
+    }
+}
+@keyframes hud-flicker {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    41% {
+        opacity: 0.86;
+    }
+    42% {
+        opacity: 1;
+    }
+    77% {
+        opacity: 0.92;
+    }
+    78% {
+        opacity: 1;
+    }
+}
+
+/* ---------------- Boot screens (effects on, once per window per theme) ---------------- */
+#boot {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483600;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    animation: boot-out 0.35s ease-in forwards;
+    animation-delay: var(--boot-ms, 1400ms);
+}
+@keyframes boot-out {
+    to {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+#boot.b-win3 {
+    background: #fff;
+    color: #000;
+    font: 700 15px "MS Sans Serif", "Microsoft Sans Serif", Arial, sans-serif;
+    text-align: center;
+}
+#boot.b-win3 .logo {
+    display: inline-grid;
+    grid-template-columns: 26px 26px;
+    gap: 3px;
+    transform: perspective(200px) rotateY(-18deg) skewY(-6deg);
+    margin-bottom: 18px;
+}
+#boot.b-win3 .logo i {
+    height: 22px;
+}
+#boot.b-win3 .logo i:nth-child(1) {
+    background: #ff0000;
+}
+#boot.b-win3 .logo i:nth-child(2) {
+    background: #00a000;
+}
+#boot.b-win3 .logo i:nth-child(3) {
+    background: #0000ff;
+}
+#boot.b-win3 .logo i:nth-child(4) {
+    background: #ffff00;
+}
+#boot.b-win3 .big {
+    font-size: 30px;
+    letter-spacing: 0.02em;
+}
+#boot.b-win3 .small {
+    margin-top: 8px;
+    font-weight: 400;
+    font-size: 12px;
+}
+#boot.b-win95 {
+    background: radial-gradient(ellipse 26% 12% at 22% 30%, #fff 30%, transparent 70%), radial-gradient(ellipse 30% 14% at 74% 22%, #fff 30%, transparent 70%), radial-gradient(ellipse 34% 14% at 60% 78%, #fff 25%, transparent 70%), radial-gradient(ellipse 24% 10% at 16% 82%, #fff 25%, transparent 70%), linear-gradient(#3a7bd5, #87bdf2);
+    color: #fff;
+    font: 700 44px "Franklin Gothic Medium", "Arial Black", Arial, sans-serif;
+    text-shadow: 2px 2px 0 #000;
+}
+#boot.b-win95 .bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 10px;
+    background: linear-gradient(90deg, #000080, #1084d0, #00ffff, #1084d0, #000080) 0 0 / 50% 100%;
+    animation: b95-bar 0.9s linear infinite;
+}
+@keyframes b95-bar {
+    to {
+        background-position: 100% 0;
+    }
+}
+#boot.b-win95 sup {
+    font-size: 22px;
+}
+#boot.b-vista {
+    background: radial-gradient(circle at 50% 50%, #0c2233, #000 70%);
+    color: #cfe7ff;
+    font: 300 20px "Segoe UI", Tahoma, sans-serif;
+    text-align: center;
+}
+#boot.b-vista .orb {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 30%, #fff 0 8%, #9fd4ff 20%, #2e7fd8 55%, #0b2d63 80%);
+    box-shadow: 0 0 40px rgba(110, 190, 255, 0.8);
+    animation: vista-orb 1.3s ease-in-out infinite alternate;
+}
+@keyframes vista-orb {
+    to {
+        box-shadow: 0 0 70px rgba(150, 215, 255, 1);
+        transform: scale(1.06);
+    }
+}
+#boot.b-future {
+    place-items: center start;
+    padding-left: 12vw;
+    background: #020406;
+    color: #00e5ff;
+    font: 15px/1.9 "Share Tech Mono", "Cascadia Mono", Consolas, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    text-shadow: 0 0 8px rgba(0, 229, 255, 0.7);
+}
+#boot.b-future .ln {
+    opacity: 0;
+    animation: ln-in 0.01s forwards;
+}
+#boot.b-future .ln.a {
+    color: #ffb000;
+    text-shadow: 0 0 8px rgba(255, 176, 0, 0.7);
+}
+@keyframes ln-in {
+    to {
+        opacity: 1;
+    }
+}
+#boot.b-future::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0 1px, transparent 1px 3px);
+    animation: hud-flicker 1.4s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    #boot {
+        display: none;
+    }
+}
+
+/* ---------------- 16-bit: a Genesis-era cartridge — pixel type, sprite chrome, a retrowave sunset ---------------- */
+:root[data-standalone][data-theme="arcade"] {
+    --bg: #14062a;
+    --fg: #f4eaff;
+    --muted: #a88fd0;
+    --border: #5b2c9a;
+    --focus: #00f0ff;
+    --blue: #00f0ff;
+    --blue-muted: rgba(0, 240, 255, 0.16);
+    --green: #6bff5c;
+    --green-muted: rgba(107, 255, 92, 0.16);
+    --red: #ff3b6b;
+    --red-muted: rgba(255, 59, 107, 0.18);
+    --yellow: #ffd23f;
+    --yellow-muted: rgba(255, 210, 63, 0.18);
+    --purple: #ff5cd6;
+    --purple-muted: rgba(255, 92, 214, 0.18);
+    --surface: #1d0a3a;
+    --surface-2: #2a1052;
+    --radius: 0px;
+    --px: "Press Start 2P", "PixelOperator", "Lucida Console", "Courier New", monospace;
+    --mono: "Lucida Console", "Courier New", monospace;
+    --font-sans: "Trebuchet MS", Verdana, sans-serif;
+    --hot: #ff2fa0;
+    --sun: #ffb13b;
+    /* A sprite frame: 2px steps at the corners, like a tile drawn on an 8x8 grid. */
+    --sprite: 0 -3px 0 0 var(--f), 0 3px 0 0 var(--f), -3px 0 0 0 var(--f), 3px 0 0 0 var(--f), 0 0 0 3px #0c0320, 6px 6px 0 0 rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+
+    & *,
+    & *::before,
+    & *::after {
+        border-radius: 0 !important;
+    }
+    & body {
+        image-rendering: pixelated;
+        -webkit-font-smoothing: none;
+    }
+    & ::selection {
+        background: var(--hot);
+        color: #fff;
+    }
+    /* Pixel headlines with a hard drop shadow; body text stays readable. */
+    & #title,
+    & .section-head h2,
+    & .md h1,
+    & .md h2,
+    & .md h3,
+    & .frame-head .kind,
+    & .toc-h,
+    & .set-head,
+    & .set-h,
+    & #tabs button,
+    & .insp-kicker,
+    & .callout-title,
+    & .step-notes-h {
+        font-family: var(--px);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        text-shadow: 2px 2px 0 #0c0320;
+    }
+    & #title {
+        color: var(--yellow);
+        font-size: 13px;
+    }
+    & .section-head h2 {
+        color: var(--hot);
+        font-size: 15px;
+    }
+    & .md h1,
+    & .md h2,
+    & .md h3 {
+        color: var(--blue);
+        font-size: 12px;
+        line-height: 1.6;
+    }
+    & #tabs button {
+        font-size: 10px;
+    }
+    & .frame-head .kind,
+    & .toc-h,
+    & .set-h,
+    & .insp-kicker,
+    & .step-notes-h {
+        font-size: 9px;
+    }
+    & #bar {
+        background: linear-gradient(180deg, #2a0a55, #14062a);
+        border-bottom: 3px solid var(--hot);
+        box-shadow: 0 3px 0 0 #0c0320;
+    }
+    & #subtitle {
+        color: var(--muted);
+        font-family: var(--mono);
+    }
+    & #tabs button.on {
+        background: var(--hot);
+        color: #fff;
+        box-shadow: 0 -2px 0 0 var(--hot), 0 2px 0 0 var(--hot), -2px 0 0 0 var(--hot), 2px 0 0 0 var(--hot);
+    }
+    & a {
+        color: var(--blue);
+    }
+    & .md strong {
+        color: var(--yellow);
+    }
+    & .md code {
+        background: #2a1052;
+        color: #7ffcff;
+        font-family: var(--mono);
+    }
+    /* Sprite-framed windows and cards. */
+    & #chat:not(.docked),
+    & #toc,
+    & #settings,
+    & .jump-box,
+    & #editbar,
+    & #gutter,
+    & #tw-menu,
+    & #editlink,
+    & .frame,
+    & .callout,
+    & .card,
+    & .cv {
+        --f: var(--border);
+        border: none;
+        background-color: var(--surface);
+        box-shadow: var(--sprite);
+        animation: none;
+    }
+    & #chat:not(.docked),
+    & #toc,
+    & #settings,
+    & .jump-box {
+        --f: var(--hot);
+    }
+    & #gutter {
+        padding: 3px;
+    }
+    & .callout {
+        --f: var(--yellow);
+        background: rgba(255, 210, 63, 0.07);
+    }
+    & .callout-title {
+        color: var(--yellow);
+        font-size: 10px;
+    }
+    & #chat-bar,
+    & .toc-bar,
+    & .set-head,
+    & #peek-head,
+    & .frame-head,
+    & .cv-head {
+        background: repeating-linear-gradient(0deg, #3a1470 0 2px, #2a1052 2px 4px);
+        border-bottom: 3px solid #0c0320;
+        color: var(--fg);
+    }
+    & #peek {
+        background: var(--surface);
+        border-left: 3px solid var(--hot);
+        box-shadow: -6px 0 0 rgba(0, 0, 0, 0.35);
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):not(#tabs button) {
+        --f: #0c0320;
+        background: var(--blue);
+        color: #0c0320;
+        border: none;
+        font-family: var(--px);
+        font-size: 9px;
+        text-transform: uppercase;
+        padding: 5px 10px;
+        box-shadow: 0 -2px 0 0 var(--f), 0 2px 0 0 var(--f), -2px 0 0 0 var(--f), 2px 0 0 0 var(--f), inset -3px -3px 0 0 rgba(0, 0, 0, 0.25), inset 3px 3px 0 0 rgba(255, 255, 255, 0.45);
+    }
+    & button:not(.icon):not(.chat-icon):not(.toc-i):not(.toc-fold):not(.set-switch):not(.insp-num):not(.set-theme):not(.jump-i):not(.chg):not(.chat-about):not(#tabs button):active {
+        transform: translate(2px, 2px);
+        box-shadow: 0 -2px 0 0 var(--f), 0 2px 0 0 var(--f), -2px 0 0 0 var(--f), 2px 0 0 0 var(--f), inset 3px 3px 0 0 rgba(0, 0, 0, 0.3);
+    }
+    & kbd {
+        font-family: var(--px) !important;
+        font-size: 8px !important;
+        background: var(--surface-2) !important;
+        color: var(--yellow) !important;
+        border: 2px solid #0c0320 !important;
+    }
+    & .chat-input,
+    & .jump-head,
+    & .el-in {
+        background: #0c0320;
+        border: 2px solid var(--border);
+    }
+    & #chat-text,
+    & .jump-in {
+        color: #7ffcff;
+        caret-color: var(--hot);
+        font-family: var(--mono);
+    }
+    & .chat-msg.me {
+        background: var(--hot);
+        color: #fff;
+        box-shadow: 3px 3px 0 0 #0c0320;
+    }
+    & .toc-i:hover,
+    & .jump-i.sel,
+    & .set-theme.on {
+        background: var(--hot);
+        color: #fff;
+    }
+    & .jump-i.sel * {
+        color: #fff !important;
+    }
+    & .set-switch {
+        background: #0c0320;
+        box-shadow: inset 0 0 0 2px var(--border);
+    }
+    & .set-switch.on {
+        background: var(--green);
+    }
+    & .set-switch .knob {
+        background: var(--yellow);
+        box-shadow: none;
+    }
+    & .os-thumb {
+        background: var(--hot);
+    }
+    & #chat-fab {
+        background: var(--yellow);
+        color: #0c0320;
+        border: none;
+        box-shadow: 0 -3px 0 0 #0c0320, 0 3px 0 0 #0c0320, -3px 0 0 0 #0c0320, 3px 0 0 0 #0c0320, 5px 5px 0 0 rgba(0, 0, 0, 0.45);
+    }
+    & #toast {
+        background: #0c0320;
+        color: var(--yellow);
+        font-family: var(--px);
+        font-size: 10px;
+        text-transform: uppercase;
+        box-shadow: 0 0 0 3px var(--hot), 5px 5px 0 3px rgba(0, 0, 0, 0.45);
+    }
+    & .msg line,
+    & .msg path,
+    & .edge path {
+        stroke: var(--blue);
+        stroke-width: 2;
+    }
+    & .msg.async line,
+    & .msg.async path {
+        stroke: var(--hot);
+    }
+    & .msg.return line,
+    & .msg.return path {
+        stroke: var(--muted);
+    }
+    & .actor rect,
+    & .node .shape {
+        fill: #1d0a3a;
+        stroke: var(--hot);
+        stroke-width: 2;
+        shape-rendering: crispEdges;
+    }
+    & svg text {
+        font-family: var(--mono);
+    }
+    /* The doc sits on a plain night sky without effects. */
+    & #main:not(.cc-host) {
+        background: linear-gradient(180deg, #14062a, #2a0a55 70%, #3d0b5e);
+        background-attachment: fixed;
+    }
+}
+/* Effects: the retrowave horizon (a striped sun over a scrolling grid), twinkling stars, a CRT sheen. */
+:root[data-standalone][data-theme="arcade"][data-effects] {
+    & #main:not(.cc-host) {
+        background: none;
+    }
+    & body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background:
+            /* stars */
+            radial-gradient(1.5px 1.5px at 12% 18%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 32% 8%, #ffd23f 50%, transparent 51%), radial-gradient(2px 2px at 58% 22%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 76% 12%, #7ffcff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 90% 30%, #fff 50%, transparent 51%), radial-gradient(1.5px 1.5px at 6% 40%, #fff 50%, transparent 51%),
+            /* the sun, cut into bands */
+            repeating-linear-gradient(180deg, transparent 0 16px, #1a0433 16px 21px) 50% 34% / 360px 180px no-repeat,
+            radial-gradient(circle at 50% 100%, #ffe066 0 30%, #ff9a2a 55%, #ff2fa0 80%, transparent 81%) 50% 34% / 360px 180px no-repeat,
+            linear-gradient(180deg, #0c0320 0%, #2a0a55 40%, #7a1a7e 62%, #ff2fa0 64%, #14062a 64.4%);
+        animation: twinkle 3.2s steps(2) infinite;
+    }
+    & body::after {
+        content: "";
+        position: fixed;
+        left: -50%;
+        right: -50%;
+        bottom: 0;
+        height: 36%;
+        z-index: -1;
+        pointer-events: none;
+        background: linear-gradient(90deg, rgba(0, 240, 255, 0.55) 2px, transparent 2px) 0 0 / 60px 60px, linear-gradient(180deg, rgba(255, 47, 160, 0.7) 2px, transparent 2px) 0 0 / 60px 60px;
+        transform: perspective(260px) rotateX(62deg);
+        transform-origin: 50% 0;
+        animation: grid-run 1.6s linear infinite;
+        mask-image: linear-gradient(180deg, transparent, #000 30%);
+    }
+    & body {
+        background: #14062a;
+        isolation: isolate;
+    }
+    & #main:not(.cc-host) > .doc {
+        --f: var(--hot);
+        background: rgba(20, 6, 42, 0.92);
+        box-shadow: var(--sprite), 0 0 40px rgba(255, 47, 160, 0.25);
+        padding: 18px 24px 26px;
+        margin-top: 8px;
+    }
+    & #title,
+    & .section-head h2 {
+        text-shadow: 2px 2px 0 #0c0320, 0 0 10px rgba(255, 47, 160, 0.7);
+    }
+    & #bar::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+    }
+}
+@keyframes grid-run {
+    to {
+        background-position: 0 60px, 0 60px;
+    }
+}
+@keyframes twinkle {
+    50% {
+        filter: brightness(1.25);
+    }
+}
+#boot.b-arcade {
+    background: #000;
+    color: #fff;
+    font: 16px/1.8 "Press Start 2P", "Lucida Console", "Courier New", monospace;
+    text-align: center;
+    text-transform: uppercase;
+}
+#boot.b-arcade .logo {
+    font-size: 44px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: linear-gradient(180deg, #fff 0 20%, #7ffcff 45%, #1b5fd8 55%, #ff2fa0 80%, #ffd23f);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(4px 4px 0 #3a0a60);
+    animation: logo-in 0.5s steps(6) both;
+}
+#boot.b-arcade .start {
+    margin-top: 28px;
+    color: #ffd23f;
+    font-size: 14px;
+    animation: blink 0.5s steps(1) infinite;
+}
+#boot.b-arcade .tm {
+    margin-top: 18px;
+    font-size: 9px;
+    color: #a88fd0;
+}
+@keyframes logo-in {
+    from {
+        transform: translateY(-120px);
+    }
+}
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}

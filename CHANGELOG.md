@@ -6,11 +6,13 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Added
 
+- **Settings** (gear in the header). Each optional keyboard shortcut (Ctrl/⌘-J, arrow-key stepping, `?` for the Command tour, Markdown as you type) can be turned off. In a browser window you can pick a theme: System, Light, Dark, Windows 3.0, Windows 95, Vista, Retro-future (an '80s-film HUD) or 16-bit (Genesis-era retrowave). The retro themes dress the whole UI, and their **Effects** (boot screens, desktops such as the 95 wallpaper, glass, glow, scanlines, the retrowave horizon) can be switched off. Inside the Copilot app the app's theme always applies. Settings are saved with your Marginal data, so every panel and window shares them.
 - Click a doc's title in the header to rename it (Enter saves, Esc cancels).
 - **Edit prose in place.** A pencil under Comment and Copy (and **Edit** in the top bar for a Ctrl/Shift-click selection, contiguous or not) opens paragraphs, headings, list items and quotes for editing, outlined in green. The margin swaps to Save, Bold, Italic, Link and, set apart at the bottom, Discard; **Shift+Enter** saves, **Esc** cancels. Links take a URL, a `#heading` or a repo path (a code link). The live doc waits while you edit; a save is refused if Copilot changed the same text meanwhile. History shows your versions as yours, and Copilot's next chat message names the blocks you edited. Diagrams, code and tables aren't editable.
 
 ### Fixed
 
+- Command-tab diff feeds no longer offer to open rows with nothing to show. Edits to files a front no longer changes (created then deleted, such as build output, or edited back) are hidden by default with a count to show them; binary files and rows whose diff comes back empty are labelled and can't be expanded.
 - Comment (margin, top bar or selection button) always leaves the caret in the chat input, whether the chat was already open or not, so you can start typing right away.
 
 ### Changed

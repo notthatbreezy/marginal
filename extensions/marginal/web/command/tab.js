@@ -1,6 +1,7 @@
 // Command tab: the implementation mission wall.
 // Instrument strip, territory map, fronts rail, checkpoint timeline + scrub replay, off-plan filter,
 // views & follow, auto-root, fisheye pins, monitors dock, hunk rows. Everything renders "as of" a time: live = now.
+import { shortcut } from "../settings.js";
 import { INSTANCE, api, bus, h, put, svc } from "../core.js";
 import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
 import { buckets, changesAt, velocity } from "./derive.js";
@@ -903,7 +904,7 @@ function keydown(e) {
     if (e.key === "Escape" && cc.ui.menu) return closeMenu();
     if (e.key === "Escape" && cc.sel?.size) return cc.sel.clear();
     if (e.key === "Escape" && cc.walk?.open && !e.target.closest?.("#chat")) return cc.walk.close();
-    if (e.key === "?" && !cc.tour) {
+    if (e.key === "?" && !cc.tour && shortcut("tourKey")) {
         e.preventDefault();
         return openTour();
     }

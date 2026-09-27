@@ -253,6 +253,19 @@ await test("prose edits: exact lines, one version by the user, refused when the 
     await store.applyEdit(d, { type: "remove", targetId: id });
 });
 
+await test("settings: defaults, partial merges, and bad values fall back", async () => {
+    const { readSettings, writeSettings, parseSettings } = await import("../extensions/marginal/lib/settings.mjs");
+    assert.deepEqual(readSettings().shortcuts, { jump: true, stepKeys: true, tourKey: true, markdown: true });
+    assert.equal(readSettings().theme, "auto");
+    const s = writeSettings({ shortcuts: { jump: false }, theme: "win95" });
+    assert.equal(s.shortcuts.jump, false);
+    assert.equal(s.shortcuts.markdown, true);
+    assert.equal(writeSettings({ effects: false }).theme, "win95");
+    assert.equal(readSettings().effects, false);
+    assert.deepEqual(parseSettings({ theme: "nope", effects: "yes", shortcuts: { jump: "no" } }), { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true });
+    writeSettings({ shortcuts: { jump: true }, theme: "auto", effects: true });
+});
+
 await test("database_lens relationship checks", async () => {
     const lens = (field) => ({
         type: "database_lens",

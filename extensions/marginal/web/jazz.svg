@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300">
+  <!-- A '90s "Jazz"-style wallpaper tile: chalky teal brush strokes with a purple zigzag. Original drawing. -->
+  <defs>
+    <filter id="chalk" x="-10%" y="-20%" width="120%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="16" xChannelSelector="R" yChannelSelector="G" result="d"/>
+      <feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="1" seed="3" result="grain"/>
+      <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.4 1.55" result="holes"/>
+      <feComposite in="d" in2="holes" operator="in"/>
+    </filter>
+    <filter id="line" x="-5%" y="-20%" width="110%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="1" seed="11" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3"/>
+    </filter>
+  </defs>
+  <g fill="#1fc3c9" filter="url(#chalk)" opacity="0.92">
+    <path d="M12 190 C60 120 96 70 150 46 L176 58 C132 96 104 138 86 200 Z"/>
+    <path d="M150 196 C196 124 238 76 300 44 L330 56 C282 96 250 142 228 206 Z"/>
+    <path d="M300 190 C346 118 392 72 452 40 L482 52 C434 92 400 140 380 202 Z"/>
+    <path d="M452 194 C500 124 546 78 606 46 L634 58 C588 98 552 146 532 204 Z"/>
+    <path d="M70 250 C104 214 132 190 170 176 L184 186 C156 204 134 226 118 256 Z" opacity="0.8"/>
+    <path d="M372 262 C408 224 440 200 480 186 L494 196 C462 214 440 236 424 268 Z" opacity="0.8"/>
+  </g>
+  <path filter="url(#line)" fill="none" stroke="#4b1f8f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"
+        d="M18 150 L58 104 L66 150 L110 96 L120 146 L168 92 L178 142 L226 90 L238 140 L284 88 L296 138 L344 86 L356 136 L404 84 L416 134 L462 82 L474 132 L522 80 L534 130 L580 80 L594 128 L626 96"/>
+  <path filter="url(#line)" fill="none" stroke="#7a3fd0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"
+        d="M24 158 L60 114 L70 156 L112 106 L124 152 L170 102 L182 148 L228 100 L242 146 L286 98 L300 144 L346 96 L360 142 L406 94 L420 140 L464 92 L478 138 L524 90 L538 136 L582 90 L598 134"/>
+</svg>

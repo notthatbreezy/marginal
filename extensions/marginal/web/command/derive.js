@@ -18,7 +18,7 @@ export function changesAt(events, at = Infinity) {
         const t = Date.parse(e.at);
         // A baseline or initial observation is "as found", not a live edit.
         const lastAt = e.initial || e.baseline ? 0 : t;
-        f.fronts.set(e.frontId, { add: e.totals.add, del: e.totals.del, kind: e.kind, lastAt, offPlan: e.offPlan });
+        f.fronts.set(e.frontId, { add: e.totals.add, del: e.totals.del, kind: e.kind, lastAt, offPlan: e.offPlan, ...(e.binary ? { binary: true } : {}) });
         f.add += e.totals.add;
         f.del += e.totals.del;
         if (lastAt >= f.lastAt) {

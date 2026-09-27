@@ -6,7 +6,11 @@ import { fmtCounts } from "./treemap.js";
 const inSub = (path, root) => !root || path === root || path.startsWith(`${root}/`);
 
 /** o: { monitors: [{path, mode}], events, changes, fronts: Map, docId, now, onClose(path), onMode(path, mode), onFocus(path) } */
+const goneShown = new Set(); // monitor paths where the reader chose to see edits to files no longer changed
+let last = null;
 export function renderMonitors(host, o) {
+    last = [host, o];
+    o = { ...o, showGone: (p) => goneShown.has(p), rerender: () => last && renderMonitors(...last) };
     host.hidden = !o.monitors.length;
     const open = new Set([...host.querySelectorAll(".feed li.open")].map((li) => li.dataset.key));
     const focused = document.activeElement?.closest?.(".feed li")?.dataset.key;
@@ -49,31 +53,76 @@ export function renderMonitors(host, o) {
     if (focused) host.querySelector(`.feed li[data-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }
 
+/**
+ * What a row can show when opened: its file's diff as that front has it now. Edits to files the front no longer
+ * changes (made then deleted, e.g. build output, or edited back to base) have nothing to show and are hidden by
+ * default; binary files have no text diff; a peek that came back empty is remembered as having nothing.
+ */
+function rowState(e, o) {
+    const cur = o.changes.get(e.file)?.fronts.get(e.frontId);
+    if (!cur) return "gone";
+    if (cur.binary) return "binary";
+    const hit = peekCache.get(peekKey(e, o));
+    if (hit && !(hit instanceof Promise) && !hit.error && !hit.hunks?.length) return "empty";
+    return "diff";
+}
+const NO_DIFF = { gone: "No longer changed in this front (created then removed, or edited back)", binary: "Binary file: no text diff", empty: "No textual changes right now" };
+
 function feed(mon, o, open) {
-    const rows = o.events.filter((e) => inSub(e.file, mon.path) && !e.initial && !e.baseline && (e.delta.add || e.delta.del)).slice(-40).reverse();
-    if (!rows.length) return h("p", { class: "mon-empty" }, "No edits here yet. New changes appear at the top.");
+    const all = o.events.filter((e) => inSub(e.file, mon.path) && !e.initial && !e.baseline && (e.delta.add || e.delta.del));
+    const showGone = o.showGone?.(mon.path) ?? false;
+    const states = new Map(all.map((e) => [e, rowState(e, o)]));
+    const gone = all.filter((e) => states.get(e) === "gone").length;
+    const rows = all.filter((e) => showGone || states.get(e) !== "gone").slice(-40).reverse();
+    const footer = gone
+        ? h(
+              "button",
+              { class: "mon-gone", onclick: () => (goneShown.has(mon.path) ? goneShown.delete(mon.path) : goneShown.add(mon.path), o.rerender()) },
+              showGone ? `Hide ${gone} edit${gone === 1 ? "" : "s"} to files no longer changed` : `${gone} edit${gone === 1 ? "" : "s"} to files no longer changed hidden · show`,
+          )
+        : null;
+    if (!rows.length) return h("div", {}, h("p", { class: "mon-empty" }, gone ? "Nothing here is changed right now." : "No edits here yet. New changes appear at the top."), footer);
     return h(
-        "ul",
-        { class: "feed" },
-        rows.map((e) => {
-            const key = `${e.seq}`;
-            const f = o.fronts.get(e.frontId);
-            const li = h(
-                "li",
-                { class: `f${(f?.color ?? 5) + 1}${open.has(key) ? " open" : ""}`, "data-key": key, tabindex: "0", title: "Show this file's current diff", onclick: (ev) => !ev.target.closest(".peek") && toggle(li, e, o) },
-                h("span", { class: "t" }, relTime(Date.parse(e.at), o.now).replace(" ago", "")),
-                h("span", { class: "fdot" }),
-                h("span", { class: "path" }, e.file.slice(mon.path ? mon.path.length + 1 : 0) || e.file),
-                h("span", { class: "num" }, fmtCounts(e.delta.add, e.delta.del)),
-            );
-            if (open.has(key)) loadPeek(li, e, o);
-            return li;
-        }),
+        "div",
+        {},
+        h(
+            "ul",
+            { class: "feed" },
+            rows.map((e) => {
+                const key = `${e.seq}`;
+                const f = o.fronts.get(e.frontId);
+                const state = states.get(e);
+                const can = state === "diff";
+                const li = h(
+                    "li",
+                    {
+                        class: `f${(f?.color ?? 5) + 1}${can && open.has(key) ? " open" : ""}${can ? "" : ` nodiff ${state}`}`,
+                        "data-key": key,
+                        tabindex: can ? "0" : null,
+                        title: can ? "Show this file's current diff" : NO_DIFF[state],
+                        "aria-expanded": can ? String(open.has(key)) : null,
+                        onclick: can ? (ev) => !ev.target.closest(".peek") && toggle(li, e, o) : null,
+                        onkeydown: can ? (ev) => (ev.key === "Enter" || ev.key === " ") && !ev.target.closest(".peek") && (ev.preventDefault(), toggle(li, e, o)) : null,
+                    },
+                    h("span", { class: "t" }, relTime(Date.parse(e.at), o.now).replace(" ago", "")),
+                    h("span", { class: "fdot" }),
+                    h("span", { class: "path" }, e.file.slice(mon.path ? mon.path.length + 1 : 0) || e.file),
+                    can ? null : h("span", { class: "nd" }, state === "gone" ? "gone" : state === "binary" ? "binary" : "no diff"),
+                    h("span", { class: "num" }, fmtCounts(e.delta.add, e.delta.del)),
+                );
+                if (can && open.has(key)) loadPeek(li, e, o);
+                return li;
+            }),
+        ),
+        footer,
     );
 }
 
 function toggle(li, e, o) {
-    if (li.classList.toggle("open")) loadPeek(li, e, o);
+    if (li.classList.contains("nodiff")) return;
+    const on = li.classList.toggle("open");
+    li.setAttribute("aria-expanded", String(on));
+    if (on) loadPeek(li, e, o);
     else li.querySelector(".peek")?.remove();
 }
 
@@ -109,7 +158,21 @@ function loadPeek(li, e, o) {
                 return d;
             });
     peekCache.set(key, p);
-    p.then((d) => peek.isConnected && fillPeek(peek, d, e, o));
+    p.then((d) => {
+        if (!peek.isConnected) return;
+        // Nothing to show after all: say so once, then the row stops offering to open.
+        if (!d.error && !d.hunks?.length) {
+            li.classList.remove("open");
+            li.classList.add("nodiff", "empty");
+            li.removeAttribute("tabindex");
+            li.removeAttribute("aria-expanded");
+            li.title = NO_DIFF.empty;
+            peek.remove();
+            if (!li.querySelector(".nd")) li.querySelector(".num")?.before(h("span", { class: "nd" }, "no diff"));
+            return;
+        }
+        fillPeek(peek, d, e, o);
+    });
 }
 
 function filesTable(files, o) {

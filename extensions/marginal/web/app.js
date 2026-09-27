@@ -4,6 +4,7 @@ import { activeSelection, createSelection, flashBar, withModifier, multibar } fr
 import { createToc } from "./toc.js";
 import { createTables } from "./tables.js";
 import { createProseEditor, editableKind } from "./edit.js";
+import { loadSettings, onSettings, settingsChanged, shortcut } from "./settings.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 
@@ -994,6 +995,12 @@ function updateCenter() {
     $("#idle-hint").hidden = multi || typing || hintOn || activityOn || state.tab !== "board" || !state.doc || state.viewVersion !== null || !toc?.entries?.length;
 }
 if (/Mac|iPhone|iPad/.test(navigator.platform)) $("#idle-hint .k-jump").textContent = "⌘";
+// With the jump shortcut off, the reading hint only mentions what still works.
+onSettings(() => {
+    const on = shortcut("jump");
+    for (const el of $("#idle-hint").querySelectorAll("kbd, .jh")) el.hidden = !on;
+    updateCenter();
+});
 
 // ---- header: titles fit the room left of the centre slot; long branch names lose their middle, not their ends ----
 let subParts = [];
@@ -1378,6 +1385,7 @@ function connect() {
                 if (state.tab === "history") renderHistory();
             }
         } else if (ev.type === "chat") onChatEvent(ev);
+        else if (ev.type === "settings") settingsChanged(ev.settings);
         else if (ev.type === "command") bus.emit("command", ev);
         else if (ev.type === "activity" && ev.documentId === state.documentId) setActivity(ev.activity);
         else if (ev.type === "deleted" && ev.documentId === state.documentId) {
@@ -2760,7 +2768,7 @@ $("#peek-body").addEventListener("scrollend", () => (insp.auto = false));
 
 // ↑/↓ (or k/j) move between steps while inspecting, unless you're typing.
 document.addEventListener("keydown", (e) => {
-    if (!inspecting() || e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("textarea, input, select, [contenteditable], #jump")) return;
+    if (!inspecting() || !shortcut("stepKeys") || e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.("textarea, input, select, [contenteditable], #jump, #settings")) return;
     const d = ["ArrowDown", "j"].includes(e.key) ? 1 : ["ArrowUp", "k"].includes(e.key) ? -1 : 0;
     if (!d) return;
     e.preventDefault();
@@ -2938,6 +2946,7 @@ Object.assign(svc, {
 
 // ---------------- boot ----------------
 (async () => {
+    await loadSettings(); // before the first render, so the theme doesn't flash
     try {
         state.catalog = await api("/catalog");
     } catch (e) {

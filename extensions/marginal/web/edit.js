@@ -2,6 +2,7 @@
 // Markdown), and saved back as Markdown for exactly the lines they came from. Diagrams, code and tables aren't prose.
 //   Shift+Enter saves · Esc cancels · Ctrl/⌘+B bold · Ctrl/⌘+I italic · Ctrl/⌘+K link
 import { $, h } from "./core.js";
+import { shortcut } from "./settings.js";
 
 const icon = (d, w = 15) => `<svg viewBox="0 0 16 16" width="${w}" height="${w}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const ICONS = {
@@ -554,7 +555,7 @@ export function createProseEditor(o) {
     o.main.addEventListener("input", (e) => {
         if (!active()) return;
         const u = units.find((x) => x.el.contains(e.target));
-        if (u && e.inputType === "insertText") inputRules(u, e.data);
+        if (u && e.inputType === "insertText" && shortcut("markdown")) inputRules(u, e.data);
         renumber();
         place();
     });

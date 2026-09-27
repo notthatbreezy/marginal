@@ -1,0 +1,207 @@
+/* ---------- Settings (gear in the header) ---------- */
+#settings-btn {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 7px;
+    color: var(--muted);
+}
+#settings-btn:hover,
+#settings-btn[aria-expanded="true"] {
+    color: var(--fg);
+    background: var(--surface-2);
+}
+#tabs[hidden] + #settings-btn {
+    margin-left: auto;
+}
+#settings {
+    position: fixed;
+    z-index: 55;
+    width: min(380px, calc(100vw - 16px));
+    max-height: calc(100vh - 70px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+    animation: chat-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.set-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 8px 6px 16px;
+    font-weight: 600;
+}
+.set-x {
+    width: 24px;
+    height: 24px;
+}
+.set-body {
+    overflow-y: auto;
+    padding: 0 16px 14px;
+}
+.set-h {
+    margin: 12px 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+.set-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 7px 0;
+}
+.set-row + .set-row {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.set-rt {
+    flex: 1;
+    min-width: 0;
+}
+.set-rl {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+.set-rd {
+    margin-top: 2px;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--muted);
+}
+.set-keys {
+    display: inline-flex;
+    gap: 3px;
+}
+#settings kbd {
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 10.5px;
+    line-height: 16px;
+    color: var(--muted);
+    background: var(--bg);
+}
+.set-note {
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--muted);
+}
+.set-switch {
+    flex: none;
+    position: relative;
+    width: 32px;
+    height: 18px;
+    margin-top: 1px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--border);
+    transition: background-color 0.15s;
+}
+.set-switch .knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--bg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.set-switch.on {
+    background: var(--blue);
+    box-shadow: none;
+}
+.set-switch.on .knob {
+    transform: translateX(14px);
+}
+.set-themes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+.set-theme {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 9px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    text-align: left;
+}
+.set-theme:hover {
+    border-color: color-mix(in srgb, var(--blue) 40%, var(--border));
+}
+.set-theme.on {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 1px var(--blue);
+}
+.set-swatch {
+    grid-row: 1 / 3;
+    width: 34px;
+    height: 24px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+.set-tl {
+    font-size: 12.5px;
+    line-height: 16px;
+}
+.set-tn {
+    font-size: 10.5px;
+    line-height: 14px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Swatches: a tiny impression of each theme, drawn the same whatever theme is active. */
+.sw-auto {
+    background: linear-gradient(135deg, #ffffff 0 50%, #0d1117 50%);
+}
+.sw-light {
+    background: linear-gradient(#f6f8fa 0 7px, #ffffff 7px);
+}
+.sw-dark {
+    background: linear-gradient(#161b22 0 7px, #0d1117 7px);
+}
+.sw-win3 {
+    background: linear-gradient(#000080 0 7px, #ffffff 7px 22px, #c0c0c0 22px);
+    box-shadow: inset 0 0 0 1px #000;
+    border-radius: 0 !important;
+}
+.sw-win95 {
+    background: linear-gradient(#000080 0 7px, #c0c0c0 7px) padding-box, #008080;
+    border: 3px solid #008080;
+    border-radius: 0 !important;
+}
+.sw-vista {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0 4px, rgba(20, 40, 60, 0.75) 4px 8px, #eaf3fb 8px), linear-gradient(135deg, #0b3d2e, #1a6a8a);
+}
+.sw-future {
+    background: linear-gradient(rgba(0, 229, 255, 0.35) 1px, transparent 1px) 0 0 / 6px 6px, linear-gradient(90deg, rgba(0, 229, 255, 0.35) 1px, transparent 1px) 0 0 / 6px 6px, #05080c;
+    box-shadow: inset 0 0 0 1px #00e5ff;
+}
+.sw-arcade {
+    background: linear-gradient(180deg, #ff2fa0 0 30%, #ff9a2a 30% 45%, #2b0a4a 45% 55%, transparent 55%), repeating-linear-gradient(90deg, #00f0ff 0 1px, transparent 1px 6px) 0 55% / 100% 45% no-repeat, #1a0433;
+    border-radius: 0 !important;
+}

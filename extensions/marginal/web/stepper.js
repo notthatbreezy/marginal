@@ -1,5 +1,6 @@
 // Stepper: the shared shell for walking a list of stops (code tours, checkpoint walkthroughs).
 // Owns layout, progress, navigation, keyboard and revision updates; callers supply the stage and stop renderers.
+import { shortcut } from "./settings.js";
 import { h, put } from "./core.js";
 
 const CLOSE_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
@@ -143,7 +144,7 @@ export function createStepper(o) {
 }
 
 document.addEventListener("keydown", (e) => {
-    if (!active || !active.root.isConnected || e.target.closest?.("textarea, input, select, [contenteditable], [role=slider]") || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!active || !active.root.isConnected || !shortcut("stepKeys") || e.target.closest?.("textarea, input, select, [contenteditable], [role=slider], #settings") || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = active.index;
     if (["ArrowRight", "ArrowDown", "j", "PageDown"].includes(e.key)) {
         e.preventDefault();

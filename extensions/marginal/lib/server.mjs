@@ -15,6 +15,7 @@ import { activity } from "./command/index.mjs";
 import { revisingStatus } from "./command/walkthrough.mjs";
 import { eventsSince, lastSeq, onCommand, readPrefs, readState, refreshLog, watchCommand, writePrefs } from "./command/state.mjs";
 import * as store from "./store.mjs";
+import { readSettings, writeSettings } from "./settings.mjs";
 
 const webDir = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".wasm": "application/wasm" };
@@ -252,6 +253,12 @@ export async function startServer({ chat, instances, getSessionId }) {
         }
 
         if (parts[1] === "catalog" && method === "GET") return send(res, 200, store.list());
+        if (parts[1] === "settings" && method === "GET") return send(res, 200, readSettings());
+        if (parts[1] === "settings" && method === "POST") {
+            const next = writeSettings(await readBody(req));
+            for (const c of clients) push(c, { type: "settings", settings: next }); // every panel and window follows
+            return send(res, 200, next);
+        }
 
         if (parts[1] === "command") return commandRoute(req, res, url, parts.slice(2));
 
