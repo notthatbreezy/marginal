@@ -469,7 +469,8 @@ export async function commandRead(input, ctx) {
     if (include.includes("walkthrough")) {
         const v = state.walkthroughView;
         out.walkthrough = v ? { view: v, current: state.walkthroughs.find((w) => w.id === v.id) ?? null } : null;
-        out.walkthroughs = state.walkthroughs.map((w) => ({ id: w.id, title: w.title, revision: w.revision, stops: w.stops.length, labels: w.labels }));
+        const reviewed = readPrefs(ctx.docId).reviewed ?? {};
+        out.walkthroughs = state.walkthroughs.map((w) => ({ id: w.id, title: w.title, revision: w.revision, stops: w.stops.length, labels: w.labels, pins: w.pins, updatedAt: w.updatedAt, reviewed: reviewed[w.id]?.at ?? null }));
     }
     return out;
 }

@@ -23,6 +23,7 @@ export function createWalkthrough(o) {
         const revising = revisingAt && Date.now() - revisingAt < REVISING_MS;
         const updated = cur?.lastEdit && Date.now() - Date.parse(cur.lastEdit.at) < 20_000;
         return [
+            cur && o.reviewedOf?.(cur) ? h("span", { class: "reviewed", title: "You've reviewed this walkthrough; new ones can start from where it ends" }, "✓ Reviewed") : null,
             revising ? h("span", { class: "revising", role: "status" }, h("span", { class: "pulse" }), "Agent is revising the walkthrough…") : null,
             !revising && updated ? h("span", { class: "updated", role: "status" }, h("i"), "Updated just now") : null,
         ];

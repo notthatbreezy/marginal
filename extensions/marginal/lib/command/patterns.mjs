@@ -184,6 +184,16 @@ export function parsePrefs(v) {
         });
     if (o.focus && typeof o.focus === "object" && Array.isArray(o.focus.items)) out.focus = { items: o.focus.items.slice(0, 40), ...(str(o.focus.replayAt) ? { replayAt: o.focus.replayAt } : {}) };
     if (o.walkthroughDismissed && isId(o.walkthroughDismissed.id) && Number.isInteger(o.walkthroughDismissed.seq)) out.walkthroughDismissed = { id: o.walkthroughDismissed.id, seq: o.walkthroughDismissed.seq };
+    // Walkthroughs the user finished (or marked) reviewed: id → { at, head } (the commit the review covered up to).
+    if (o.reviewed && typeof o.reviewed === "object" && !Array.isArray(o.reviewed))
+        out.reviewed = Object.fromEntries(
+            Object.entries(o.reviewed)
+                .filter(([id, r]) => isId(id) && r && str(r.at) && typeof r.head === "string" && /^[0-9a-f]{7,64}$/.test(r.head))
+                .slice(-60)
+                .map(([id, r]) => [id, { at: r.at, head: r.head }]),
+        );
+    // A walkthrough the user opened from the list (it shows until the agent shows a newer one: seq).
+    if (o.walkthroughPick && isId(o.walkthroughPick.id) && Number.isInteger(o.walkthroughPick.seq)) out.walkthroughPick = { id: o.walkthroughPick.id, seq: o.walkthroughPick.seq };
     if (o.walkthroughStop && isId(o.walkthroughStop.id) && isId(o.walkthroughStop.stopId)) out.walkthroughStop = { id: o.walkthroughStop.id, stopId: o.walkthroughStop.stopId, revision: Number(o.walkthroughStop.revision) || 0 };
     return out;
 }

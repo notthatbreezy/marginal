@@ -195,6 +195,9 @@ export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): 
     const rw = (w) => ACTIONS.command_walkthrough({ op: "show", walkthrough: w }, ctx);
     if (args.has("--revising")) await rw({ ...walkthrough, stops: [{ ...walkthrough.stops[0], ranges: [{ file: "src/runner/retry/polcy.ts", startLine: 1, endLine: 5 }] }] });
     else {
+        // An earlier walkthrough, so the list has history (the one in view is the newer one below).
+        const early = await rw({ id: "first-look", title: "First look at the retry policy", from: { ref: "base" }, to: { ref: "live", frontId: "runner" }, stops: [{ id: "delay", title: "nextDelay decides when to give up", category: "feature", explanation: "One function owns the retry decision.", ranges: [{ file: "src/runner/retry/policy.ts", symbol: "nextDelay" }] }] });
+        if (!early.ok) throw new Error(`walkthrough: ${JSON.stringify(early.issues)}`);
         const r = await rw(walkthrough);
         if (!r.ok) throw new Error(`walkthrough: ${JSON.stringify(r.issues)}`);
     }

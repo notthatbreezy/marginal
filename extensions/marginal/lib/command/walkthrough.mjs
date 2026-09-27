@@ -8,7 +8,7 @@ import { LIMITS, Reader, findPhase, frontIdsHint, phaseIdsHint } from "./model.m
 import { isOwner, readLease } from "./owner.mjs";
 import { normalizeRepoPath } from "./patterns.mjs";
 import { refFor, snapshotWorktree } from "./snapshot.mjs";
-import { emitCommand, readState, writeState } from "./state.mjs";
+import { emitCommand, readPrefs, readState, writeState } from "./state.mjs";
 
 export const CATEGORIES = ["feature", "refactor", "test", "fix", "risk", "chore"];
 const now = () => new Date().toISOString();
@@ -29,17 +29,24 @@ async function verify(repoPath, ref) {
 }
 
 /**
- * CheckpointRef → { sha, label, live? }. Shapes: {phaseId} · {sha} · {ref:"base"} · {ref:"live", frontId}.
+ * CheckpointRef → { sha, label, live? }. Shapes: {phaseId} · {sha} · {ref:"base"} · {ref:"live", frontId} ·
+ * {walkthrough:id} (where that walkthrough ended) · {ref:"reviewed"} (where the last one the user reviewed ended).
  * Live refs snapshot the front's worktree now (hidden commit; persisted under a ref only when `persistAs` is given).
  */
-export async function resolveRef(r, v, path, { state, repo } = {}) {
-    const o = r.obj(v, path, ["phaseId", "sha", "ref", "frontId"]);
+export async function resolveRef(r, v, path, { state, repo, docId } = {}) {
+    const o = r.obj(v, path, ["phaseId", "sha", "ref", "frontId", "walkthrough"]);
     if (!o) return null;
     const issues = r.issues;
-    const kinds = ["phaseId", "sha", "ref"].filter((k) => o[k] !== undefined);
+    const kinds = ["phaseId", "sha", "ref", "walkthrough"].filter((k) => o[k] !== undefined);
     if (kinds.length !== 1) {
-        issues.add(path, "type", "give exactly one of phaseId, sha or ref", `e.g. {"phaseId":"p1"}, {"ref":"base"}, {"ref":"live","frontId":"runner"}`);
+        issues.add(path, "type", "give exactly one of phaseId, sha, walkthrough or ref", `e.g. {"phaseId":"p1"}, {"walkthrough":"p1-p2"}, {"ref":"reviewed"}, {"ref":"base"}, {"ref":"live","frontId":"runner"}`);
         return null;
+    }
+    if (o.walkthrough !== undefined) {
+        const id = r.id(o.walkthrough, `${path}.walkthrough`);
+        const w = id && state.walkthroughs.find((x) => x.id === id);
+        if (id && !w) return void issues.add(`${path}.walkthrough`, "unknown_id", `no walkthrough "${id}"`, listHint("walkthrough ids", state.walkthroughs.map((x) => x.id)));
+        return w ? { sha: w.pins.head, label: `after ${w.id}` } : null;
     }
     if (o.phaseId !== undefined) {
         const id = r.id(o.phaseId, `${path}.phaseId`);
@@ -55,7 +62,12 @@ export async function resolveRef(r, v, path, { state, repo } = {}) {
         if (s && !sha) issues.add(`${path}.sha`, "ref_unresolvable", `cannot resolve ${JSON.stringify(s)}`, "pass a commit sha or ref that exists in the repository");
         return sha ? { sha, label: short(sha) } : null;
     }
-    const kind = r.enumOf(o.ref, `${path}.ref`, ["base", "live"]);
+    const kind = r.enumOf(o.ref, `${path}.ref`, ["base", "live", "reviewed"]);
+    if (kind === "reviewed") {
+        const rv = Object.entries(docId ? (readPrefs(docId).reviewed ?? {}) : {}).sort((a, b) => b[1].at.localeCompare(a[1].at))[0];
+        if (!rv) return void issues.add(`${path}.ref`, "ref_unresolvable", "the user hasn't reviewed a walkthrough yet", 'use {"walkthrough":<id>} or {"phaseId":…} instead');
+        return { sha: rv[1].head, label: `reviewed (${rv[0]})` };
+    }
     if (kind === "base") {
         if (!state.plan?.base) return void issues.add(`${path}.ref`, "ref_unresolvable", "there is no plan base yet", `call command_plan {op:"set"} first`);
         return { sha: state.plan.base, label: "base" };
@@ -357,7 +369,7 @@ export async function commandWalkthrough(input, ctx) {
         const prev = readState(docId).walkthroughs.find((w) => w.id === id);
         const w = { id, title, from: o.from, to: o.to, labels: { from: from.label, to: to.label }, pins, stops: stops.filter(Boolean), revision: (prev?.revision ?? 0) + 1, updatedAt: now(), lastEdit: null };
         const next = writeState(docId, (s) => {
-            s.walkthroughs = [...s.walkthroughs.filter((x) => x.id !== id), w].slice(-10);
+            s.walkthroughs = [...s.walkthroughs.filter((x) => x.id !== id), w].slice(-50);
             s.walkthroughView = { id, stopId: w.stops[0].id, seq: nextViewSeq(s) };
         });
         revising(docId, id, false);

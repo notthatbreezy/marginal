@@ -98,8 +98,15 @@ export async function mountCommand(host, { documentId }) {
             const c = changesAt(cc.events).get(path);
             return c ? cc.data.state.fronts.find((f) => f.id === c.lead) ?? null : null;
         },
+        reviewedOf: (w) => !!prefs().reviewed?.[w.id],
         onStop: (w, stop) => {
             linkStop(w, stop);
+            // Reaching the last stop counts as reviewed (the list can undo it); "since the last review" starts there.
+            if (w.stops.at(-1)?.id === stop.id && !prefs().reviewed?.[w.id]) {
+                savePrefs({ reviewed: { ...(prefs().reviewed ?? {}), [w.id]: { at: new Date().toISOString(), head: w.pins.head } } });
+                announce(`Marked “${w.title}” reviewed`);
+                setTimeout(() => cc.walk?.tick(), 0);
+            }
             svc.refreshChatRef?.();
         },
         // The Command chat docks under the walkthrough while it is open: one conversation across its stops.
@@ -122,7 +129,8 @@ export async function mountCommand(host, { documentId }) {
         onClose: (w, { user }) => {
             svc.undockChat?.();
             cc.walkLink = null;
-            if (user && w) savePrefs({ walkthroughDismissed: { id: w.id, seq: cc.data.state.walkthroughView?.seq ?? 0 } });
+            const v = cc.data.state.walkthroughView;
+            if (user && w) savePrefs({ walkthroughPick: null, walkthroughDismissed: v ? { id: v.id, seq: v.seq } : null });
             schedule(true);
         },
         onCopy: async (w, stop, i) => svc.toast?.((await svc.copyText?.(stopMarkdown(w, stop, i))) ? "Stop copied as Markdown" : "Copy failed"),
@@ -846,12 +854,14 @@ function renderMapHead(st, root, auto = false) {
     const view = st.walkthroughView;
     const walk = view && !cc.walk?.open ? st.walkthroughs.find((x) => x.id === view.id) : null;
     const revisingNow = cc.revising && Date.now() - cc.revising < 60_000 && !cc.walk?.open;
-    const key = JSON.stringify([choices.map((v) => [v.id, v.title, v.origin, v.phaseId]), select.value, custom, follow, !!showReturn, sugg?.id, walk && [walk.id, walk.stops.length, walk.title], !!revisingNow, current?.origin]);
+    const key = JSON.stringify([choices.map((v) => [v.id, v.title, v.origin, v.phaseId]), select.value, custom, follow, !!showReturn, sugg?.id, walk && [walk.id, walk.stops.length, walk.title], st.walkthroughs.length, !!cc.walk?.open, !!revisingNow, current?.origin]);
     if (same(key)) return;
     put(
         ctl,
         revisingNow ? h("span", { class: "revising", role: "status" }, h("span", { class: "pulse" }), "Agent is revising the walkthrough…") : null,
-        walk ? h("button", { class: "return walk-reopen", title: `Reopen “${walk.title}”`, onclick: () => (savePrefs({ walkthroughDismissed: null }), schedule(true)) }, `▸ Walkthrough · ${walk.stops.length} stops`) : null,
+        st.walkthroughs.length && !cc.walk?.open
+            ? h("button", { class: "return walk-reopen", title: "Walkthroughs of this work: open one, or see what you've reviewed", "aria-haspopup": "menu", onclick: (e) => openWalkMenu(e.currentTarget, st) }, `▸ Walkthroughs · ${st.walkthroughs.length}`)
+            : null,
         showReturn ? h("button", { class: "return", title: `Apply the view suggested for ${sugg.title}`, onclick: () => applyView(sugg.suggestedView, { phaseId: sugg.id }) }, "Return to suggested") : null,
         custom ? h("button", { class: "return save-view", title: "Save this layout as a view", onclick: () => saveCurrentView() }, "Save view") : null,
         h("label", { class: "viewpick", title: "Views set the zoom, pins and monitors" }, current?.origin && current.origin !== "user" ? h("span", { class: "spark-ic", "aria-hidden": "true" }, "✦") : null, "View:", select),
@@ -924,6 +934,58 @@ function saveCurrentView() {
 function closeMenu() {
     cc.ui.menu?.remove();
     cc.ui.menu = null;
+}
+
+/** Every walkthrough of this work, newest first: open one, mark it reviewed (or not). */
+function openWalkMenu(anchor, st) {
+    closeMenu();
+    const reviewed = prefs().reviewed ?? {};
+    const when = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const latest = Object.entries(reviewed).sort((a, b) => b[1].at.localeCompare(a[1].at))[0]?.[0];
+    const openIt = (w) => {
+        closeMenu();
+        savePrefs({ walkthroughPick: { id: w.id, seq: st.walkthroughView?.seq ?? 0 }, walkthroughDismissed: null });
+        schedule(true);
+    };
+    const toggle = (w) => {
+        const next = { ...(prefs().reviewed ?? {}) };
+        if (next[w.id]) delete next[w.id];
+        else next[w.id] = { at: new Date().toISOString(), head: w.pins.head };
+        savePrefs({ reviewed: next });
+        openWalkMenu(anchor, st);
+    };
+    const list = [...st.walkthroughs].reverse();
+    const menu = h(
+        "div",
+        { class: "cc-menu walk-menu", role: "menu", "aria-label": "Walkthroughs" },
+        h("div", { class: "cc-menu-h" }, "Walkthroughs", h("span", { class: "grow" }), h("span", { class: "wm-n" }, `${list.length}`)),
+        list.map((w) => {
+            const rv = reviewed[w.id];
+            return h(
+                "div",
+                { class: `wm-row${rv ? " rv" : ""}` },
+                h(
+                    "button",
+                    { role: "menuitem", class: "wm-open", title: `Open “${w.title}”`, onclick: () => openIt(w) },
+                    h("span", { class: "wm-t" }, w.title),
+                    h("span", { class: "wm-s" }, `${w.labels.from} → ${w.labels.to} · ${w.stops.length} stop${w.stops.length === 1 ? "" : "s"} · ${when(w.updatedAt)}`),
+                ),
+                h(
+                    "button",
+                    { class: "wm-rv", title: rv ? `Reviewed ${when(rv.at)}${w.id === latest ? " (the latest review: new walkthroughs can start from here)" : ""}. Click to unmark` : "Mark reviewed", "aria-pressed": String(!!rv), onclick: () => toggle(w) },
+                    rv ? (w.id === latest ? "✓ Latest review" : "✓ Reviewed") : "Mark reviewed",
+                ),
+            );
+        }),
+        h("div", { class: "wm-foot" }, "Ask for “a walkthrough since my last review” to cover only what's new."),
+    );
+    const r = anchor.getBoundingClientRect();
+    const hr = cc.host.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(r.right - hr.left - 340, hr.width - 348))}px`;
+    menu.style.top = `${r.bottom - hr.top + 6}px`;
+    cc.host.querySelector(".cc").append(menu);
+    cc.ui.menu = menu;
+    menu.querySelector("button")?.focus();
 }
 
 function openPhaseMenu(p, anchor, st) {
@@ -1050,10 +1112,18 @@ function renderFeed() {
 function syncWalkthrough(st) {
     if (!cc.walk) return;
     const view = st.walkthroughView ?? null;
-    const w = view ? st.walkthroughs.find((x) => x.id === view.id) : null;
-    const d = prefs().walkthroughDismissed;
-    const dismissed = !!(view && d && d.id === view.id && d.seq === view.seq);
-    cc.walk.sync(dismissed ? null : w, dismissed ? null : view);
+    // One the user opened from the list shows until the agent shows a newer one.
+    const pick = prefs().walkthroughPick;
+    const picked = pick && (!view || pick.seq >= view.seq) ? st.walkthroughs.find((x) => x.id === pick.id) : null;
+    if (picked) {
+        const at = prefs().walkthroughStop?.id === picked.id ? prefs().walkthroughStop.stopId : picked.stops[0].id;
+        cc.walk.sync(picked, { id: picked.id, stopId: at, seq: -1 - pick.seq }); // its own seq: agent focus moves don't apply
+    } else {
+        const w = view ? st.walkthroughs.find((x) => x.id === view.id) : null;
+        const d = prefs().walkthroughDismissed;
+        const dismissed = !!(view && d && d.id === view.id && d.seq === view.seq);
+        cc.walk.sync(dismissed ? null : w, dismissed ? null : view);
+    }
     if (!cc.walk.open) cc.walkLink = null;
 }
 

@@ -524,6 +524,21 @@ test("advance moves a stack up one layer in one call; walkthrough ranges can nam
     assert.deepEqual([w.stops[0].ranges[0].startLine, w.stops[0].ranges[0].endLine], [3, 9], "the declaration with its doc comment");
     assert.ok(show.notes.some((n) => /"nextDelay" → lines 3–9/.test(n)));
     assert.ok(show.notes.some((n) => /executor\.ts:1–3\) shows none of that file's changes .*nearest change: lines 41–41/.test(n)), JSON.stringify(show.notes));
+    // Walkthroughs are kept; a later one can start where an earlier one ended, or where the user last reviewed.
+    const noReview = await call("command_diff", { from: { ref: "reviewed" }, to: { sha } });
+    assert.equal(noReview.issues[0].code, "ref_unresolvable");
+    const { writePrefs } = await import("../extensions/marginal/lib/command/state.mjs");
+    const w0 = readState(d).walkthroughs.find((x) => x.id === "sym");
+    writePrefs(d, { reviewed: { sym: { at: new Date().toISOString(), head: w0.pins.head } } });
+    const since = await call("command_diff", { from: { ref: "reviewed" }, to: { sha } });
+    assert.ok(since.ok, JSON.stringify(since));
+    assert.equal(since.from.sha, w0.pins.head);
+    assert.match(since.from.label, /reviewed \(sym\)/);
+    assert.equal((await call("command_diff", { from: { walkthrough: "sym" }, to: { sha } })).from.sha, w0.pins.head);
+    assert.equal((await call("command_diff", { from: { walkthrough: "nope" }, to: { sha } })).issues[0].code, "unknown_id");
+    const listed = (await call("command_read", { include: ["walkthrough"] })).walkthroughs.find((x) => x.id === "sym");
+    assert.ok(listed.reviewed && listed.pins.head === w0.pins.head);
+    writePrefs(d, { reviewed: {} });
     assert.ok((await call("command_walkthrough", { op: "close", id: "sym" })).ok);
     const { resolveSymbol } = await import("../extensions/marginal/lib/command/walkthrough.mjs");
     assert.deepEqual(resolveSymbol(["export function value$next() {", "  return 1;", "}"], "value$next"), { startLine: 1, endLine: 3 });
