@@ -282,19 +282,19 @@ export async function startServer({ chat, instances, getSessionId }) {
             const doc = documentId ? store.getDoc(documentId) : null;
             if (tab === "command" && doc?.target) return send(res, 200, await askCommand({ doc, instanceId, quote, message, threadId, focus, context }));
             const lines = [];
-            if (threadId) lines.push(`[Marginal side-chat follow-up${doc ? ` on "${doc.title}" (documentId: ${doc.id})` : ""}${blockId ? `, element ${blockId}` : ""}]`);
-            else {
-                if (doc) lines.push(`[Marginal side-chat on "${doc.title}" (documentId: ${doc.id})${blockId ? `, element ${blockId}` : ""}]`);
-                if (typeof quote === "string" && quote.trim())
-                    lines.push(
-                        quote
-                            .trim()
-                            .slice(0, 4000)
-                            .split("\n")
-                            .map((l) => `> ${l}`)
-                            .join("\n"),
-                    );
-            }
+            const quoted = typeof quote === "string" && quote.trim();
+            // A follow-up that carries a quote has moved to something else in the doc: say so, and quote it like a first message.
+            if (threadId) lines.push(`[Marginal side-chat follow-up${doc ? ` on "${doc.title}" (documentId: ${doc.id})` : ""}${quoted ? `, now about ${blockId ? `element ${blockId}` : "the quoted parts"}` : blockId ? `, element ${blockId}` : ""}]`);
+            else if (doc) lines.push(`[Marginal side-chat on "${doc.title}" (documentId: ${doc.id})${blockId ? `, element ${blockId}` : ""}]`);
+            if (quoted)
+                lines.push(
+                    quote
+                        .trim()
+                        .slice(0, 4000)
+                        .split("\n")
+                        .map((l) => `> ${l}`)
+                        .join("\n"),
+                );
             // Docked chats (tour, walkthrough) say where the reader is on every message, since they move between steps.
             if (typeof context === "string" && context.trim()) lines.push(`[Viewing: ${context.trim().slice(0, 1500)}]`);
             lines.push(message.trim().slice(0, 8000));

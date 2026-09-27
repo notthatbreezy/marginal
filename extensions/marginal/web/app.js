@@ -2,6 +2,7 @@
 import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
 import { createStepper } from "./stepper.js";
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
+import { createToc } from "./toc.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 
@@ -17,6 +18,7 @@ const state = {
     catalog: [],
 };
 const sourceCache = new Map();
+let toc = null; // Contents card + Ctrl/⌘-J jump palette (created at boot, below)
 
 
 // ---------------- source fetch + code listing ----------------
@@ -949,6 +951,7 @@ function updateCenter() {
 function renderHome() {
     state.doc = null;
     setHeader();
+    toc?.rebuild();
     setActivity([]);
     const main = $("#main");
     const pad = state.catalog.find((d) => d.kind === "scratchpad");
@@ -988,8 +991,10 @@ function renderBoard() {
     for (const b of doc.content) container.append(renderBlock(b));
     main.replaceChildren(container);
     main.scrollTop = prevScroll;
+    toc?.rebuild();
     if (animate?.scrollTo) {
         const el = animate.scrollTo;
+        toc?.fresh(el);
         const r = el.getBoundingClientRect();
         const mr = main.getBoundingClientRect();
         if (r.bottom < mr.top + 40 || r.top > mr.bottom - 40) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1115,6 +1120,7 @@ async function render() {
     } catch (e) {
         $("#main").replaceChildren(h("div", { class: "doc error" }, e.message));
     }
+    if (state.tab !== "board") toc?.rebuild(); // hides the Contents card off the Doc tab
 }
 
 /** The Command tab lives in web/command/ and loads on first use. */
@@ -1234,7 +1240,8 @@ function connect() {
 
 // ---------------- side-chat with Copilot ----------------
 // The reply comes from the main session; this popup shows only the turns it started.
-// Two modes share the popup: "board" (side-chat about the doc, ends on close) and "command" (the Command tab's
+// Two modes share the popup: "board" (side-chat about the doc: one conversation from open to close; pointing at
+// something else refocuses the next message and keeps the history) and "command" (the Command tab's
 // persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
 const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
 const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
@@ -1249,6 +1256,8 @@ function markAsking() {
     markAskingInner();
     joinRuns();
     renderRef();
+    const asking = chat.mode === "board" && !chat.docked && !$("#chat").hidden;
+    toc?.marks(asking ? [...document.querySelectorAll("#main .asking"), chat.askRange && nodeElement(chat.askRange.startContainer)] : []);
 }
 function markAskingInner() {
     if ($("#chat").hidden) return;
@@ -1334,9 +1343,13 @@ function openChat(ctx) {
         svc.onFocusChange?.(chat.focus);
         return;
     }
-    const sameTarget = !$("#chat").hidden && ctx.blockId === chat.blockId && ctx.quote === chat.quote;
+    const open = !$("#chat").hidden && !chat.docked;
+    const sameTarget = open && ctx.blockId === chat.blockId && ctx.quote === chat.quote && (ctx.unit ?? null) === chat.unit && (ctx.picks ?? []).join() === (chat.picks ?? []).join() && (ctx.range ?? null) === chat.askRange;
     if (!sameTarget) {
-        endThread();
+        // Opening starts a conversation; while it's open, commenting elsewhere only moves its focus.
+        if (!open) endThread();
+        chat.quoteFresh = true; // the next message carries the new target's quote (and says what it's about)
+        chat.focusGen = (chat.focusGen ?? 0) + 1;
         chat.blockId = ctx.blockId ?? null;
         chat.unit = ctx.unit ?? null;
         chat.picks = ctx.picks ?? null;
@@ -1637,12 +1650,16 @@ function onChatEvent(ev) {
 async function sendChat() {
     const message = chatText.value.trim();
     if (!message || chat.awaiting) return;
+    const board = chat.mode === "board" && !chat.docked;
+    // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
+    if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), chat.statusEl);
     chatLog.insertBefore(h("div", { class: "chat-msg me" }, message), chat.statusEl);
     chatText.value = "";
     autosize();
     scrollChat();
     chat.awaiting = true;
     $("#chat-send").disabled = true;
+    const gen = chat.focusGen;
     try {
         const first = !chat.threadId;
         const cmd = chat.mode === "command";
@@ -1651,9 +1668,10 @@ async function sendChat() {
             method: "POST",
             body: cmd
                 ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: docked?.context?.() }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.(), kind: chat.docked?.kind },
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.(), kind: chat.docked?.kind },
         });
         chat.threadId = res.threadId;
+        if (!cmd && chat.focusGen === gen) chat.quoteFresh = false; // unless the focus moved while this was sending
         if (cmd && chat.quote) {
             chat.quote = chat.quoteLabel = null; // a quote rides along with one message; focus chips stay
             renderChips();
@@ -1666,6 +1684,24 @@ async function sendChat() {
         chat.awaiting = false;
         $("#chat-send").disabled = !chatText.value.trim();
     }
+}
+
+/** "About: Design · paragraph" above a message; clicking it scrolls back to what that message was about. */
+function aboutLabel() {
+    const snap = { blockId: chat.blockId, unit: chat.unit, picks: chat.picks ? [...chat.picks] : null, range: chat.askRange, row: chat.askRows?.[0] ?? null };
+    return h(
+        "button",
+        { class: "chat-about", title: chat.quote ? `Show in the doc\n\n${chat.quote.slice(0, 300)}` : "Show in the doc", onclick: () => toc?.reveal(targetElement(snap)) },
+        h("i", { class: "swatch", "aria-hidden": "true" }),
+        h("span", { class: "t" }, chat.ref),
+    );
+}
+function targetElement(t) {
+    if (t.picks?.length) return elOf(t.picks[0]);
+    if (t.row?.isConnected) return t.row;
+    if (t.range && t.range.startContainer.isConnected) return nodeElement(t.range.startContainer);
+    const block = t.blockId && document.querySelector(`#main .block[data-id="${CSS.escape(t.blockId)}"]`);
+    return (t.unit && block?.querySelector(`.md [data-l="${t.unit}"]`)) || block || null;
 }
 
 function autosize() {
@@ -1784,7 +1820,7 @@ function hideGutter() {
 
 // Prose units (paragraph, list item, heading…) win; otherwise the nearest non-prose block is the unit.
 const unitAt = (target) =>
-    target instanceof Element && !target.closest("#chat, #peek, #gutter, #bar") ? target.closest("#main .md [data-l]") ?? target.closest("#main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider)") : null;
+    target instanceof Element && !target.closest("#chat, #peek, #gutter, #bar, #toc, #jump") ? target.closest("#main .md [data-l]") ?? target.closest("#main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider)") : null;
 const nodeElement = (n) => (n?.nodeType === Node.ELEMENT_NODE ? n : n?.parentElement ?? null);
 
 function inCorridor(x, y) {
@@ -1967,8 +2003,15 @@ function paintPicks() {
     afterPicks();
 }
 const clearPicks = () => picks.clear();
-const togglePick = (el) => picks.toggle(el);
-const rangePick = (el) => picks.range(el);
+const togglePick = (el) => (seedFromChat(), picks.toggle(el));
+const rangePick = (el) => (seedFromChat(), picks.range(el));
+/** The open chat's focus becomes the start of a new selection, so a modified click adds to it (then Comment). */
+function seedFromChat() {
+    if (picks.size || $("#chat").hidden || chat.mode !== "board" || chat.docked) return;
+    const keys = chat.picks?.length ? chat.picks : chat.blockId && !chat.askRows?.length && !chat.askRange ? [`${chat.blockId}|${chat.unit ?? "*"}`] : [];
+    const live = keys.filter((k) => elOf(k));
+    if (live.length) picks.seed(live);
+}
 /** Picked units in document order, with what each says. Paragraphs inside a picked block are covered by it. */
 function pickedParts() {
     const els = picks.keys().map(elOf).filter(Boolean);
@@ -2024,7 +2067,7 @@ function multiComment() {
 
 
 document.addEventListener("mouseup", (e) => {
-    if (e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv")) return;
+    if (e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv, #toc, #jump")) return;
     setTimeout(() => {
         const sel = getSelection();
         const text = sel?.toString().trim();
@@ -2343,6 +2386,19 @@ $("#open-external").onclick = async () => {
         setTimeout(() => (btn.disabled = false), 1200);
     }
 };
+
+// ---------------- contents + jump (Ctrl/⌘-J) ----------------
+toc = createToc({
+    main: $("#main"),
+    getDoc: () => (state.documentId ? state.doc : null),
+    active: () => state.tab === "board" && !!state.documentId && !!state.doc,
+    expand: (id) => state.collapsed.set(id, false),
+    showBoard: async () => {
+        state.tab = "board";
+        await render();
+    },
+    blocked: () => !!tour.root || !!document.querySelector(".stepper"),
+});
 
 // ---------------- services for feature modules (Command tab) ----------------
 Object.assign(svc, {

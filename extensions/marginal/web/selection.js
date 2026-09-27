@@ -64,6 +64,12 @@ export function createSelection(o) {
             for (let i = Math.min(from, to); i <= Math.max(from, to); i++) keys.add(o.keyOf(list[i]));
             changed();
         },
+        /** Start from existing keys (e.g. what the chat is about) so the next modified click extends them. */
+        seed(list) {
+            for (const k of list) keys.add(k);
+            anchor = list.at(-1) ?? anchor;
+            changed();
+        },
         clear() {
             if (!keys.size && anchor === null) return;
             keys.clear();

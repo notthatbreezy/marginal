@@ -4,6 +4,15 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- Docs have a **Contents** card: sections, plus the diagrams, code peeks, callouts and headings inside them, with the current one highlighted as you scroll. It opens on its own when there's room beside the doc, minimizes to a pill, and closes; the header button brings it back.
+- **Ctrl/⌘-J** opens a jump palette: type part of a section, diagram or heading name (or a kind, like "flow"), then Enter.
+
+### Changed
+
+- The doc chat keeps its conversation while it's open. Commenting on something else refocuses the next message instead of starting a new chat, and each change of focus is labelled in the history (click it to scroll back). Ctrl/Cmd-click extends what the chat is about.
+
 ### Fixed
 
 - Illustrative code in notes, tour steps and peeks keeps its line breaks and indentation instead of running together on one line.

@@ -4846,3 +4846,357 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
         animation: none;
     }
 }
+/* ---------- Contents (top-left card) and the Ctrl/⌘-J jump palette ---------- */
+#toc-btn {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 7px;
+    color: var(--muted);
+}
+#toc-btn:hover,
+#toc-btn.on {
+    color: var(--fg);
+    background: var(--surface-2);
+}
+#toc {
+    position: fixed;
+    left: 14px;
+    top: 66px;
+    z-index: 25;
+    width: 236px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+    animation: chat-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+body:has(#tour) #toc {
+    display: none;
+}
+.toc-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 5px 0 12px;
+    color: var(--muted);
+}
+.toc-ic {
+    display: grid;
+    flex: none;
+}
+.toc-h {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+.toc-now {
+    display: none;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    color: var(--fg);
+}
+.toc-kbd {
+    margin-left: auto;
+    padding: 0 5px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 10.5px;
+    line-height: 15px;
+    color: var(--muted);
+    background: var(--bg);
+}
+.toc-bar .chat-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+}
+.toc-list {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 6px 8px;
+}
+.toc-i {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 3px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 18px;
+    text-align: left;
+}
+.toc-i.l1 {
+    margin-top: 3px;
+    color: var(--fg);
+    font-weight: 500;
+}
+.toc-i.l1:first-child {
+    margin-top: 0;
+}
+.toc-i.l2 {
+    padding-left: 12px;
+    font-size: 12px;
+}
+.toc-k {
+    display: grid;
+    flex: none;
+    opacity: 0.75;
+}
+.toc-t {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.toc-i:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+}
+.toc-i.in {
+    font-weight: 600;
+}
+.toc-i.on {
+    color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 9%, transparent);
+    box-shadow: inset 2px 0 0 var(--blue);
+}
+.toc-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    visibility: hidden;
+}
+/* What the chat is about (same swatch as the chat bar), and a fading dot where Copilot just edited. */
+.toc-i.asking .toc-dot {
+    visibility: visible;
+    background: var(--ask-fill);
+    box-shadow: inset 0 0 0 1px var(--ask-edge);
+}
+.toc-i.fresh:not(.asking) .toc-dot {
+    visibility: visible;
+    border-radius: 50%;
+    background: var(--purple);
+    animation: toc-fresh 4s ease-out forwards;
+}
+@keyframes toc-fresh {
+    70% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+#toc.min {
+    width: auto;
+    max-width: 280px;
+    border-radius: 999px;
+    animation: none;
+}
+#toc.min .toc-bar {
+    cursor: pointer;
+}
+#toc.min .toc-list,
+#toc.min .toc-h,
+#toc.min .toc-kbd {
+    display: none;
+}
+#toc.min .toc-now {
+    display: block;
+}
+#toc.min .toc-bar:hover .toc-now {
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+}
+/* Where a jump landed. */
+.jumped {
+    animation: flash 1.6s ease-out;
+    border-radius: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .jumped,
+    .toc-i.fresh .toc-dot {
+        animation: none;
+    }
+}
+#jump {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 13vh 16px 16px;
+    background: color-mix(in srgb, var(--bg) 55%, transparent) /* fades the doc toward the page colour, in either theme */;
+}
+.jump-box {
+    width: min(560px, 100%);
+    display: flex;
+    flex-direction: column;
+    max-height: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    animation: chat-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.jump-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    height: 50px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+}
+.jump-ic {
+    display: grid;
+}
+.jump-ic svg {
+    width: 16px;
+    height: 16px;
+}
+.jump-in {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 15.5px;
+}
+.jump-in::placeholder {
+    color: var(--muted);
+}
+.jump-list {
+    overflow-y: auto;
+    max-height: min(52vh, 420px);
+    padding: 6px;
+}
+.jump-i {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    line-height: 20px;
+    cursor: pointer;
+}
+.jump-i.sub {
+    padding-left: 32px;
+}
+.jump-i.sel {
+    background: var(--blue-muted);
+}
+.jump-k {
+    display: grid;
+    flex: none;
+    width: 14px;
+    color: var(--muted);
+}
+.jump-i.sel .jump-k {
+    color: var(--blue);
+}
+.jump-t {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.jump-t mark {
+    background: transparent;
+    color: var(--blue);
+    font-weight: 600;
+}
+.jump-trail {
+    flex: none;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--muted);
+}
+.jump-empty {
+    padding: 18px 12px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+}
+.jump-foot {
+    display: flex;
+    gap: 16px;
+    padding: 7px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 11.5px;
+    color: var(--muted);
+}
+.jump-foot kbd {
+    margin-right: 3px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 10.5px;
+    background: var(--bg);
+}
+/* A doc conversation moves around: the message that changes its focus says where it went. */
+.chat-about {
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 88%;
+    margin: 4px 0 -6px;
+    padding: 0 2px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 15px;
+}
+.chat-about .t {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.chat-about .swatch {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    background: var(--ask-fill);
+    box-shadow: inset 0 0 0 1px var(--ask-edge);
+}
+.chat-about:hover {
+    color: var(--fg);
+}
+.chat-about:hover .t {
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+}

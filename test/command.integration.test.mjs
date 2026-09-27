@@ -467,6 +467,30 @@ test("server: /api/command/state + tree, and SSE pushes command events", async (
     s.server.close();
 });
 
+test("server: side-chat follow-ups carry a new quote when the conversation moves", async () => {
+    const { startServer } = await import("../extensions/marginal/lib/server.mjs");
+    const instances = new Map([["panel-q", { documentId: doc.documentId }]]);
+    instances.save = () => {};
+    const sent = [];
+    const chat = { subscribe: () => () => {}, send: async (m) => (sent.push(m), { threadId: "th-1", messageId: `m${sent.length}` }) };
+    const s = await startServer({ chat, instances, getSessionId: () => "session-A" });
+    const u = new URL(s.urlFor("panel-q"));
+    const ask = (body) => fetch(`${u.origin}/api/ask?instance=panel-q`, { method: "POST", headers: { "x-wb-token": u.searchParams.get("t"), "content-type": "application/json" }, body: JSON.stringify({ documentId: doc.documentId, ...body }) }).then((r) => r.json());
+    await ask({ blockId: "md-1", quote: "first part", message: "Q1" });
+    await ask({ blockId: "md-9", quote: "second part", message: "Q2", threadId: "th-1" });
+    await ask({ blockId: "md-9", message: "Q3", threadId: "th-1" });
+    await ask({ quote: "[a]\nx\n\n[b]\ny", message: "Q4", threadId: "th-1" });
+    const [p1, p2, p3, p4] = sent.map((m) => m.prompt);
+    assert.match(p1, /^\[Marginal side-chat on .*element md-1\]\n\n> first part/);
+    assert.match(p2, /^\[Marginal side-chat follow-up on .*, now about element md-9\]\n\n> second part\n\nQ2/);
+    assert.match(p3, /^\[Marginal side-chat follow-up on .*, element md-9\]\n\nQ3/);
+    assert.ok(!p3.includes("> "));
+    assert.match(p4, /now about the quoted parts\]\n\n> \[a\]/);
+    assert.equal(sent[1].threadId, "th-1");
+    s.server.closeAllConnections?.();
+    s.server.close();
+});
+
 test("losing the lease stops this process's pollers; a stale takeover restarts them", async () => {
     const d = doc.documentId;
     assert.ok(poller.pollingFronts(d).length > 0);

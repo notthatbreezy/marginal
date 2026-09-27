@@ -22,7 +22,9 @@ function scrollable(el) {
 
 function layer(el) {
     // Keep bars in the same visual layer as their container.
+    if (el.closest("#jump")) return 61;
     if (el.closest("#chat")) return 41;
+    if (el.closest("#toc")) return 26;
     if (el.closest("#tour")) return 31;
     if (el.closest("#peek")) return 21;
     return 5;
