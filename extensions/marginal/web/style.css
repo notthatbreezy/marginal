@@ -5736,3 +5736,35 @@ body.prose-editing #center > :not(#edit-hint) {
     pointer-events: none;
     transition: opacity 0.18s ease, visibility 0s linear 0.18s;
 }
+
+/* Header titles: truncated to the room they have (full text in the tooltip); the title renames on click. */
+#titles {
+    min-width: 0;
+}
+#subtitle .st-br {
+    font-variant-ligatures: none;
+}
+#title.renamable {
+    cursor: text;
+    border-radius: 5px;
+    margin-left: -4px;
+    padding: 0 4px;
+}
+#title.renamable:hover {
+    background: var(--surface-2);
+}
+#title .title-in {
+    width: 100%;
+    margin: -1px 0;
+    padding: 0 3px;
+    border: 1px solid color-mix(in srgb, var(--focus) 55%, var(--border));
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    outline: none;
+}
+#center.tight #hint,
+#center.tight .hint {
+    display: none;
+}

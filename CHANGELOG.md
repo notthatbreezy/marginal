@@ -6,6 +6,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Added
 
+- Click a doc's title in the header to rename it (Enter saves, Esc cancels).
 - **Edit prose in place.** A pencil under Comment and Copy (and **Edit** in the top bar for a Ctrl/Shift-click selection, contiguous or not) opens paragraphs, headings, list items and quotes for editing, outlined in green. The margin swaps to Save, Bold, Italic, Link and, set apart at the bottom, Discard; **Shift+Enter** saves, **Esc** cancels. Links take a URL, a `#heading` or a repo path (a code link). The live doc waits while you edit; a save is refused if Copilot changed the same text meanwhile. History shows your versions as yours, and Copilot's next chat message names the blocks you edited. Diagrams, code and tables aren't editable.
 
 ### Fixed
@@ -14,6 +15,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Changed
 
+- The header's title and subtitle fit the room they have: long titles end in an ellipsis, long branch names lose their middle (so both ends stay readable), and the tooltips show everything, including the full commit SHAs. On narrow panels the hint steps aside rather than running into the tabs.
 - The header's hint slot says what's useful now: how to jump (Ctrl/⌘-J) and that hovering text offers comment, copy and edit while you're just reading, and Shift+Enter to send while you type in a chat.
 - The editing tools stay beside an editing area on screen (the one you're typing in, else the nearest visible one), slide along tall ones, and fade out while none is in view.
 - Editing converts Markdown as you type: `` `code` ``, `**bold**` and `*italic*` format when closed, and `- ` or `1. ` at the start of a line starts a list (Enter continues it, Enter on an empty item ends it, Backspace at its start undoes it).

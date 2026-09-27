@@ -935,16 +935,25 @@ function renderDatabase(b) {
 // ---------------- views ----------------
 function setHeader() {
     const doc = state.doc;
-    $("#title").textContent = doc ? doc.title : "Marginal";
+    if (!renaming) {
+        $("#title").textContent = doc ? doc.title : "Marginal";
+        $("#title").title = doc ? `${doc.title}${canRename() ? "\n\nClick to rename" : ""}` : "";
+        $("#title").classList.toggle("renamable", canRename());
+    }
+    // Subtitle parts; the branch names are the ones that give way (in the middle) when space runs out.
     const sub = [];
-    if (doc?.kind === "scratchpad") sub.push("Scratchpad — newest first");
+    if (doc?.kind === "scratchpad") sub.push({ t: "Scratchpad — newest first" });
     if (doc?.target) {
         const t = doc.target;
-        sub.push(`${state.repository ?? t.repositoryId} · ${t.baseRef ?? t.base.slice(0, 8)} … ${t.headRef ?? t.head.slice(0, 8)} (${t.head.slice(0, 8)})`);
+        sub.push({ t: state.repository ?? t.repositoryId }, { t: " · " }, { t: t.baseRef ?? t.base.slice(0, 8), branch: true }, { t: " … " }, { t: t.headRef ?? t.head.slice(0, 8), branch: true });
+        if (t.headRef) sub.push({ t: ` (${t.head.slice(0, 8)})` });
     }
-    if (doc?.pullRequest) sub.push(`PR ${doc.pullRequest.url.split("/").slice(-1)[0]}`);
-    if (doc) sub.push(`v${doc.version}`);
-    $("#subtitle").textContent = sub.join("  ·  ");
+    if (doc?.pullRequest) sub.push({ t: "  ·  " }, { t: `PR ${doc.pullRequest.url.split("/").slice(-1)[0]}` });
+    if (doc) sub.push({ t: "  ·  " }, { t: `v${doc.version}` });
+    subParts = sub;
+    const full = sub.map((p) => p.t).join("");
+    $("#subtitle").title = doc?.target ? `${full}\n\nbase ${doc.target.base}\nhead ${doc.target.head}` : full;
+    fitHeader();
     $("#tabs").hidden = !doc;
     // Offered inside the Copilot panel only; a browser window opened from it is already "outside".
     $("#open-external").hidden = INSTANCE.startsWith("browser-");
@@ -985,6 +994,80 @@ function updateCenter() {
     $("#idle-hint").hidden = multi || typing || hintOn || activityOn || state.tab !== "board" || !state.doc || state.viewVersion !== null || !toc?.entries?.length;
 }
 if (/Mac|iPhone|iPad/.test(navigator.platform)) $("#idle-hint .k-jump").textContent = "⌘";
+
+// ---- header: titles fit the room left of the centre slot; long branch names lose their middle, not their ends ----
+let subParts = [];
+let renaming = false;
+const canRename = () => !!state.doc && state.doc.kind !== "scratchpad" && state.viewVersion === null;
+const measure = document.createElement("canvas").getContext("2d");
+function textW(el, s) {
+    const cs = getComputedStyle(el);
+    measure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    return measure.measureText(s).width;
+}
+const midCut = (s, n) => (s.length <= n ? s : n < 5 ? "…" : `${s.slice(0, Math.ceil((n - 1) * 0.55))}…${s.slice(s.length - Math.floor((n - 1) * 0.45))}`);
+function fitHeader() {
+    const titles = $("#titles");
+    const bar = $("#bar");
+    // A hint that would run into the tabs (narrow panels) steps aside; the titles take the room instead.
+    const center = $("#center");
+    center.classList.remove("tight");
+    const shown = [...center.children].find((x) => !x.hidden);
+    const tabsLeft = $("#tabs").hidden ? bar.getBoundingClientRect().right : $("#tabs").getBoundingClientRect().left;
+    if (shown && (shown.id === "hint" || shown.classList.contains("hint")) && shown.getBoundingClientRect().right > tabsLeft - 8) center.classList.add("tight");
+    // Room: up to the centre slot when it shows something, else up to the tabs.
+    const tl = titles.getBoundingClientRect().left;
+    const centre = center.classList.contains("tight") ? null : [...center.children].find((x) => !x.hidden);
+    const stop = centre ? centre.getBoundingClientRect().left : ($("#tabs").hidden ? bar.getBoundingClientRect().right : $("#tabs").getBoundingClientRect().left);
+    titles.style.maxWidth = `${Math.max(140, stop - tl - 16)}px`;
+    const sub = $("#subtitle");
+    const room = Math.max(60, Math.min(titles.getBoundingClientRect().width || Infinity, stop - tl - 16)) - 2;
+    const parts = subParts.map((p) => ({ ...p }));
+    const width = () => textW(sub, parts.map((p) => p.t).join(""));
+    // Shorten the longest branch name a few characters at a time until the line fits (or both are stubs).
+    for (let guard = 0; guard < 400 && width() > room; guard++) {
+        const br = parts.filter((p) => p.branch && p.t.length > 12);
+        if (!br.length) break;
+        const p = br.reduce((a, b) => (b.t.length > a.t.length ? b : a));
+        p.t = midCut(subParts[parts.indexOf(p)].t, p.t.replace("…", "").length - 2);
+    }
+    put(sub, parts.map((p) => (p.branch ? h("span", { class: "st-br" }, p.t) : p.t)));
+}
+addEventListener("resize", () => fitHeader());
+new MutationObserver(() => fitHeader()).observe($("#center"), { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+
+// Rename: click the title, type, Enter saves, Esc cancels.
+$("#title").addEventListener("click", () => {
+    if (!canRename() || renaming || prose?.active()) return;
+    renaming = true;
+    const el = $("#title");
+    const input = h("input", { class: "title-in", value: state.doc.title, "aria-label": "Doc title", maxlength: 200, spellcheck: "false" });
+    el.replaceChildren(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = async (save) => {
+        if (done) return;
+        done = true;
+        const next = input.value.trim();
+        renaming = false;
+        if (save && next && next !== state.doc.title) {
+            try {
+                await api(`/docs/${encodeURIComponent(state.documentId)}/rename`, { method: "POST", body: { title: next } });
+                state.doc.title = next;
+            } catch (e) {
+                toast(`Couldn't rename: ${e.message}`);
+            }
+        }
+        setHeader();
+    };
+    input.addEventListener("keydown", (e) => {
+        e.stopPropagation(); // not the doc's shortcuts
+        if (e.key === "Enter") finish(true);
+        else if (e.key === "Escape") finish(false);
+    });
+    input.addEventListener("blur", () => finish(true));
+});
 
 function renderHome() {
     state.doc = null;
@@ -2298,7 +2381,7 @@ function multiComment() {
 
 
 document.addEventListener("mouseup", (e) => {
-    if (prose?.active() || e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv, #toc, #jump, #editbar, #editlink")) return;
+    if (prose?.active() || e.target.closest("#chat, #ask-float, #peek-head, #gutter, .cv, #toc, #jump, #editbar, #editlink, #bar")) return;
     setTimeout(() => {
         const sel = getSelection();
         const text = sel?.toString().trim();
