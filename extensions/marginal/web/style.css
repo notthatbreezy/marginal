@@ -4897,16 +4897,6 @@ body:has(#tour) #toc {
     letter-spacing: 0.02em;
     text-transform: uppercase;
 }
-.toc-now {
-    display: none;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12.5px;
-    color: var(--fg);
-}
 .toc-kbd {
     margin-left: auto;
     padding: 0 5px;
@@ -4971,14 +4961,6 @@ body:has(#tour) #toc {
     background: var(--surface-2);
     color: var(--fg);
 }
-.toc-i.in {
-    font-weight: 600;
-}
-.toc-i.on {
-    color: var(--blue);
-    background: color-mix(in srgb, var(--blue) 9%, transparent);
-    box-shadow: inset 2px 0 0 var(--blue);
-}
 .toc-dot {
     flex: none;
     width: 7px;
@@ -5016,16 +4998,14 @@ body:has(#tour) #toc {
     cursor: pointer;
 }
 #toc.min .toc-list,
-#toc.min .toc-h,
 #toc.min .toc-kbd {
     display: none;
 }
-#toc.min .toc-now {
-    display: block;
+#toc.min .toc-h {
+    margin-right: 4px;
 }
-#toc.min .toc-bar:hover .toc-now {
-    text-decoration: underline;
-    text-decoration-color: var(--border);
+#toc.min .toc-bar:hover .toc-h {
+    color: var(--fg);
 }
 /* Where a jump landed. */
 .jumped {

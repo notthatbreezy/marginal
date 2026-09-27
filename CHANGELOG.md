@@ -6,7 +6,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ### Added
 
-- Docs have a **Contents** card: sections, plus the diagrams, code peeks, callouts and headings inside them, with the current one highlighted as you scroll. It opens on its own when there's room beside the doc, minimizes to a pill, and closes; the header button brings it back.
+- Docs have a **Contents** card: sections, plus the diagrams, code peeks, callouts and headings inside them. It opens on its own when there's room beside the doc, minimizes to a pill, and closes; the header button brings it back.
 - Tables have width controls: *Text width*, *Wide* or *Full width* from the width button in the margin, and draggable column borders (double-click to reset). Tables too wide for the reading column start wide. Choices are remembered per table in this browser.
 - **Ctrl/⌘-J** opens a jump palette: type part of a section, diagram or heading name (or a kind, like "flow"), then Enter.
 

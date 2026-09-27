@@ -27,7 +27,6 @@ const OUTLINE = svg('<path d="M2.5 3.5h11M5.5 8h8M5.5 12.5h8M2.5 8h.01M2.5 12.5h
 export function createToc(o) {
     const KEY = "marginal.toc";
     let entries = [];
-    let current = -1;
     const saved = () => {
         try {
             return localStorage.getItem(KEY);
@@ -43,7 +42,6 @@ export function createToc(o) {
 
     // ---- card ----
     const list = h("nav", { class: "toc-list", "aria-label": "Sections" });
-    const now = h("span", { class: "toc-now" });
     const minBtn = h("button", { class: "chat-icon toc-min", title: "Minimize", "aria-label": "Minimize contents", html: MIN, onclick: (e) => (e.stopPropagation(), setMode(mode === "min" ? "open" : "min", true)) });
     const closeBtn = h("button", { class: "chat-icon toc-x", title: "Close (reopen from the header)", "aria-label": "Close contents", html: CLOSE, onclick: (e) => (e.stopPropagation(), setMode("closed", true)) });
     const bar = h(
@@ -51,7 +49,6 @@ export function createToc(o) {
         { class: "toc-bar", onclick: () => mode === "min" && setMode("open", true), title: "" },
         h("span", { class: "toc-ic", html: OUTLINE }),
         h("span", { class: "toc-h" }, "Contents"),
-        now,
         h("kbd", { class: "toc-kbd", title: "Jump to a section" }, /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘J" : "Ctrl J"),
         minBtn,
         closeBtn,
@@ -83,7 +80,6 @@ export function createToc(o) {
         mode = m;
         if (byUser) save(m);
         sync();
-        if (m === "open") keepCurrentVisible();
     }
     function sync() {
         const show = o.active() && entries.length > 1;
@@ -127,40 +123,8 @@ export function createToc(o) {
         const pref = saved();
         mode = pref === "open" || pref === "min" || pref === "closed" ? pref : autoMode();
         sync();
-        spy();
     }
 
-    // ---- scroll spy: the last entry whose top has passed the reading line ----
-    function spy() {
-        if (card.hidden && btn.hidden) return;
-        const line = o.main.getBoundingClientRect().top + 72;
-        let at = -1;
-        entries.forEach((e, i) => {
-            const el = elementOf(e);
-            if (el && el.getClientRects().length && el.getBoundingClientRect().top <= line) at = i;
-        });
-        if (at < 0 && entries.length) at = 0;
-        if (at === current) return;
-        current = at;
-        list.querySelectorAll(".toc-i.on, .toc-i.in").forEach((b) => b.classList.remove("on", "in"));
-        const b = list.querySelector(`[data-i="${at}"]`);
-        b?.classList.add("on");
-        // Its section stays lit too, so the level-1 you're in reads at a glance.
-        let top = at;
-        while (top > 0 && entries[top].level > 1) top--;
-        if (top !== at) list.querySelector(`[data-i="${top}"]`)?.classList.add("in");
-        now.textContent = entries[top]?.label ?? "";
-        keepCurrentVisible();
-    }
-    function keepCurrentVisible() {
-        const b = list.querySelector(".toc-i.on");
-        if (!b || mode !== "open") return;
-        const lr = list.getBoundingClientRect();
-        const br = b.getBoundingClientRect();
-        if (br.top < lr.top + 4 || br.bottom > lr.bottom - 4) list.scrollTop += br.top - lr.top - lr.height / 2 + br.height / 2;
-    }
-    let raf = 0;
-    o.main.addEventListener("scroll", () => (raf ||= requestAnimationFrame(() => ((raf = 0), spy()))), { passive: true });
     addEventListener("resize", () => {
         if (!saved()) rebuild();
     });
