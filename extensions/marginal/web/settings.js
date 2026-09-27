@@ -6,7 +6,7 @@ export const STANDALONE = INSTANCE.startsWith("browser-");
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = MAC ? "⌘" : "Ctrl";
 
-export const settings = { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true };
+export const settings = { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true } };
 const listeners = new Set();
 export const onSettings = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 /** Is this optional shortcut turned on? */
@@ -17,6 +17,10 @@ const SHORTCUTS = [
     { key: "stepKeys", keys: ["↑", "↓", "←", "→"], label: "Arrow keys step", detail: "Move between steps while inspecting a diagram, and between walkthrough stops." },
     { key: "tourKey", keys: ["?"], label: "Command center tour", detail: "Starts the guided tour on the Command tab." },
     { key: "markdown", keys: ["`", "**", "- "], label: "Markdown as you type", detail: "While editing, `code`, **bold**, *italic* and list markers format as you type." },
+];
+const INTERRUPTS = [
+    { key: "command", label: "Command chat interrupts", detail: "Messages to the orchestrator reach it mid-turn: it reads them at its next step and can change course." },
+    { key: "doc", label: "Doc chat interrupts", detail: "Questions from a doc reach Copilot mid-turn, even while it works on something else in the main chat." },
 ];
 export const THEMES = [
     { id: "auto", label: "System", note: "Follows your OS light or dark setting" },
@@ -74,6 +78,7 @@ function apply() {
 function adopt(s) {
     if (!s || typeof s !== "object") return;
     Object.assign(settings.shortcuts, s.shortcuts ?? {});
+    Object.assign(settings.interrupt, s.interrupt ?? {});
     if (s.theme) settings.theme = s.theme;
     if (typeof s.effects === "boolean") settings.effects = s.effects;
     apply();
@@ -89,7 +94,7 @@ export async function loadSettings() {
 export const settingsChanged = (s) => adopt(s);
 async function change(patch) {
     const before = structuredClone(settings);
-    adopt({ ...settings, ...patch, shortcuts: { ...settings.shortcuts, ...(patch.shortcuts ?? {}) } });
+    adopt({ ...settings, ...patch, shortcuts: { ...settings.shortcuts, ...(patch.shortcuts ?? {}) }, interrupt: { ...settings.interrupt, ...(patch.interrupt ?? {}) } });
     try {
         adopt(await api("/settings", { method: "POST", body: patch }));
     } catch (e) {
@@ -147,6 +152,16 @@ function render() {
             ),
         ),
         h("p", { class: "set-note" }, "Always on: ", h("kbd", {}, "Shift"), "+", h("kbd", {}, "Enter"), " sends or saves, ", h("kbd", {}, "Esc"), " closes or cancels."),
+        h("div", { class: "set-h" }, "When Copilot is busy"),
+        INTERRUPTS.map((s) =>
+            h(
+                "div",
+                { class: "set-row" },
+                h("div", { class: "set-rt" }, h("div", { class: "set-rl" }, s.label), h("div", { class: "set-rd" }, s.detail)),
+                toggle(settings.interrupt[s.key] !== false, s.label, (v) => change({ interrupt: { [s.key]: v } })),
+            ),
+        ),
+        h("p", { class: "set-note" }, "Off, a message waits until Copilot finishes what it's doing, which can be a long time while it waits on helper agents."),
     );
 }
 let returnFocus = null;

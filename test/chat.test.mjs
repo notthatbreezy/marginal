@@ -107,3 +107,27 @@ test("checkEdits validates a batch in order without saving it", async () => {
     await store.applyEdit(id, edits[0]);
     assert.equal(store.getDoc(id).content.length, 1);
 });
+
+test("immediate messages go into the running turn; others queue behind it", async () => {
+    const s = fakeSession();
+    const chat = createChat(() => s);
+    const events = [];
+    chat.subscribe((e) => events.push(e));
+    await chat.send({ instanceId: "p", prompt: "a", displayPrompt: "a", immediate: true });
+    await chat.send({ instanceId: "p", prompt: "b", displayPrompt: "b" });
+    assert.deepEqual(
+        s.sent.map((m) => m.mode),
+        ["immediate", "enqueue"],
+    );
+    assert.match(events.filter((e) => e.kind === "status")[0].text, /current work; it reads it/);
+    assert.match(events.filter((e) => e.kind === "status")[1].text, /^Queued/);
+});
+
+test("interrupt settings default per chat and survive partial updates", async () => {
+    const { parseSettings, writeSettings, readSettings } = await import("../extensions/marginal/lib/settings.mjs");
+    assert.deepEqual(parseSettings({}).interrupt, { doc: false, command: true });
+    assert.deepEqual(parseSettings({ interrupt: { doc: "yes" } }).interrupt, { doc: false, command: true });
+    writeSettings({ interrupt: { doc: true } });
+    writeSettings({ theme: "dark" });
+    assert.deepEqual(readSettings().interrupt, { doc: true, command: true });
+});

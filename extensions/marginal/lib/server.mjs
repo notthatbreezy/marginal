@@ -177,7 +177,7 @@ export async function startServer({ chat, instances, getSessionId }) {
                 st.fronts.length ? `Fronts already registered: ${st.fronts.map((f) => `${f.id} (${f.worktree ?? "planned, no worktree yet"}${f.stacksOn ? `, stacked on ${f.stacksOn}` : ""}${f.handedTo ? `, worktree handed to ${f.handedTo}` : ""})`).join(", ")}.` : null,
                 "(Reply in the Command chat popup: one or two sentences summarising the plan you set.)",
             ].filter(Boolean);
-            const result = await chat.send({ instanceId: url.searchParams.get("instance") ?? "", prompt: lines.join("\n\n"), displayPrompt: `Initialize the command center${goal ? `: ${goal.slice(0, 300)}` : ""}\n\nCommand center on “${doc.title}”` });
+            const result = await chat.send({ instanceId: url.searchParams.get("instance") ?? "", prompt: lines.join("\n\n"), immediate: readSettings().interrupt.command, displayPrompt: `Initialize the command center${goal ? `: ${goal.slice(0, 300)}` : ""}\n\nCommand center on “${doc.title}”` });
             return send(res, 200, result);
         }
         if (what === "activity" && req.method === "GET") {
@@ -215,7 +215,7 @@ export async function startServer({ chat, instances, getSessionId }) {
         if (f.items.length || f.replayAt) lines.push("Focus (what the user is pointing at on the Command map):\n```json\n" + JSON.stringify(f, null, 1).slice(0, 6000) + "\n```");
         lines.push('(The user reads your reply in the Command chat popup: keep it short. For "walk me through…" use command_diff then command_walkthrough {op:"show"}; for questions about a stop prefer command_walkthrough {op:"edit"}. Views: command_view.)');
         const chips = f.items.length ? ` · ${f.items.length} focused` : "";
-        return chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\nCommand chat on “${doc.title}”${chips}` });
+        return chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\nCommand chat on “${doc.title}”${chips}`, immediate: readSettings().interrupt.command });
     }
 
     async function route(req, res, url) {
@@ -363,7 +363,7 @@ export async function startServer({ chat, instances, getSessionId }) {
                 );
             else lines.push("(The user reads your reply in a small chat popup on the doc: keep it short and conversational. Make any changes with the Marginal canvas actions; they appear live.)");
             const where = doc ? `On doc “${doc.title}”${kind === "inspect" ? ` · inspecting${blockId ? ` ${blockId}` : ""}` : blockId ? ` (${blockId})` : ""}` : "From the doc";
-            const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}${discuss ? " · discuss only" : ""}`, docId: doc?.id ?? null, discuss: !!discuss && !!doc });
+            const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}${discuss ? " · discuss only" : ""}`, docId: doc?.id ?? null, discuss: !!discuss && !!doc, immediate: readSettings().interrupt.doc });
             return send(res, 200, result);
         }
 

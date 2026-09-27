@@ -84,7 +84,8 @@ export function createChat(getSession) {
         }
     }
 
-    async function send({ instanceId, threadId, prompt, displayPrompt, docId = null, discuss = false }) {
+    /** immediate: deliver into Copilot's running turn (it reads it at its next step) instead of queueing behind it. */
+    async function send({ instanceId, threadId, prompt, displayPrompt, docId = null, discuss = false, immediate = false }) {
         const session = getSession();
         if (!session) throw new InputError("Still connecting to Copilot. Try again in a moment.");
         if (threadId && !threads.has(threadId)) throw new InputError("That conversation has ended; start a new one.");
@@ -93,7 +94,7 @@ export function createChat(getSession) {
         const t = threads.get(id);
         // Things the user did since the last message (such as applying a held suggestion) lead the next one.
         const notes = t.notes.splice(0);
-        const messageId = await session.send({ prompt: [...notes, prompt].join("\n\n"), displayPrompt, mode: "enqueue" });
+        const messageId = await session.send({ prompt: [...notes, prompt].join("\n\n"), displayPrompt, mode: immediate ? "immediate" : "enqueue" });
         t.messageIds.add(messageId);
         byMessage.set(messageId, id);
         const meta = { threadId: id, messageId, docId, discuss: !!discuss };
@@ -103,7 +104,7 @@ export function createChat(getSession) {
             current = id;
             currentMeta = meta;
         }
-        emit(id, { kind: "status", text: current === id ? "Thinking" : "Queued — Copilot will reply after its current work" });
+        emit(id, { kind: "status", text: current === id ? "Thinking" : immediate ? "Sent into Copilot's current work; it reads it at its next step" : "Queued — Copilot will reply after its current work" });
         return { threadId: id, messageId };
     }
 

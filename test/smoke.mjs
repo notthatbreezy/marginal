@@ -262,7 +262,7 @@ await test("settings: defaults, partial merges, and bad values fall back", async
     assert.equal(s.shortcuts.markdown, true);
     assert.equal(writeSettings({ effects: false }).theme, "win95");
     assert.equal(readSettings().effects, false);
-    assert.deepEqual(parseSettings({ theme: "nope", effects: "yes", shortcuts: { jump: "no" } }), { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true });
+    assert.deepEqual(parseSettings({ theme: "nope", effects: "yes", shortcuts: { jump: "no" } }), { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true } });
     writeSettings({ shortcuts: { jump: true }, theme: "auto", effects: true });
 });
 
