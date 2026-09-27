@@ -15,6 +15,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 - Command-tab diff feeds no longer offer to open rows with nothing to show. Edits to files a front no longer changes (created then deleted, such as build output, or edited back) are hidden by default with a count to show them; binary files and rows whose diff comes back empty are labelled and can't be expanded.
 - Comment (margin, top bar or selection button) always leaves the caret in the chat input, whether the chat was already open or not, so you can start typing right away.
+- Switching themes no longer feels like the app hanging: the change is immediate (a brief crossfade), with no boot screen. The boot screen plays only when a window opens in a retro theme, and a click or key skips it.
+- Theme wallpapers (the Windows 95 paper-cup pattern, the 16-bit retrowave horizon and grid) show even when the system asks for reduced motion; only their animation stops.
 
 ### Changed
 
