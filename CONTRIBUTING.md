@@ -39,6 +39,7 @@ The README's animated WebPs and screenshots are recorded headlessly by `tools/de
 npm i --no-save playwright-core sharp gifenc pngjs
 node tools/demos/record.mjs                 # everything; or name some: docs-comment docs-inspect command stills readme
 node tools/demos/record.mjs --sheet --out=/tmp/demos   # review a take: contact sheet of the held frames
+node tools/demos/drag-test.mjs              # drag the chat around real pages: 5 sizes x 2 tabs x 2 scales x empty/full
 ```
 
 It uses Microsoft Edge by default (`DEMO_BROWSER=chrome` for Chrome). The Command demo uses `tools/devserver.mjs`'s fictional repo. The doc demos copy your Marginal data to a temp dir and use the doc named by `DEMO_DOC`, so that doc and its repository must exist locally; `DEMO_HEAD_REF` relabels its branch in the recording. Check every frame for anything private before committing.

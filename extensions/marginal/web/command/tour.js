@@ -77,7 +77,7 @@ export function startCommandTour(o = {}) {
                 placement: "left",
                 title: "Talk to the orchestrator",
                 body: () => [
-                    p("The Command chat goes to the session running the plan and remembers the conversation when you close it."),
+                    p("The chat (", kbd("Ctrl"), "+", kbd("I"), " or this button) is your conversation with Copilot on every tab. Here, what you point at goes with each message."),
                     ul(["Point at things first: the ", h("b", {}, "+"), " on a hovered tile, a phase's chat bubble, or a phase's menu on the timeline adds them as chips"], ["Ctrl-click tiles to select several (Shift-click for a range), then ", h("b", {}, "Add to chat"), " in the header"], ["Ask “walk me through P2” for a guided walkthrough of what a phase delivered"]),
                 ],
             },

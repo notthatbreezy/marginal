@@ -4,10 +4,22 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **One chat, like the Copilot app's.** The chat shows the session's whole conversation, including messages typed in the app's main chat and from other sessions, with replies streaming in and what Copilot did between them folded into one line. It's the same on every tab, doc, panel and browser window. On a doc a message carries what it's about (and Discuss/Edit); on the Command tab, the focus chips.
+- Copilot's questions (`ask_user`) and plan approvals are answered in the chat. One seen only in history (after a reload) says to answer it in the app.
+- **Ctrl/⌘+I** opens and closes the chat (it can be turned off in Settings), and so does a chat button in the header. **Esc** closes it.
+
 ### Changed
+
+- The chat reopens where it was, at its size: one place for every tab and doc, remembered across reloads and restarts, and a panel that had it open opens it again after a reload. The round floating chat button and minimize are gone. Closing the chat keeps the conversation.
 
 - The Command tab no longer marks off-plan edits: the off-plan chip and its filter, the map's yellow hatch, the legend entry and the per-worktree off-plan counts are gone. Off-plan files are still reported by `command_read` and a view can still filter on them.
 - The Worktrees list under the phases is hidden unless **Show worktrees** is on in Settings (Command center). Worktrees are tracked either way.
+
+### Fixed
+
+- Dragging the chat on a short screen changed its height instead of moving it. The window is now placed by its top-left corner: a drag only moves it, by exactly the pointer's movement, the corner handle only resizes it, and the whole window stays in view.
 
 ## [0.7.0] - 2026-09-28
 

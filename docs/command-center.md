@@ -57,7 +57,7 @@ The RPC reads are debounced (the runtime signals task changes in bursts) and the
 - The owner process heartbeats every 10 s. The lease goes stale after 30 s without a heartbeat, and only then can another session take over. A live owner calling `set` again just renews the lease.
 - Mutations from any other session return `not_owner`, and the hint names the owner. Reads work from any session.
 - Only the owner process polls worktrees. A process that loses the lease stops its pollers immediately.
-- The Command chat talks to the panel's own session. It is disabled only while a different session holds a live lease.
+- The chat talks to the panel's own session, on every tab. On the Command tab it can't send while a different session holds a live lease (that session is the orchestrator).
 
 ## Focus payload
 
