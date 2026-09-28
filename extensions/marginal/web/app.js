@@ -1,5 +1,6 @@
 // Marginal canvas renderer. Vanilla JS, no dependencies.
 import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
+import { defaultBox, dragBox, fitBox, resizeBox } from "./chat-geometry.js";
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
 import { createToc } from "./toc.js";
 import { createTables } from "./tables.js";
@@ -141,7 +142,11 @@ function coverInspected() {
 /** The chat popup steps out from under the panel. */
 function keepChatClear(w) {
     if (chatBox.hidden || chat.docked) return;
-    if (chatBox.getBoundingClientRect().right > innerWidth - w - 8) applyBox({ ...anchor(), right: w + 16 });
+    const r = chatBox.getBoundingClientRect();
+    if (r.right > innerWidth - w - 8) {
+        chat.box = fitBox({ x: innerWidth - w - 16 - r.width, y: r.top, w: r.width, h: r.height }, innerWidth, innerHeight);
+        placeBox();
+    }
 }
 
 // ---------------- code view (shared by peeks and Inspect) ----------------
@@ -367,7 +372,7 @@ document.addEventListener("keydown", (e) => {
         if (state.preview) return; // Esc closes the preview first (below), and nothing else
         if (activeLineSel) activeLineSel.clear();
         else if (picks.size) clearPicks();
-        else if (!$("#chat").hidden && !chat.docked && !chat.min) closeChat();
+        else if (!$("#chat").hidden && !chat.docked) closeChat();
         else hidePeek();
     }
 });
@@ -985,6 +990,7 @@ function setHeader() {
         banner.replaceChildren(`Viewing version ${state.viewVersion} (read-only). `, h("a", { href: "#", onclick: (e) => (e.preventDefault(), (state.viewVersion = null), loadDoc()) }, "Back to latest"));
     } else banner.hidden = true;
     syncChatFab();
+    syncChatModeToTab();
 }
 
 let activityOn = false;
@@ -1393,7 +1399,9 @@ function connect() {
                 // ?tab= deep-links the first render (e.g. headless screenshots of the Command tab).
                 state.tab = first && ["command", "diff", "commits", "history"].includes(INITIAL_TAB) ? INITIAL_TAB : "board";
                 state.lastSeenVersion = null;
-                loadDoc();
+                await loadDoc();
+                // This panel had the chat open before it reloaded: open it again, where it was.
+                if (first && chat.reopen) openChat({});
             }
         } else if (ev.type === "version" && ev.documentId === state.documentId) {
             if (ev.lastEdit && ev.lastEdit.by !== "user" && ev.reason === "edit") recordChange(ev.lastEdit);
@@ -1406,6 +1414,7 @@ function connect() {
                 if (state.tab === "history") renderHistory();
             }
         } else if (ev.type === "chat") onChatEvent(ev);
+        else if (ev.type === "transcript") onTranscript(ev);
         else if (ev.type === "settings") settingsChanged(ev.settings);
         else if (ev.type === "command") bus.emit("command", ev);
         else if (ev.type === "activity" && ev.documentId === state.documentId) setActivity(ev.activity);
@@ -1422,13 +1431,12 @@ function connect() {
     };
 }
 
-// ---------------- side-chat with Copilot ----------------
-// The reply comes from the main session; this popup shows only the turns it started.
-// Two modes share the popup: "board" (side-chat about the doc: one conversation from open to close; pointing at
-// something else refocuses the next message and keeps the history) and "command" (the Command tab's
-// persistent chat with the orchestrator: survives close/reopen, carries focus chips).
+// ---------------- the chat ----------------
+// One chat for every tab, doc and panel: it shows this session's whole conversation (lib/transcript.mjs), including
+// what's typed in the Copilot app's own chat, and stays where it was put (ui.json). What a message carries depends on
+// the tab it's sent from: on a doc, what it's about (a paragraph, a diagram, a selection) and Discuss/Edit; on the
+// Command tab, the focus chips. Ctrl/Cmd+I (or the header's chat button) opens and closes it; Esc closes it.
 const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), suggestions: new Map(), suggestionActs: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
-const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
 const chatLog = $("#chat-log");
 const chatText = $("#chat-text");
 
@@ -1457,40 +1465,33 @@ function markAskingInner() {
     target?.classList.add("asking");
 }
 
+/** Leaving a conversation's context: a preview of one of its suggestions closes. The conversation itself goes on. */
 function endThread() {
-    if (chat.threadId) api("/ask/end", { method: "POST", body: { threadId: chat.threadId } }).catch(() => {});
-    Object.assign(chat, { threadId: null, awaiting: false, statusEl: null });
-    chat.bubbles.clear();
-    chat.suggestions?.clear();
-    chat.suggestionActs?.clear();
-    chat.hiddenLog = [];
     if (state.preview) closePreview();
-    chatLog.replaceChildren();
-    fitHeight();
 }
 
+/** What the next message carries follows the tab: a doc's target and Discuss/Edit, or the Command tab's focus. */
 function switchChatMode(mode) {
-    // The Command chat belongs to one doc: a different document starts a fresh thread, log and focus.
     if (chat.mode === mode && (mode !== "command" || chat.docId === state.documentId)) return;
+    // Focus chips belong to one doc's Command center; a doc target belongs to the doc tab.
+    if (mode === "command" && chat.docId !== state.documentId) chat.focus = [];
+    if (mode === "command") chat.blockId = chat.unit = chat.picks = chat.ref = chat.askRows = chat.askRange = null;
+    chat.quote = chat.quoteLabel = null;
     chat.docId = state.documentId;
-    chatBoxes[chat.mode] = { right: chatBox.style.right, bottom: chatBox.style.bottom, width: chatBox.style.width, userHeight: chatBox.dataset.userHeight };
-    endThread();
-    chat.blockId = chat.unit = chat.picks = chat.quote = chat.quoteLabel = chat.ref = chat.askRows = chat.askRange = null;
-    chat.focus = [];
-    chat.blocked = null;
-    syncBlocked();
     chat.mode = mode;
-    const b = chatBoxes[mode];
-    chatBox.style.right = b?.right ?? "";
-    chatBox.style.bottom = b?.bottom ?? "";
-    chatBox.style.width = b?.width ?? "";
-    if (b?.userHeight) chatBox.dataset.userHeight = b.userHeight;
-    else delete chatBox.dataset.userHeight;
+    chat.blocked = mode === "command" ? (svc.commandChatBlocked?.() ?? null) : null;
+    syncBlocked();
     chatBox.classList.toggle("cmd-chat", mode === "command");
-    chatText.placeholder = mode === "command" ? "Ask the orchestrator…" : "Ask about this…";
+    chatText.placeholder = mode === "command" ? "Ask the orchestrator…" : "Ask Copilot…";
     $("#chat").setAttribute("aria-label", mode === "command" ? "Chat with the orchestrator" : "Chat with Copilot");
     renderChips();
     renderChatMode();
+    markAsking();
+}
+/** The open chat follows the tab being looked at. */
+function syncChatModeToTab() {
+    if ($("#chat").hidden || chat.docked) return;
+    switchChatMode(state.tab === "command" && state.doc?.target ? "command" : "board");
 }
 
 /** Focus chips (Command chat): items are {key, kind, label, cls?, item} where item is a Focus payload entry (docs/command-center.md). */
@@ -1510,8 +1511,8 @@ function renderChips() {
 
 function openChat(ctx) {
     $("#ask-float").hidden = true;
-    if (chat.min) setChatMin(false);
-    const mode = ctx.mode ?? (state.tab === "command" ? "command" : "board");
+    const mode = ctx.mode ?? (state.tab === "command" && state.doc?.target ? "command" : "board");
+    const wasHidden = $("#chat").hidden;
     switchChatMode(mode);
     if (mode === "command") {
         if (ctx.focus?.length) addFocus(ctx.focus);
@@ -1522,8 +1523,7 @@ function openChat(ctx) {
         }
         chat.blocked = svc.commandChatBlocked?.() ?? null;
         syncBlocked();
-        $("#chat").hidden = false;
-        $("#chat-fab").hidden = true;
+        showChatBox(wasHidden);
         svc.onCommandChatOpen?.();
         markAsking(); // clears any doc-side marks and relabels the bar for the Command chat
         fitHeight();
@@ -1534,8 +1534,7 @@ function openChat(ctx) {
     const open = !$("#chat").hidden && !chat.docked;
     const sameTarget = open && ctx.blockId === chat.blockId && ctx.quote === chat.quote && (ctx.unit ?? null) === chat.unit && (ctx.picks ?? []).join() === (chat.picks ?? []).join() && (ctx.range ?? null) === chat.askRange;
     if (!sameTarget) {
-        // Opening starts a conversation; while it's open, commenting elsewhere only moves its focus.
-        if (!open) endThread();
+        // Commenting on something else moves what the next message is about; the conversation goes on.
         chat.quoteFresh = true; // the next message carries the new target's quote (and says what it's about)
         chat.focusGen = (chat.focusGen ?? 0) + 1;
         chat.blockId = ctx.blockId ?? null;
@@ -1546,13 +1545,24 @@ function openChat(ctx) {
         chat.askRows = ctx.askRows ?? null;
         chat.askRange = ctx.range ?? null;
     }
-    $("#chat").hidden = false;
-    $("#chat-fab").hidden = true;
+    showChatBox(wasHidden);
     if (!peekEl.hidden) keepChatClear(peekEl.getBoundingClientRect().width);
     markAsking();
     renderChatMode(); // the doc may have changed since (the mode is remembered per doc)
     fitHeight();
     focusChatInput();
+}
+
+/** Show the window where it was (fitted to this viewport), load the conversation, and remember it's open. */
+function showChatBox(wasHidden) {
+    $("#chat").hidden = false;
+    if (!chat.docked) placeBox();
+    loadTranscript();
+    if (wasHidden && !chat.docked) persistOpen(true);
+    syncChatFab();
+}
+function persistOpen(open) {
+    api(`/ui?instance=${encodeURIComponent(INSTANCE)}`, { method: "POST", body: { open } }).catch(() => {});
 }
 
 /** Put the caret in the chat input, ready to type. In the Copilot app's panel the click that opened the chat can
@@ -1592,12 +1602,10 @@ const chatHome = { parent: $("#chat").parentNode, next: $("#chat").nextSibling }
 function dockChat(slot, ctx) {
     if (!slot) return;
     if (chat.docked) undockChat();
-    if (chat.min) setChatMin(false);
-    const floating = { style: chatBox.getAttribute("style") };
+    const floating = { style: chatBox.getAttribute("style"), hidden: chatBox.hidden };
     if (ctx.mode === "command") openChat({ mode: "command" });
     else {
         switchChatMode("board");
-        endThread(); // a fresh conversation per walk
         Object.assign(chat, { blockId: null, unit: null, picks: null, quote: null, ref: null, askRows: null, askRange: null });
         openChat({ mode: "board", blockId: ctx.blockId });
     }
@@ -1618,8 +1626,11 @@ function undockChat() {
     chatHome.parent.insertBefore(chatBox, chatHome.next?.parentNode === chatHome.parent ? chatHome.next : null);
     if (d.floating.style) chatBox.setAttribute("style", d.floating.style);
     chatText.placeholder = d.placeholder;
-    if (chat.mode === "command") chatBox.hidden = true; // the Command chat persists; it just stops being docked
-    else closeChat(); // a docked doc conversation ends with its walk
+    // Back to how it was before the walk: open where it sat, or closed.
+    chatBox.hidden = !!d.floating.hidden;
+    if (!chatBox.hidden) placeBox();
+    syncChatModeToTab();
+    markAsking();
     syncChatFab();
 }
 
@@ -1628,9 +1639,9 @@ function renderRef() {
     let el = $("#chat-ref");
     if (!el) {
         el = h("span", { id: "chat-ref" });
-        $("#chat-bar").insertBefore(el, $("#chat-pip") ?? $("#chat-close"));
+        $("#chat-bar").insertBefore(el, $("#chat-clear") ?? $("#chat-close"));
     }
-    const text = chat.docked?.ref?.() ?? (chat.mode === "command" ? "Command chat · orchestrator" : (chat.ref ?? (state.doc ? "About this doc" : "")));
+    const text = chat.docked?.ref?.() ?? (chat.mode === "command" ? "Copilot · Command center" : (chat.ref ?? "Copilot"));
     const marked = !chat.docked && chat.mode !== "command" && !!(chat.askRows?.length || chat.askRange || chat.picks?.length || chat.blockId);
     put(el, marked ? h("i", { class: "swatch", "aria-hidden": "true" }) : null, h("span", { class: "t" }, text));
     el.title = chat.quote ? chat.quote.slice(0, 600) : text;
@@ -1669,56 +1680,41 @@ function refOf(t, selection, el) {
     return `${BLOCK_NOUN[b.type] ?? "Block"}${title ? ` · ${excerpt(title, 34)}` : ""}`;
 }
 
-/** Minimize: the popup shrinks to its bar (label + status) where it sits; thread, log, chips and highlights stay. */
-function setChatMin(on) {
-    if (chat.docked) on = false;
-    chat.min = !!on;
-    chatBox.classList.toggle("min", chat.min);
-    const btn = $("#chat-min");
-    btn.setAttribute("aria-expanded", String(!chat.min));
-    btn.title = chat.min ? "Expand" : "Minimize (keeps the conversation)";
-    btn.setAttribute("aria-label", chat.min ? "Expand chat" : "Minimize chat");
-    $("#chat-bar").title = chat.min ? "Click to expand · drag to move" : "Drag to move";
-    if (!chat.min) {
-        chat.unread = false;
-        setPip(null);
-        fitHeight();
-        scrollChat();
-        chatText.focus({ preventScroll: true });
-    } else {
-        setPip(chat.statusEl ? "working" : null);
-        fitHeight();
-    }
-}
-function setPip(kind) {
-    const pip = $("#chat-pip");
-    pip.hidden = !kind;
-    pip.className = kind ?? "";
-}
-$("#chat-min").onclick = () => setChatMin(!chat.min);
-
 function closeChat() {
-    if (chat.min) setChatMin(false);
+    if (chat.docked) return;
+    const was = !$("#chat").hidden;
     $("#chat").hidden = true;
-    if (chat.mode === "command") {
-        // Persistent: the thread, log and focus stay for the next open.
-        syncChatFab();
-        return;
-    }
-    endThread();
-    chat.turn = null;
-    chat.blockId = chat.unit = chat.picks = chat.quote = chat.ref = chat.askRows = chat.askRange = null;
+    // The conversation stays; what a doc message was about is let go.
+    chat.blockId = chat.unit = chat.picks = chat.ref = chat.askRows = chat.askRange = null;
+    if (chat.mode === "board") chat.quote = null;
     markAsking();
+    if (was) persistOpen(false);
     syncChatFab();
 }
-
-/** The chat button is the way in when nothing is selected: shown on a doc whenever the chat is closed. */
-function syncChatFab() {
-    const tabOk = state.tab === "board" || (state.tab === "command" && !!state.doc?.target);
-    $("#chat-fab").hidden = !$("#chat").hidden || !state.documentId || !tabOk;
-    $("#chat-fab").title = state.tab === "command" ? "Chat with the orchestrator" : "Chat about this doc";
+function toggleChat() {
+    if (chat.docked) return focusChatInput();
+    if ($("#chat").hidden) openChat({});
+    else closeChat();
 }
-$("#chat-fab").onclick = () => openChat({});
+
+/** The header's chat button shows whether the chat is open. */
+function syncChatFab() {
+    const btn = $("#chat-btn");
+    if (!btn) return;
+    const open = !$("#chat").hidden;
+    btn.setAttribute("aria-pressed", String(open));
+    btn.classList.toggle("on", open);
+    btn.title = `${open ? "Close the chat" : "Open the chat"}${shortcut("chat") ? ` (${MAC_KEYS ? "⌘" : "Ctrl"}+I)` : ""}`;
+}
+$("#chat-btn").onclick = () => toggleChat();
+$("#chat-btn").addEventListener("mousedown", (e) => e.preventDefault());
+document.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "i" || !shortcut("chat")) return;
+    // Italic while editing prose.
+    if (e.target.closest?.('[contenteditable="true"]')) return;
+    e.preventDefault();
+    toggleChat();
+});
 
 function scrollChat() {
     chatLog.scrollTop = chatLog.scrollHeight;
@@ -1734,87 +1730,49 @@ function updateFades() {
 chatLog.addEventListener("scroll", updateFades, { passive: true });
 new ResizeObserver(updateFades).observe(chatLog);
 
-// Move and resize. The window stays anchored by right/bottom so new messages grow it upward.
+// Move and resize. The window is placed by its top-left corner and size: a drag only moves it (the bar follows the
+// pointer exactly) and the corner handle only resizes it. Either way the whole window stays in the viewable area,
+// shrinking only when the viewport is smaller than it. One box for every tab, doc, panel and window (ui.json).
 const chatBox = $("#chat");
-const MIN_W = 280;
-/** Never shorter than the drag bar + input box (which grows with its text), plus a sliver of messages once there are any. */
-const chatEmpty = () => !chatLog.childElementCount;
-const extraH = () => ["#chat-chips", "#chat-blocked", "#chat-mode"].reduce((n, s) => n + ($(s)?.hidden === false ? $(s).offsetHeight + 4 : 0), 0);
-const minChatHeight = () => Math.max(chatEmpty() ? 0 : 150, ($("#chat-bar").offsetHeight || 22) + ($(".chat-input").offsetHeight || 40) + 16 + extraH() + (chatEmpty() ? 0 : 48));
-function anchor() {
-    const r = chatBox.getBoundingClientRect();
-    return { right: innerWidth - r.right, bottom: innerHeight - r.bottom, width: r.width, height: r.height };
-}
-const MAX_H = 480;
-const TOP_GAP = 8; // keep the drag bar this far inside the top of the viewport
-function applyBox({ right, bottom, width, height }) {
+function placeBox() {
     if (chat.docked) return;
-    width = Math.max(MIN_W, Math.min(width, innerWidth - 16));
-    right = Math.max(0, Math.min(right, innerWidth - width));
-    chatBox.style.width = `${width}px`;
-    chatBox.style.right = `${right}px`;
-    if (height !== undefined) chatBox.dataset.userHeight = Math.max(minChatHeight(), height);
-    // Dragging up is allowed until only the minimum height fits; fitHeight then shrinks the window rather than letting its top escape.
-    chatBox.style.bottom = `${Math.max(0, Math.min(bottom, innerHeight - TOP_GAP - minChatHeight()))}px`;
-    fitHeight();
+    const b = fitBox(chat.box ?? defaultBox(innerWidth, innerHeight), innerWidth, innerHeight);
+    Object.assign(chatBox.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, right: "auto", bottom: "auto", maxHeight: "none" });
 }
-/** Grow upward only as far as the viewport allows: the top edge (and its drag bar) must stay reachable. */
-function fitHeight() {
-    if (chat.docked) return;
-    if (chat.min) {
-        chatBox.style.height = chatBox.style.minHeight = chatBox.style.maxHeight = "";
-        return;
-    }
-    const bottom = parseFloat(chatBox.style.bottom || getComputedStyle(chatBox).bottom) || 0;
-    const minH = minChatHeight();
-    const room = Math.max(minH, innerHeight - bottom - TOP_GAP);
-    const userH = Number(chatBox.dataset.userHeight);
-    chatBox.style.minHeight = `${minH}px`;
-    // An empty chat is just the input: compact until the first message, then the user's chosen height returns.
-    if (userH && !chatEmpty()) {
-        chatBox.style.height = `${Math.max(minH, Math.min(userH, room))}px`;
-        chatBox.style.maxHeight = "none";
-    } else {
-        chatBox.style.height = "";
-        chatBox.style.maxHeight = `${Math.min(userH || MAX_H, room)}px`;
-    }
+let saveBoxT = 0;
+function saveBox() {
+    clearTimeout(saveBoxT);
+    saveBoxT = setTimeout(() => api(`/ui?instance=${encodeURIComponent(INSTANCE)}`, { method: "POST", body: { box: chat.box } }).catch(() => {}), 200);
 }
+/** The window keeps the size it was given; nothing about its contents changes it. */
+function fitHeight() {}
 function track(handle, onMove) {
     handle.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest("#chat-close, #chat-min, #chat-clear")) return;
+        if (e.button !== 0 || chat.docked || e.target.closest("#chat-close, #chat-clear")) return;
         e.preventDefault();
         handle.setPointerCapture(e.pointerId);
-        const start = { x: e.clientX, y: e.clientY, ...anchor() };
-        let moved = false;
+        const r = chatBox.getBoundingClientRect();
+        const start = { px: e.clientX, py: e.clientY, x: r.left, y: r.top, w: r.width, h: r.height };
         chatBox.classList.add("dragging");
         const move = (ev) => {
-            if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 3) moved = true;
-            onMove(start, ev.clientX - start.x, ev.clientY - start.y);
+            onMove(start, ev.clientX - start.px, ev.clientY - start.py);
+            placeBox();
         };
         const up = () => {
             chatBox.classList.remove("dragging");
-            // A click (not a drag) on a minimized chat's bar expands it.
-            if (!moved && handle.id === "chat-bar" && chat.min) setChatMin(false);
             handle.removeEventListener("pointermove", move);
             handle.removeEventListener("pointerup", up);
             handle.removeEventListener("pointercancel", up);
+            saveBox();
         };
         handle.addEventListener("pointermove", move);
         handle.addEventListener("pointerup", up);
         handle.addEventListener("pointercancel", up);
     });
 }
-track($("#chat-bar"), (s, dx, dy) => applyBox({ right: s.right - dx, bottom: s.bottom - dy, width: s.width }));
-track($("#chat-resize"), (s, dx, dy) => {
-    // Clamp the size first, then derive position, so hitting a minimum stops the edge instead of moving the window.
-    const w = Math.max(MIN_W, s.width + dx);
-    const hgt = Math.max(minChatHeight(), s.height + dy);
-    applyBox({ right: s.right - (w - s.width), bottom: s.bottom - (hgt - s.height), width: w, height: hgt });
-});
-addEventListener("resize", () => {
-    if (!chatBox.hidden && chatBox.style.right) applyBox(anchor());
-    else fitHeight();
-});
+track($("#chat-bar"), (s, dx, dy) => (chat.box = dragBox(s, dx, dy, innerWidth, innerHeight)));
+track($("#chat-resize"), (s, dx, dy) => (chat.box = resizeBox(s, dx, dy, innerWidth, innerHeight)));
+addEventListener("resize", () => !chatBox.hidden && placeBox());
 
 function setStatus(text) {
     if (!text) {
@@ -1840,33 +1798,220 @@ function bubble(messageId) {
 }
 
 function onChatEvent(ev) {
+    // Suggestions held from a Discuss turn show wherever the chat is.
+    if (ev.kind === "proposal") return void showSuggestion(ev);
     if (!chat.threadId && chat.awaiting) chat.threadId = ev.threadId; // events can beat the HTTP response
     if (ev.threadId !== chat.threadId) return;
-    if (chat.min) setPip(ev.kind === "done" ? (chat.unread ? "unread" : null) : ev.kind === "status" ? "working" : ((chat.unread = true), "unread"));
-    if (ev.kind === "status") setStatus(ev.text);
-    else if (ev.kind === "delta") {
-        const el = bubble(ev.messageId);
-        el.dataset.raw += ev.text;
-        el.innerHTML = markdown(el.dataset.raw);
-        scrollChat();
-    } else if (ev.kind === "message") {
-        const el = bubble(ev.messageId);
-        el.dataset.raw = ev.text;
-        el.innerHTML = markdown(ev.text);
-        scrollChat();
-    } else if (ev.kind === "proposal") showSuggestion(ev);
-    else if (ev.kind === "retract") {
-        chat.bubbles.get(ev.messageId)?.remove();
-        chat.bubbles.delete(ev.messageId);
-    } else if (ev.kind === "done") {
-        setStatus(null);
+    if (ev.kind === "done") {
         const turn = chat.turn;
         if (turn) {
-            if (turn.el) chatLog.append(turn.el); // under the final reply
-            if (turn.suggest) chatLog.append(turn.suggest);
+            if (turn.el) chatLog.insertBefore(turn.el, chat.statusEl); // under the final reply
+            if (turn.suggest) chatLog.insertBefore(turn.suggest, chat.statusEl);
             setTimeout(() => turn === chat.turn && (turn.open = false), 2500); // edits can land just after the reply
         }
     }
+}
+
+// ---- the conversation: the session's transcript, the same in every tab, doc, panel and window ----
+const TR = { loaded: false, loading: null, buffer: null, cursor: null, els: new Map() };
+const SOURCE_NOTE = { app: "In the Copilot app", session: "From another session" };
+const PLAN_ACTION = { interactive: "Approve", autopilot: "Approve, autopilot", autopilot_fleet: "Approve, autopilot with helpers", exit_only: "Approve, don't start" };
+async function loadTranscript() {
+    if (TR.loaded || TR.loading) return TR.loading;
+    TR.buffer = [];
+    TR.loading = (async () => {
+        try {
+            const r = await api("/transcript");
+            for (const it of r.items) upsertItem(it, { at: "end" });
+            TR.cursor = r.cursor;
+            syncOlder();
+            setTrStatus(r.status);
+            TR.loaded = true;
+            for (const e of TR.buffer.splice(0)) onTranscript(e);
+        } catch (e) {
+            chatLog.append(h("div", { class: "chat-error" }, `Couldn't load the conversation: ${e.message}`));
+        } finally {
+            TR.buffer = null;
+            TR.loading = null;
+            scrollChat();
+        }
+    })();
+    return TR.loading;
+}
+async function loadOlder(btn) {
+    if (!TR.cursor) return;
+    btn.disabled = true;
+    const before = chatLog.scrollHeight;
+    try {
+        const r = await api(`/transcript?cursor=${encodeURIComponent(TR.cursor)}`);
+        for (const it of [...r.items].reverse()) upsertItem(it, { at: "start" });
+        TR.cursor = r.cursor;
+    } catch (e) {
+        toast(e.message);
+    }
+    btn.disabled = false;
+    syncOlder();
+    chatLog.scrollTop += chatLog.scrollHeight - before; // keep what was on screen in place
+}
+function syncOlder() {
+    let btn = chatLog.querySelector(":scope > .chat-older");
+    if (!TR.cursor) return void btn?.remove();
+    if (!btn) {
+        btn = h("button", { class: "chat-older", onclick: () => loadOlder(btn) }, "Show earlier");
+        chatLog.prepend(btn);
+    }
+}
+function onTranscript(e) {
+    if (TR.buffer) return void TR.buffer.push(e);
+    if (!TR.loaded) return; // nothing shown yet: the first load reads the current state
+    if (e.op === "status") return setTrStatus(e.status);
+    if (e.op === "remove") {
+        TR.els.get(e.id)?.remove();
+        TR.els.delete(e.id);
+        return;
+    }
+    if (e.op === "delta") {
+        const el = TR.els.get(e.id) ?? upsertItem({ kind: "reply", id: e.id, text: "", streaming: true }, { at: "end" });
+        el.dataset.raw = (el.dataset.raw ?? "") + e.text;
+        el.innerHTML = markdown(el.dataset.raw);
+        return void scrollChatIfNear();
+    }
+    if (e.op === "upsert") {
+        upsertItem(e.item, { at: "end" });
+        scrollChatIfNear();
+    }
+}
+function setTrStatus(status) {
+    chat.trStatus = status;
+    setStatus(status === "working" ? "Working" : status === "waiting" ? "Waiting on you" : null);
+    chat.statusEl?.classList.toggle("waiting", status === "waiting");
+}
+/** Stay at the bottom while new messages arrive, unless the reader scrolled up to read. */
+function scrollChatIfNear() {
+    const near = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 120;
+    if (near) scrollChat();
+    else updateFades();
+}
+function upsertItem(it, { at }) {
+    const old = TR.els.get(it.id);
+    // A message sent from here shows at once; the transcript's copy takes its place.
+    let pending = null;
+    if (!old && it.kind === "user" && it.source === "marginal") pending = [...chatLog.querySelectorAll(":scope > .chat-u.pending")].find((el) => el.dataset.text === it.text.trim());
+    const el = itemEl(it, old ?? pending);
+    TR.els.set(it.id, el);
+    if (old || pending) {
+        if ((old ?? pending) !== el) (old ?? pending).replaceWith(el);
+        return el;
+    }
+    if (at === "start") (chatLog.querySelector(":scope > .chat-older")?.nextSibling ? chatLog.querySelector(":scope > .chat-older").after(el) : chatLog.prepend(el));
+    else chatLog.insertBefore(el, chat.statusEl);
+    return el;
+}
+function itemEl(it, reuse) {
+    if (it.kind === "reply") {
+        const el = reuse?.classList.contains("bot") ? reuse : h("div", { class: "chat-msg bot md" });
+        el.dataset.id = it.id;
+        el.dataset.raw = it.text;
+        el.innerHTML = markdown(it.text);
+        el.classList.toggle("streaming", !!it.streaming);
+        return el;
+    }
+    if (it.kind === "user") {
+        const discuss = reuse?.querySelector(".chat-msg.me.discuss");
+        const note = SOURCE_NOTE[it.source] ?? it.context ?? null;
+        return h(
+            "div",
+            { class: `chat-u src-${it.source}`, "data-id": it.id },
+            h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss?.title ?? null }, it.text),
+            note || it.delivery === "steering" ? h("div", { class: "chat-meta" }, [note, it.delivery === "steering" ? "sent while it was working" : null].filter(Boolean).join(" · ")) : null,
+        );
+    }
+    if (it.kind === "activity") {
+        const summary = activitySummaryText(it);
+        const open = reuse?.open ?? false;
+        const running = it.helpers.filter((x) => x.status === "running").length;
+        return h(
+            "details",
+            { class: `chat-act${it.done ? "" : " live"}`, "data-id": it.id, open: open || null },
+            h("summary", {}, it.done ? null : h("span", { class: "pulse" }), h("span", { class: "t" }, summary), running ? h("span", { class: "n" }, ` · ${running} helper${running === 1 ? "" : "s"} running`) : null),
+            h("ul", {}, it.recent.map((r) => h("li", {}, r)), it.helpers.map((x) => h("li", { class: `hlp ${x.status}` }, `helper · ${x.name} · ${x.status}`))),
+        );
+    }
+    if (it.kind === "question") return questionEl(it);
+    if (it.kind === "plan") return planEl(it);
+    return h("div", { "data-id": it.id });
+}
+const ACT_KIND = { read: ["Read", "file", "files"], search: ["Searched", "time", "times"], edit: ["Edited", "file", "files"], run: ["Ran", "command", "commands"], web: ["Looked up", "page", "pages"], canvas: ["Updated", "canvas", "canvases"], todo: ["Updated the todo list"], other: ["Used", "tool", "tools"] };
+function activitySummaryText(it) {
+    const parts = Object.entries(it.tools).map(([k, n]) => {
+        const [verb, one, many] = ACT_KIND[k] ?? ACT_KIND.other;
+        return one === undefined ? verb : `${verb} ${n} ${n === 1 ? one : many}`;
+    });
+    if (it.helpers.length && !parts.length) parts.push(`Started ${it.helpers.length} helper${it.helpers.length === 1 ? "" : "s"}`);
+    return parts.map((p, i) => (i ? p[0].toLowerCase() + p.slice(1) : p)).join(" · ") || "Working";
+}
+async function answerItem(it, body, card) {
+    for (const b of card.querySelectorAll("button, textarea")) b.disabled = true;
+    try {
+        await api("/transcript/answer", { method: "POST", body: { id: it.id, ...body } });
+    } catch (e) {
+        for (const b of card.querySelectorAll("button, textarea")) b.disabled = false;
+        toast(e.message);
+    }
+}
+function questionEl(it) {
+    const card = h("div", { class: `chat-q${it.status === "pending" ? " pending" : ""}`, "data-id": it.id, role: "group", "aria-label": "Copilot's question" });
+    const head = h("div", { class: "q-h" }, h("span", { class: "q-ic", "aria-hidden": "true" }, "?"), it.status === "pending" ? "Copilot is asking" : "Copilot asked");
+    const q = h("div", { class: "q-t md", html: markdown(it.question) });
+    if (it.status !== "pending") {
+        put(card, head, q, h("div", { class: "q-done" }, it.answer ? ["Answer: ", h("b", {}, it.answer)] : "Answered"));
+        return card;
+    }
+    if (!it.answerable) {
+        put(card, head, q, it.choices?.length ? h("div", { class: "q-choices" }, it.choices.map((c) => h("span", { class: "q-choice static" }, c))) : null, h("div", { class: "q-note" }, "Answer it in the Copilot app's chat."));
+        return card;
+    }
+    const text = h("textarea", { class: "q-text", rows: "1", placeholder: it.choices?.length ? "Or type an answer…" : "Type your answer…", "aria-label": "Your answer" });
+    const sendFree = () => text.value.trim() && answerItem(it, { answer: text.value.trim(), wasFreeform: true }, card);
+    text.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendFree();
+        }
+    });
+    put(
+        card,
+        head,
+        q,
+        it.choices?.length ? h("div", { class: "q-choices" }, it.choices.map((c) => h("button", { class: "q-choice", onclick: () => answerItem(it, { answer: c, wasFreeform: false }, card) }, c))) : null,
+        it.allowFreeform !== false ? h("div", { class: "q-free" }, text, h("button", { class: "q-send", onclick: sendFree }, "Answer")) : null,
+    );
+    return card;
+}
+function planEl(it) {
+    const card = h("div", { class: `chat-q plan${it.status === "pending" ? " pending" : ""}`, "data-id": it.id, role: "group", "aria-label": "Copilot's plan" });
+    const head = h("div", { class: "q-h" }, h("span", { class: "q-ic", "aria-hidden": "true" }, "✓"), it.status === "pending" ? "Copilot's plan is ready" : "Copilot's plan");
+    const sum = h("div", { class: "q-t md", html: markdown(it.summary || "") });
+    const full = it.planContent ? h("details", { class: "q-plan" }, h("summary", {}, "Show the plan"), h("div", { class: "md", html: markdown(it.planContent) })) : null;
+    if (it.status !== "pending") {
+        put(card, head, sum, full, h("div", { class: "q-done" }, it.approved ? `Approved${it.selectedAction ? ` (${PLAN_ACTION[it.selectedAction] ?? it.selectedAction})` : ""}` : it.feedback ? ["Sent back: ", h("b", {}, it.feedback)] : "Not approved"));
+        return card;
+    }
+    if (!it.answerable) {
+        put(card, head, sum, full, h("div", { class: "q-note" }, "Approve it in the Copilot app."));
+        return card;
+    }
+    const fb = h("textarea", { class: "q-text", rows: "1", placeholder: "What should change?", "aria-label": "Feedback on the plan" });
+    const actions = (it.actions?.length ? it.actions : ["interactive"]).filter((a) => PLAN_ACTION[a]);
+    put(
+        card,
+        head,
+        sum,
+        full,
+        h("div", { class: "q-choices" }, actions.map((a) => h("button", { class: `q-choice${a === it.recommendedAction ? " rec" : ""}`, onclick: () => answerItem(it, { approved: true, selectedAction: a }, card) }, PLAN_ACTION[a]))),
+        h("div", { class: "q-free" }, fb, h("button", { class: "q-send", onclick: () => fb.value.trim() && answerItem(it, { approved: false, feedback: fb.value.trim() }, card) }, "Send back")),
+    );
+    return card;
 }
 
 // ---- changes Copilot made while answering: listed under the reply, one click away ----
@@ -2049,7 +2194,7 @@ function showSuggestion(ev) {
         chatLog.insertBefore(el, chat.statusEl); // follows the reply as it streams
         if (turn) turn.suggest = el;
     }
-    const threadId = chat.threadId;
+    const threadId = ev.threadId ?? chat.threadId;
     const act = async (what) => {
         chat.suggestionActs.delete(ev.proposalId);
         for (const b of el.querySelectorAll("button")) b.disabled = true;
@@ -2108,7 +2253,8 @@ async function sendChat({ flip = false } = {}) {
     const board = chat.mode === "board" && !chat.docked;
     // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
     if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), chat.statusEl);
-    chatLog.insertBefore(h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message), chat.statusEl);
+    const mine = h("div", { class: "chat-u src-marginal pending", "data-text": message.slice(0, 2000).trim() }, h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message));
+    chatLog.insertBefore(mine, chat.statusEl);
     chatText.value = "";
     autosize();
     scrollChat();
@@ -2135,8 +2281,8 @@ async function sendChat({ flip = false } = {}) {
             renderChips();
         }
     } catch (e) {
-        setStatus(null);
-        chatLog.append(h("div", { class: "chat-error" }, `Not sent: ${e.message}`));
+        mine.classList.remove("pending");
+        mine.after(h("div", { class: "chat-error" }, `Not sent: ${e.message}`));
         scrollChat();
     } finally {
         chat.awaiting = false;
@@ -2170,7 +2316,7 @@ function syncClear() {
     chatClear.disabled = !!chat.statusEl; // not mid-reply
 }
 /** What Clear leaves: the reply in progress, and suggestions still waiting for Apply or Dismiss. */
-const keepOnClear = (el) => el === chat.statusEl || el.classList.contains("chat-earlier") || (el.classList.contains("chat-suggest") && !!el.querySelector("button:not(:disabled)"));
+const keepOnClear = (el) => el === chat.statusEl || el.classList.contains("chat-earlier") || el.classList.contains("chat-older") || (el.classList.contains("chat-suggest") && !!el.querySelector("button:not(:disabled)"));
 function clearChatView() {
     if (chat.statusEl) return;
     const gone = [...chatLog.children].filter((el) => !keepOnClear(el));
@@ -3150,13 +3296,10 @@ Object.assign(svc, {
     copyText,
     toast,
     syncChatFab: () => syncChatFab(),
-    /** Show a Command-chat thread the tab started itself (e.g. "Initialize command center") so its reply streams in. */
-    attachCommandThread: (threadId, message) => {
+    /** A message the Command tab sent itself (e.g. "Initialize command center"): open the chat to show it and its reply. */
+    attachCommandThread: (threadId) => {
         openChat({ mode: "command" });
-        if (chat.threadId && chat.threadId !== threadId) endThread();
-        chat.threadId = threadId;
-        chatLog.insertBefore(h("div", { class: "chat-msg me" }, message), chat.statusEl);
-        scrollChat();
+        chat.threadId ??= threadId;
     },
     /** Command tab → chat: send a message for the user (a button that asks the orchestrator for something), with
      *  context for the orchestrator that the chat doesn't show. The chat opens, so any follow-up questions land there. */
@@ -3178,13 +3321,8 @@ Object.assign(svc, {
     undockChat: () => undockChat(),
     isChatDocked: () => !!chat.docked,
     refreshChatRef: () => renderRef(),
-    hideCommandChat: () => {
-        undockChat();
-        if (chat.mode === "command" && !$("#chat").hidden) {
-            $("#chat").hidden = true;
-            syncChatFab();
-        }
-    },
+    /** Leaving the Command tab: a docked chat goes back to floating; an open one stays open for the next tab. */
+    hideCommandChat: () => undockChat(),
     refreshCommandChatBlocked: () => {
         if (chat.mode !== "command") return;
         chat.blocked = svc.commandChatBlocked?.() ?? null;
@@ -3195,6 +3333,9 @@ Object.assign(svc, {
 // ---------------- boot ----------------
 (async () => {
     await loadSettings(); // before the first render, so the theme doesn't flash
+    const ui = await api(`/ui?instance=${encodeURIComponent(INSTANCE)}`).catch(() => null);
+    chat.box = ui?.box ?? null;
+    chat.reopen = !!ui?.open;
     try {
         state.catalog = await api("/catalog");
     } catch (e) {

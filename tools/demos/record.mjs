@@ -109,7 +109,7 @@ async function docs() {
     });
     const instances = new Map([["demo", { documentId: DEMO_DOC }]]);
     instances.save = () => {};
-    const s = await startServer({ chat, instances, getSessionId: () => "demo" });
+    const s = await startServer({ chat, transcript: chat.transcript, instances, getSessionId: () => "demo" });
     docServer = { url: s.urlFor("demo"), store };
     return docServer;
 }
@@ -139,15 +139,16 @@ async function docsComment() {
     await rec.caption("The reply streams in");
     await rec.watch(async () => (await page.locator("#chat-log .msg.assistant, #chat-log .assistant").count()) > 0 && !(await page.locator("#chat .pulse, #chat .working").count()), { frameMs: 120 });
     await rec.frame(2600);
-    await rec.caption("Minimize to keep reading; the conversation stays");
-    await rec.click(page.locator("#chat-min"));
+    await rec.caption("Ctrl+I closes it to keep reading; the conversation stays", "Ctrl+I");
+    await rec.key("Control+i", { settle: 400 });
     await rec.frame(1500);
-    await rec.click(page.locator("#chat-bar"), { offset: { x: -20, y: 0 } });
-    await rec.frame(1200);
+    await rec.caption("Ctrl+I again: it reopens where it was", "Ctrl+I");
+    await rec.key("Control+i", { settle: 500 });
+    await rec.frame(1500);
     await rec.caption("Code links open the exact lines at the doc's commit");
     await rec.click(page.locator("#chat-close"));
     await page.keyboard.press("Escape");
-    await rec.click(units.nth(1).locator("a").first());
+    await rec.click(page.locator(`#main .block[data-id="md-2"] a.src`).first());
     await rec.frame(2600);
     await rec.caption("");
     await rec.frame(600);

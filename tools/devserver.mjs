@@ -6,6 +6,8 @@
 //               --many-helpers a burst of helpers (the collapsed lane row), with --reload the collector restarts mid-run,
 //               with --stages P2 then goes to review and complete; --bare: helpers only (no todo list, no intent);
 //               --long adds 2.5 h of earlier helper runs (the timeline shows the last hour, with a toggle)
+//   --transcript  the chat opens on a recorded conversation, gets a message "from the app" at 6 s, and a message
+//               containing "ask" gets a question first (answer it in the chat); implies --canned-chat
 //   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
 //   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
 //   --canned-chat  the Command chat answers with scripted, streamed replies (demos)
@@ -13,6 +15,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = new Set(process.argv.slice(2));
 const seconds = Number([...args].find((a) => a.startsWith("--seconds="))?.split("=")[1] ?? 600);
@@ -235,15 +238,26 @@ export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): 
 const instances = new Map([["dev", { documentId: doc.documentId }]]);
 instances.save = () => {};
 const { createCannedChat } = await import("./demos/canned-chat.mjs");
-const chat = args.has("--canned-chat")
+// --transcript: the chat opens on a real recorded conversation (test/fixtures/transcript-events.jsonl), with a
+// message typed "in the app" a few seconds in, and a reply that asks a question first when the message says "ask".
+const transcriptOn = args.has("--transcript");
+const chat = args.has("--canned-chat") || transcriptOn
     ? createCannedChat({
           reply: (m) =>
-              /requeue|sleep/i.test(m.prompt)
+              /\bask\b/i.test(m.prompt) && !m.fromApp
+                  ? { ask: { question: "Which retry cap should P2 use?", choices: ["5 attempts (Recommended)", "3 attempts", "No cap"] }, text: (a) => `OK — ${a ? a.replace(/ \(Recommended\)$/, "") : "5 attempts"} it is. I'll set \`maxAttempts\` in \`DEFAULT_POLICY\` and add a test for the cap.` }
+                  : m.fromApp
+                  ? { statuses: ["Reading src/runner/queue.ts"], text: m.replyText ?? "The queue persists `runAfter`, so a requeued job keeps its delay across a restart." }
+                  : /requeue|sleep/i.test(m.prompt)
                   ? { statuses: ["Reading src/runner/executor.ts"], text: "Requeueing frees the worker right away: a job that sleeps in-process holds a slot for the whole backoff, and a deploy mid-wait would lose the retry. The queue already persists `runAfter`, so the delay survives restarts." }
                   : { statuses: ["Reading the plan"], text: "runner-retry is on P2 and about two thirds through: the policy and backoff are done, and the executor wiring is what's changing now. triggers-sched is blocked on the cron-parse API decision." },
       })
     : { subscribe: () => () => {}, send: async () => ({ threadId: "t", messageId: "m" }), end: () => {} };
-const s = await startServer({ chat, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
+if (transcriptOn) {
+    chat.seed(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "transcript-events.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)));
+    setTimeout(() => chat.appMessage("Is the queue's delay kept across a restart?"), Number(process.env.APP_MESSAGE_MS ?? 6000));
+}
+const s = await startServer({ chat, transcript: chat.transcript ?? null, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
 process.stdout.write(JSON.stringify({ url: s.urlFor("dev"), instance: "dev", docId: doc.documentId, repo, fronts: wts, tmp }) + "\n");
 if (fake)
     fake.live({ manyHelpers: args.has("--many-helpers"), reload: args.has("--reload") }).then(async () => {

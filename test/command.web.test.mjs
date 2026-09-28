@@ -149,3 +149,34 @@ test("capLanes: at most 4 lanes; the rest merge into blocks on the last one", ()
     assert.equal(kept.length, 3);
     assert.deepEqual(overflow.map((b) => [b.s, b.e, b.items.map((r) => r.h.id).join("")]), [[10, 30, "de"], [60, 90, "fg"]]);
 });
+test("chat window: a drag only moves it, by exactly the pointer's movement, and the whole window stays in view", async () => {
+    const { defaultBox, dragBox, fitBox, resizeBox, MIN_W, MIN_H } = await import("../extensions/marginal/web/chat-geometry.js");
+    for (const [vw, vh] of [[1500, 900], [1280, 720], [1366, 600], [900, 700], [700, 900], [420, 360]]) {
+        const start = fitBox(defaultBox(vw, vh), vw, vh);
+        assert.ok(start.x >= 0 && start.y >= 0 && start.x + start.w <= vw && start.y + start.h <= vh, `${vw}x${vh} opens in view`);
+        // Small steps: the window moves by the step and never changes size, until an edge.
+        let b = start;
+        for (const [dx, dy] of [[0, -150], [0, -150], [0, 120], [-300, 0], [200, 0], [0, 200]]) {
+            const next = dragBox(b, dx, dy, vw, vh);
+            assert.deepEqual([next.w, next.h], [b.w, b.h], `${vw}x${vh}: size unchanged by a drag`);
+            const want = { x: Math.max(0, Math.min(b.x + dx, vw - b.w)), y: Math.max(0, Math.min(b.y + dy, vh - b.h)) };
+            assert.deepEqual({ x: next.x, y: next.y }, want, `${vw}x${vh}: moved by the pointer (clamped at the edge)`);
+            b = next;
+        }
+        // Every edge and corner is reachable.
+        for (const [tx, ty] of [[-9999, -9999], [9999, -9999], [-9999, 9999], [9999, 9999]]) {
+            const c = dragBox(b, tx, ty, vw, vh);
+            assert.ok((c.x === 0 || c.x === vw - c.w) && (c.y === 0 || c.y === vh - c.h), `${vw}x${vh}: reaches the corner`);
+        }
+        // Resizing keeps the top-left and stays in view.
+        const r = resizeBox(b, 5000, 5000, vw, vh);
+        assert.deepEqual([r.x, r.y], [b.x, b.y]);
+        assert.ok(r.x + r.w <= vw && r.y + r.h <= vh);
+        const small = resizeBox(b, -5000, -5000, vw, vh);
+        assert.ok(small.w >= Math.min(MIN_W, vw) && small.h >= Math.min(MIN_H, vh));
+    }
+    // A box placed on a big screen comes back fully into view on a small one (shrinking only when it must).
+    const big = { x: 1300, y: 700, w: 420, h: 520 };
+    assert.deepEqual(fitBox(big, 900, 600), { x: 480, y: 80, w: 420, h: 520 });
+    assert.deepEqual(fitBox(big, 400, 300), { x: 0, y: 0, w: 400, h: 300 });
+});

@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { atomicWriteJson, paths } from "./paths.mjs";
 
 export const THEMES = ["auto", "light", "dark", "win3", "win95", "vista", "future", "arcade"];
-export const SHORTCUTS = ["jump", "stepKeys", "tourKey", "markdown"];
+export const SHORTCUTS = ["jump", "stepKeys", "tourKey", "markdown", "chat"];
 export const INTERRUPT = { doc: false, command: true }; // the orchestrator is often mid-turn for a long time
 export const COMMAND = { worktrees: false };
 export const DEFAULTS = Object.freeze({ shortcuts: Object.freeze(Object.fromEntries(SHORTCUTS.map((k) => [k, true]))), theme: "auto", effects: true, interrupt: Object.freeze({ ...INTERRUPT }), command: Object.freeze({ ...COMMAND }) });

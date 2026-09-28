@@ -88,8 +88,8 @@ export function createChat(getSession) {
     async function send({ instanceId, threadId, prompt, displayPrompt, docId = null, discuss = false, immediate = false }) {
         const session = getSession();
         if (!session) throw new InputError("Still connecting to Copilot. Try again in a moment.");
-        if (threadId && !threads.has(threadId)) throw new InputError("That conversation has ended; start a new one.");
-        const id = threadId ?? randomBytes(8).toString("hex");
+        // A panel keeps its thread across reloads of the extension: an unknown one simply starts again.
+        const id = typeof threadId === "string" && /^[a-f0-9]{8,32}$/.test(threadId) ? threadId : randomBytes(8).toString("hex");
         if (!threads.has(id)) threads.set(id, { instanceId, messageIds: new Set(), proposals: new Map(), notes: [] });
         const t = threads.get(id);
         // Things the user did since the last message (such as applying a held suggestion) lead the next one.

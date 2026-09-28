@@ -6,13 +6,14 @@ export const STANDALONE = INSTANCE.startsWith("browser-");
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = MAC ? "⌘" : "Ctrl";
 
-export const settings = { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true }, command: { worktrees: false } };
+export const settings = { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true, chat: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true }, command: { worktrees: false } };
 const listeners = new Set();
 export const onSettings = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 /** Is this optional shortcut turned on? */
 export const shortcut = (name) => settings.shortcuts[name] !== false;
 
 const SHORTCUTS = [
+    { key: "chat", keys: [MOD, "I"], label: "Open and close the chat", detail: "The chat with Copilot, on any tab. It reopens where you left it, with the conversation." },
     { key: "jump", keys: [MOD, "J"], label: "Jump to a section", detail: "Opens the jump palette on a doc." },
     { key: "stepKeys", keys: ["↑", "↓", "←", "→"], label: "Arrow keys step", detail: "Move between steps while inspecting a diagram, and between walkthrough stops." },
     { key: "tourKey", keys: ["?"], label: "Command center tour", detail: "Starts the guided tour on the Command tab." },

@@ -268,14 +268,15 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
     };
     function onEvent(ev) {
         const r = reduce(s, ev);
-        if (r.delta) return emit({ op: "delta", ...r.delta });
         for (const id of r.changed) {
+            if (r.delta && id === r.delta.id) continue; // the delta carries it
             if (id === "status") emit({ op: "status", status: s.status });
             else {
                 const it = s.byId.get(id);
                 emit(it ? { op: "upsert", item: it } : { op: "remove", id });
             }
         }
+        if (r.delta) emit({ op: "delta", ...r.delta });
         if (s.items.length > LIVE_MAX) {
             for (const it of s.items.splice(0, s.items.length - LIVE_MAX)) s.byId.delete(it.id);
         }

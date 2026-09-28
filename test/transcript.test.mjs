@@ -194,3 +194,16 @@ test("ui.json: one shared window box, per-panel open state, bad values dropped",
     assert.deepEqual(writeUi({ box: { x: "a" } }).box, { x: 100, y: 50, w: 420, h: 500 }, "a bad box keeps the old one");
     assert.equal(parseUi({ box: { x: 1, y: 2, w: 10, h: 20 } }).box.w, 200, "sizes are clamped");
 });
+
+test("live: the first delta of a reply also says the activity before it is done", () => {
+    const tr = T.createTranscript(() => null);
+    const seen = [];
+    tr.subscribe((e) => seen.push(e));
+    tr.onEvent(ev("user.message", { messageId: "u", content: "go" }));
+    tr.onEvent(ev("tool.execution_start", { toolCallId: "t1", toolName: "view", arguments: { path: "a" } }));
+    seen.length = 0;
+    tr.onEvent(ev("assistant.message_delta", { messageId: "r", deltaContent: "Hi" }));
+    assert.deepEqual(seen.map((e) => e.op), ["upsert", "delta"]);
+    assert.equal(seen[0].item.kind, "activity");
+    assert.equal(seen[0].item.done, true);
+});

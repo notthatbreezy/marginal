@@ -73,7 +73,7 @@ export function startCommandTour(o = {}) {
             },
             {
                 id: "chat",
-                target: "#chat-fab:not([hidden])",
+                target: "#chat-btn",
                 placement: "left",
                 title: "Talk to the orchestrator",
                 body: () => [
