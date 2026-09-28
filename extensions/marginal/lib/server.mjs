@@ -11,7 +11,6 @@ import { diffFiles, diffPatch, getRepository, listCommits, listTree, parsePatch,
 import { fileHunks, filePatch } from "./command/hunks.mjs";
 import { locIndex } from "./command/loc.mjs";
 import { readLease } from "./command/owner.mjs";
-import { activity } from "./command/index.mjs";
 import { revisingStatus } from "./command/walkthrough.mjs";
 import { eventsSince, lastSeq, onCommand, readPrefs, readState, refreshLog, watchCommand, writePrefs } from "./command/state.mjs";
 import { readProgress, summarizeProgress } from "./command/progress.mjs";
@@ -203,10 +202,6 @@ export async function startServer({ chat, instances, getSessionId }) {
             ].filter(Boolean);
             const result = await chat.send({ instanceId: url.searchParams.get("instance") ?? "", prompt: lines.join("\n\n"), immediate: readSettings().interrupt.command, displayPrompt: `Initialize the command center${goal ? `: ${goal.slice(0, 300)}` : ""}\n\nCommand center on “${doc.title}”` });
             return send(res, 200, result);
-        }
-        if (what === "activity" && req.method === "GET") {
-            const lease = readLease(doc.id);
-            return send(res, 200, { items: lease?.live && lease.sessionId === getSessionId?.() ? activity.slice(-50) : [] });
         }
         if (what === "prefs" && req.method === "POST") return send(res, 200, writePrefs(doc.id, await readBody(req)));
         if ((what === "hunks" || what === "patch") && req.method === "GET") {

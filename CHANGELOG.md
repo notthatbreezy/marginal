@@ -21,6 +21,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 - **Markdown export**: `export {path, heading?}` writes the doc (or one heading's part) to a .md file, and `read {format:"markdown"}` returns it: sections as nested headings, diagrams, call stacks and data lenses as text, code peeks with their code, and code links as repo paths. A header records the doc id and version, the repository and its base/head commits, and a sha256 of the body.
 - **A `marginal` tool** that runs the canvas's actions without an open panel (everything but showing a doc), so reads, edits and exports keep working after the panel closes.
 
+### Removed
+
+- The orchestrator activity list at the top of the Command chat. What the orchestrator is doing, its todos and its helpers are now shown in the Command tab itself.
+
 ### Fixed
 
 - Code blocks keep their line breaks (they rendered on one line).

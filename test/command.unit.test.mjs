@@ -323,15 +323,7 @@ test("a carried-forward done phase without a checkpoint is repaired on plan re-s
     const plan = parsePlan(new Issues(), { id: "retry", title: "R", phases: [{ id: "p1", title: "a" }, { id: "p2", title: "b" }] }, { base: "abc", previous: prev });
     assert.deepEqual(plan.phases.map((p) => p.state.status), ["active", "pending"]);
 });
-// ---------- conversation: activity, focus, instructions ----------
-test("activity lane: root messages (first line) and tool starts; subagents, chat turns and chatter excluded", async () => {
-    const { activityOf } = await import("../extensions/marginal/lib/command/mission.mjs");
-    assert.deepEqual(activityOf({ type: "assistant.message", data: { content: "\n**P2** started\nmore" } }, { now: 0 }), { at: new Date(0).toISOString(), kind: "message", text: "P2 started" });
-    assert.equal(activityOf({ type: "tool.execution_start", data: { toolName: "create_session", arguments: { name: "tests" } } }).text, "create session · tests");
-    assert.equal(activityOf({ type: "tool.execution_start", data: { toolName: "report_intent" } }), null);
-    assert.equal(activityOf({ type: "assistant.message", data: { content: "x", parentToolCallId: "t" } }), null);
-    assert.equal(activityOf({ type: "assistant.message", data: { content: "x" } }, { isChatTurn: () => true }), null);
-});
+// ---------- conversation: focus, instructions ----------
 
 test("focus payload from the panel keeps only well-formed §7.10 items", async () => {
     const { parseFocus } = await import("../extensions/marginal/lib/server.mjs");

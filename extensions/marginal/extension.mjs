@@ -419,7 +419,7 @@ session.on((event) => {
 // Re-adopt Command leases this session held before a reload, so polling resumes without a new plan "set".
 try {
     adoptLeases(session.sessionId);
-    attachMission(session, { isChatTurn: () => !!chat.activeThread() });
+    attachMission(session);
 } catch (e) {
     session.log(`marginal command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
 }

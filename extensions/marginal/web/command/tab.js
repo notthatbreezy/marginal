@@ -39,8 +39,6 @@ const cc = {
     walkLink: null, // { files: Map(path → stop #), stopOn, root, key } while a walkthrough is open
     sel: null, // multi-select over map tiles
     inChat: new Set(), // paths currently in the Command chat focus
-    activity: [],
-    feedOpen: false,
     ownerHere: null,
     announced: { phases: "", offPlan: 0 },
 };
@@ -145,7 +143,6 @@ export async function mountCommand(host, { documentId }) {
         commandChatBlocked: chatBlockedReason,
         commandFocusPayload: (focus) => ({ items: focus.map((f) => f.item) }),
         onCommandChatOpen: () => {
-            renderFeed();
             // While a walkthrough is open, the chat sits to its left instead of over its stop actions.
             const walk = cc.host?.querySelector(".walk");
             const box = document.getElementById("chat");
@@ -163,7 +160,6 @@ export async function mountCommand(host, { documentId }) {
     addEventListener("resize", place);
     cc.off.push(() => removeEventListener("resize", place));
     await reloadAll();
-    loadActivity();
 }
 
 export function unmountCommand() {
@@ -256,9 +252,6 @@ function onEvent(ev) {
         cc.walk?.revising(ev.active);
         cc.revising = ev.active ? Date.now() : 0;
         schedule(true);
-    } else if (ev.kind === "activity") {
-        cc.activity = [...cc.activity, ev.item].slice(-50);
-        renderFeed();
     } else if (ev.kind === "progress") {
         if (!cc.data) return;
         cc.data.progress = ev.progress ?? null;
@@ -1224,7 +1217,7 @@ function keydown(e) {
     }
 }
 
-// ---------- conversation: focus items, chat gating, activity lane ----------
+// ---------- conversation: focus items, chat gating ----------
 function pathItem(path) {
     const isDir = !!findNode(cc.tree, path)?.dir;
     return { key: `path:${path}`, kindLabel: isDir ? "dir" : "file", label: `${path || cc.data.repository}${isDir ? "/" : ""}`, cls: "pathc", item: { kind: "path", path, isDir } };
@@ -1259,31 +1252,6 @@ function syncOwner() {
     if (here === cc.ownerHere) return;
     cc.ownerHere = here;
     svc.refreshCommandChatBlocked?.();
-    if (here) loadActivity();
-}
-
-async function loadActivity() {
-    try {
-        const r = await api(`/command/activity?${q()}`);
-        if (!isMounted()) return;
-        cc.activity = r.items ?? [];
-        renderFeed();
-    } catch {}
-}
-function renderFeed() {
-    const feed = document.getElementById("chat-feed");
-    if (!feed || !svc.commandChatOpen?.()) return;
-    const items = [...cc.activity].reverse();
-    feed.hidden = !items.length || !cc.ownerHere;
-    if (feed.hidden) return;
-    const shown = cc.feedOpen ? items.slice(0, 50) : items.slice(0, 3);
-    const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    put(
-        feed,
-        h("div", { class: "fh" }, "Orchestrator activity", h("span", { class: "grow" }), items.length > 3 ? h("button", { onclick: () => ((cc.feedOpen = !cc.feedOpen), renderFeed()) }, cc.feedOpen ? "Show less" : `Show all ${items.length}`) : null),
-        h("div", { class: `fl${cc.feedOpen ? " open" : ""}` }, shown.map((it) => h("div", { class: `l ${it.kind}`, title: it.text }, h("span", { class: "tm2" }, hhmm(it.at)), it.text))),
-    );
-    svc.syncChatFab?.();
 }
 
 // ---------- walkthrough ↔ map ----------

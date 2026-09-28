@@ -1426,7 +1426,7 @@ function connect() {
 // The reply comes from the main session; this popup shows only the turns it started.
 // Two modes share the popup: "board" (side-chat about the doc: one conversation from open to close; pointing at
 // something else refocuses the next message and keeps the history) and "command" (the Command tab's
-// persistent chat with the orchestrator: survives close/reopen, carries focus chips, shows the activity lane).
+// persistent chat with the orchestrator: survives close/reopen, carries focus chips).
 const chat = { threadId: null, blockId: null, unit: null, quote: null, quoteLabel: null, awaiting: false, bubbles: new Map(), suggestions: new Map(), suggestionActs: new Map(), statusEl: null, mode: "board", focus: [], blocked: null, ref: null, askRows: null, askRange: null };
 const chatBoxes = {}; // mode → saved position/size, so each tab remembers where its chat sat
 const chatLog = $("#chat-log");
@@ -1489,7 +1489,6 @@ function switchChatMode(mode) {
     chatBox.classList.toggle("cmd-chat", mode === "command");
     chatText.placeholder = mode === "command" ? "Ask the orchestrator…" : "Ask about this…";
     $("#chat").setAttribute("aria-label", mode === "command" ? "Chat with the orchestrator" : "Chat with Copilot");
-    $("#chat-feed").hidden = mode !== "command";
     renderChips();
     renderChatMode();
 }
@@ -1740,7 +1739,7 @@ const chatBox = $("#chat");
 const MIN_W = 280;
 /** Never shorter than the drag bar + input box (which grows with its text), plus a sliver of messages once there are any. */
 const chatEmpty = () => !chatLog.childElementCount;
-const extraH = () => ["#chat-feed", "#chat-chips", "#chat-blocked", "#chat-mode"].reduce((n, s) => n + ($(s)?.hidden === false ? $(s).offsetHeight + 4 : 0), 0);
+const extraH = () => ["#chat-chips", "#chat-blocked", "#chat-mode"].reduce((n, s) => n + ($(s)?.hidden === false ? $(s).offsetHeight + 4 : 0), 0);
 const minChatHeight = () => Math.max(chatEmpty() ? 0 : 150, ($("#chat-bar").offsetHeight || 22) + ($(".chat-input").offsetHeight || 40) + 16 + extraH() + (chatEmpty() ? 0 : 48));
 function anchor() {
     const r = chatBox.getBoundingClientRect();

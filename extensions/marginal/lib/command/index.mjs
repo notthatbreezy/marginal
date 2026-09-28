@@ -9,10 +9,10 @@ import { ACTIONS } from "./actions.mjs";
 import { attachProgress } from "./collector.mjs";
 import { Issues } from "./issues.mjs";
 import { adoptIfMine, heldHere, isOwner, readLease, stopHeartbeat } from "./owner.mjs";
-import { ACTIVITY_MAX, activityOf, reduceMission, tickMission } from "./mission.mjs";
+import { reduceMission, tickMission } from "./mission.mjs";
 import { startPolling, stopAll } from "./poller.mjs";
 import { dropRefs } from "./snapshot.mjs";
-import { emitCommand, readState, unwatchCommand, writeState } from "./state.mjs";
+import { readState, unwatchCommand, writeState } from "./state.mjs";
 
 const OPS = {
     command_plan: ["set", "phase", "step", "read"],
@@ -69,10 +69,7 @@ export function adoptLeases(sessionId) {
  * Feed this session's events into the mission lamp of every document it owns (the orchestrator's runtime state).
  * Writes only on change; an idle-hold ticker promotes a lingering idle to "awaiting operator".
  */
-/** In-memory activity lane of this (owner) process; panels fetch it via /api/command/activity and get SSE deltas. */
-export const activity = [];
-
-export function attachMission(session, { isChatTurn = () => false } = {}) {
+export function attachMission(session) {
     const apply = (fn) => {
         for (const docId of heldHere()) {
             if (!isOwner(docId, session.sessionId)) continue;
@@ -89,12 +86,6 @@ export function attachMission(session, { isChatTurn = () => false } = {}) {
     const off = session.on((ev) => {
         try {
             apply((m, allDone) => reduceMission(m, ev, { allDone }));
-            const item = activityOf(ev, { isChatTurn });
-            if (item) {
-                activity.push(item);
-                if (activity.length > ACTIVITY_MAX) activity.shift();
-                for (const docId of heldHere()) emitCommand({ documentId: docId, kind: "activity", item });
-            }
         } catch {}
     });
     const t = setInterval(() => apply((m) => tickMission(m)), 5000);

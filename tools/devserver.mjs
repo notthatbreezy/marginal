@@ -230,14 +230,6 @@ export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): 
         if (!r.ok) throw new Error(`walkthrough: ${JSON.stringify(r.issues)}`);
     }
 }
-const { activity } = await import("../extensions/marginal/lib/command/index.mjs");
-const t0 = Date.now();
-activity.push(
-    { at: new Date(t0 - 9 * 60_000).toISOString(), kind: "message", text: "P2 · Retry policy started (runner-retry, triggers-sched, tests)" },
-    { at: new Date(t0 - 6 * 60_000).toISOString(), kind: "tool", text: "create session · tests worktree relay-tests" },
-    { at: new Date(t0 - 2 * 60_000).toISOString(), kind: "message", text: "Told triggers-sched to wait for the cron-parse API decision" },
-);
-
 const instances = new Map([["dev", { documentId: doc.documentId }]]);
 instances.save = () => {};
 const { createCannedChat } = await import("./demos/canned-chat.mjs");

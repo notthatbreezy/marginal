@@ -95,5 +95,4 @@ The line-count cache lives in `~/.copilot/marginal/loc-cache/`. Checkpoint snaps
 - Monitors have two modes, diff feed and files.
 - Pins use a fixed 3× weight.
 - The mission lamp uses explicit session events only: turns, tool starts, user-input, plan-approval and permission requests, and task completion. After 30 s of idling it switches to "waiting on you".
-- The activity lane in the chat is held in memory by the owner process.
 - Activity inside child sessions isn't observable. Their edits still show up, because their worktrees are polled.

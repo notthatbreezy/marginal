@@ -3083,44 +3083,6 @@ svg .muted {
     font-weight: 400;
     font-variant-numeric: tabular-nums;
 }
-.cc .feedlane {
-    margin: 0 10px 4px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    background: var(--surface);
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 17px;
-}
-.cc .feedlane .fh {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    color: var(--fg);
-    font-size: 11.5px;
-    margin-bottom: 3px;
-}
-.cc .feedlane .fh .grow {
-    flex: 1;
-}
-.cc .feedlane .fh button {
-    border: none;
-    background: transparent;
-    font-size: 11px;
-    color: var(--muted);
-    padding: 0 4px;
-}
-.cc .feedlane div.l {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.cc .feedlane .tm2 {
-    font-variant-numeric: tabular-nums;
-    margin-right: 6px;
-    opacity: 0.8;
-}
 .cc .chips {
     display: flex;
     flex-wrap: wrap;
@@ -3974,56 +3936,6 @@ svg .muted {
 #chat .f4 { --fc: var(--front-3); }
 #chat .f5 { --fc: var(--front-4); }
 #chat .f6 { --fc: var(--front-5); }
-#chat .feedlane {
-    flex: none;
-    margin: 0 10px 4px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    background: var(--surface);
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 17px;
-}
-#chat .feedlane .fh {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    color: var(--fg);
-    font-size: 11.5px;
-    margin-bottom: 3px;
-}
-#chat .feedlane .fh .grow {
-    flex: 1;
-}
-#chat .feedlane .fh button {
-    border: none;
-    background: transparent;
-    font-size: 11px;
-    color: var(--muted);
-    padding: 0 4px;
-    cursor: pointer;
-}
-#chat .feedlane .fh button:hover {
-    color: var(--fg);
-}
-#chat .feedlane .fl.open {
-    max-height: 160px;
-    overflow: auto;
-}
-#chat .feedlane .l {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-#chat .feedlane .l.tool {
-    opacity: 0.8;
-}
-#chat .feedlane .tm2 {
-    font-variant-numeric: tabular-nums;
-    margin-right: 6px;
-    opacity: 0.8;
-}
 #chat .chips {
     flex: none;
     display: flex;
@@ -4600,7 +4512,6 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     margin: 6px 16px 10px 28px;
 }
 #chat.docked .chips,
-#chat.docked .feedlane,
 #chat.docked .chat-blocked {
     margin-left: 28px;
     margin-right: 16px;
@@ -4614,8 +4525,7 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
 }
 .walk #chat.docked .chat-input,
 .walk #chat.docked .chips,
-.walk #chat.docked .feedlane,
-.walk #chat.docked .chat-blocked {
+.walk .walk #chat.docked .chat-blocked {
     margin-left: 22px;
 }
 /* Notes & examples under a tour stop */
@@ -4714,13 +4624,9 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
 }
 .walk .dock-stage #chat.docked .chat-input,
 .walk .dock-stage #chat.docked .chips,
-.walk .dock-stage #chat.docked .feedlane,
-.walk .dock-stage #chat.docked .chat-blocked {
+.walk .dock-stage .walk .dock-stage #chat.docked .chat-blocked {
     margin-left: 14px;
     margin-right: 12px;
-}
-.walk .dock-stage #chat.docked .feedlane .fh button {
-    padding: 0 2px;
 }
 /* The docked chat never takes more than half the column: the stops stay in view, and its messages scroll. */
 .tour-left > .tour-dock.dock-stage:not(:empty) {
@@ -4742,10 +4648,6 @@ body:has(#main.cc-host .cc.walking) #chat-fab {
     flex: 0 1 auto;
     min-height: 48px;
     max-height: none;
-    overflow-y: auto;
-}
-.dock-stage #chat.docked .feedlane {
-    max-height: 96px;
     overflow-y: auto;
 }
 /* Minimized chat: just its bar (what it's about + status) where it sat; click the bar or ⌃ to expand. */
