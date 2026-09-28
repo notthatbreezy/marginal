@@ -118,7 +118,6 @@ export function createTreemap(host, { onZoom, onHover, tooltip } = {}) {
                 }
                 if (c.kind === "added" || c.kind === "untracked") el.classList.add("newfile");
                 if (c.kind === "deleted") el.classList.add("deleted");
-                if (m.offPlan?.(n.path, c)) el.classList.add("offplan");
                 if (c.fronts.size > 1) {
                     const [a, b] = [...c.fronts.keys()].map((id) => m.fronts.get(id)?.color ?? 5);
                     el.classList.add("collide");
@@ -144,7 +143,7 @@ export function createTreemap(host, { onZoom, onHover, tooltip } = {}) {
                     el.append(h("i", { class: "ping stop-ping", "aria-hidden": "true" }));
                 }
             }
-            el.setAttribute("aria-label", `${n.path}${c ? `, ${[...c.fronts.keys()].map((id) => m.fronts.get(id)?.label ?? id).join(" and ")}, ${c.add} added ${c.del} removed` : ""}${m.offPlan?.(n.path, c) ? ", off-plan" : ""}`);
+            el.setAttribute("aria-label", `${n.path}${c ? `, ${[...c.fronts.keys()].map((id) => m.fronts.get(id)?.label ?? id).join(" and ")}, ${c.add} added ${c.del} removed` : ""}`);
         };
 
         host.append(place(start, 0, 0, W, H));

@@ -1,5 +1,5 @@
 // The Command center's guided tour: what each part of the mission wall does and how to drive it.
-// Steps adapt to what's on screen (no off-plan chip → no off-plan step; walkthrough present → its step appears).
+// Steps adapt to what's on screen (a walkthrough present → its step appears).
 import { h } from "../core.js";
 import { kbd, startGuide } from "../guide.js";
 
@@ -32,7 +32,6 @@ export function startCommandTour(o = {}) {
                     p("Churn is lines added plus removed per minute. The window scales with session age; pick one to override it."),
                 ],
             },
-            { id: "offplan", when: plan, target: ".cc button.offplan:not([hidden])", placement: "bottom", title: "Off-plan edits", body: () => p("Files changed outside what the phases being worked on deliver get a yellow hatch. Click the chip to show only those; click again for everything.") },
             {
                 id: "map",
                 when: plan,
@@ -62,7 +61,7 @@ export function startCommandTour(o = {}) {
                 target: ".cc .rail-fronts",
                 placement: "left",
                 title: "Phases",
-                body: () => [p("One card per phase: its stage (planned, implementing, in review, blocked with why, complete), what it delivers, what it has changed so far and its recent pace. Its todos done / total, the todo it's on and its running helpers show there too; ", h("b", {}, "Other"), " collects todos that match no phase."), ul(["Hover a card to preview its files on the map"], ["Click it to show only that phase's files; click again for all"], ["The chat bubble adds the phase to the Command chat"]), p({ class: "guide-muted" }, "With several worktrees at once (parallel sessions, stacked PRs), a Worktrees list appears below.")],
+                body: () => [p("One card per phase: its stage (planned, implementing, in review, blocked with why, complete), what it delivers, what it has changed so far and its recent pace. Its todos done / total, the todo it's on and its running helpers show there too; ", h("b", {}, "Other"), " collects todos that match no phase."), ul(["Hover a card to preview its files on the map"], ["Click it to show only that phase's files; click again for all"], ["The chat bubble adds the phase to the Command chat"]), p({ class: "guide-muted" }, "With several worktrees at once (parallel sessions, stacked PRs), Settings can list them below.")],
             },
             {
                 id: "timeline",

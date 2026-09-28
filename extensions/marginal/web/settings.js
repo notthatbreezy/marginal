@@ -6,7 +6,7 @@ export const STANDALONE = INSTANCE.startsWith("browser-");
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = MAC ? "⌘" : "Ctrl";
 
-export const settings = { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true } };
+export const settings = { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true }, command: { worktrees: false } };
 const listeners = new Set();
 export const onSettings = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 /** Is this optional shortcut turned on? */
@@ -79,6 +79,7 @@ function adopt(s) {
     if (!s || typeof s !== "object") return;
     Object.assign(settings.shortcuts, s.shortcuts ?? {});
     Object.assign(settings.interrupt, s.interrupt ?? {});
+    Object.assign(settings.command, s.command ?? {});
     if (s.theme) settings.theme = s.theme;
     if (typeof s.effects === "boolean") settings.effects = s.effects;
     apply();
@@ -94,7 +95,7 @@ export async function loadSettings() {
 export const settingsChanged = (s) => adopt(s);
 async function change(patch) {
     const before = structuredClone(settings);
-    adopt({ ...settings, ...patch, shortcuts: { ...settings.shortcuts, ...(patch.shortcuts ?? {}) }, interrupt: { ...settings.interrupt, ...(patch.interrupt ?? {}) } });
+    adopt({ ...settings, ...patch, shortcuts: { ...settings.shortcuts, ...(patch.shortcuts ?? {}) }, interrupt: { ...settings.interrupt, ...(patch.interrupt ?? {}) }, command: { ...settings.command, ...(patch.command ?? {}) } });
     try {
         adopt(await api("/settings", { method: "POST", body: patch }));
     } catch (e) {
@@ -162,6 +163,13 @@ function render() {
             ),
         ),
         h("p", { class: "set-note" }, "Off, a message waits until Copilot finishes what it's doing, which can be a long time while it waits on helper agents."),
+        h("div", { class: "set-h" }, "Command center"),
+        h(
+            "div",
+            { class: "set-row" },
+            h("div", { class: "set-rt" }, h("div", { class: "set-rl" }, "Show worktrees"), h("div", { class: "set-rd" }, "List the checkouts being watched under the phases, when there are several (parallel sessions, stacked PRs). They're tracked either way.")),
+            toggle(settings.command.worktrees === true, "Show worktrees", (v) => change({ command: { worktrees: v } })),
+        ),
     );
 }
 let returnFocus = null;

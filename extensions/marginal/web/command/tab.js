@@ -1,7 +1,7 @@
 // Command tab: the implementation mission wall.
-// Instrument strip, territory map, fronts rail, checkpoint timeline, off-plan filter,
+// Instrument strip, territory map, phases rail, timeline,
 // views & follow, auto-root, fisheye pins, monitors dock, hunk rows. Everything renders "as of" a time: live = now.
-import { shortcut } from "../settings.js";
+import { onSettings, settings, shortcut } from "../settings.js";
 import { INSTANCE, api, bus, h, put, svc } from "../core.js";
 import { compilePatterns, parseLayout, patternsTouchDir, phasePatterns, planPatterns } from "../command/patterns.js";
 import { buckets, changesAt, velocity } from "./derive.js";
@@ -40,7 +40,7 @@ const cc = {
     sel: null, // multi-select over map tiles
     inChat: new Set(), // paths currently in the Command chat focus
     ownerHere: null,
-    announced: { phases: "", offPlan: 0 },
+    announced: { phases: "" },
 };
 
 const freshUi = () => ({
@@ -49,7 +49,6 @@ const freshUi = () => ({
     hoverFront: null,
     focusPhase: null,
     hoverPhase: null,
-    offOnly: false,
     layout: emptyLayout(), // root null = auto
     viewId: null, // the view the current layout came from (null = auto / custom)
     userZoomAt: 0,
@@ -67,12 +66,12 @@ export async function mountCommand(host, { documentId }) {
     cc.docId = documentId;
     cc.events = [];
     cc.ui = freshUi();
-    cc.announced = { phases: "", offPlan: 0 };
+    cc.announced = { phases: "" };
     host.classList.add("cc-host");
     const root = h("div", { class: "cc" });
     root.append(buildStrip(), buildMap(), h("aside", { class: "rail-fronts", "aria-label": "Phases" }, h("div", { class: "rail-phases" }), h("div", { class: "rail-worktrees", hidden: true })), h("section", { class: "timeline", "aria-label": "Phases timeline" }), h("div", { class: "sr-only", "aria-live": "polite", role: "status" }));
     put(host, root);
-    cc.off.push(bus.on("command", onEvent));
+    cc.off.push(bus.on("command", onEvent), onSettings(() => schedule(true)));
     const onKey = (e) => keydown(e);
     // A control that opens a popover toggles it itself (closing here first would reopen it on click).
     const onDown = (e) => cc.ui.menu && !e.target.closest(".cc-menu") && !e.target.closest("[aria-haspopup]") && closeMenu();
@@ -452,7 +451,7 @@ function phaseRows(st, changes, now) {
 }
 
 function frontRows(st, changes) {
-    const rows = st.fronts.map((front) => ({ front, add: 0, del: 0, files: 0, offPlan: 0, where: whereOf(st.plan, front.id) }));
+    const rows = st.fronts.map((front) => ({ front, add: 0, del: 0, files: 0, where: whereOf(st.plan, front.id) }));
     const by = new Map(rows.map((r) => [r.front.id, r]));
     for (const c of changes.values())
         for (const [id, v] of c.fronts) {
@@ -461,7 +460,6 @@ function frontRows(st, changes) {
             r.add += v.add;
             r.del += v.del;
             r.files++;
-            if (v.offPlan) r.offPlan++;
         }
     return rows;
 }
@@ -496,8 +494,7 @@ function render() {
     const at = now;
     if (st.plan) maybeFollow(st);
     const changes = changesAt(cc.events, Infinity);
-    const offCount = [...changes.values()].filter(isOff).length;
-    renderStrip(st, at, offCount);
+    renderStrip(st, at);
     renderNudge();
     const main = cc.host.querySelector(".cc");
     syncWalkthrough(st);
@@ -530,7 +527,7 @@ function render() {
     const phaseObj = phaseOn && st.plan.phases.find((p) => p.id === phaseOn);
     const onlyPhase = phaseObj ? compilePatterns(phasePatterns(phaseObj)) : null;
     const vf = L.filters ?? {};
-    const offOnly = cc.ui.offOnly || !!vf.offPlanOnly;
+    const offOnly = !!vf.offPlanOnly; // a view the orchestrator set up can still ask for only off-plan files
     const viewFronts = vf.frontIds?.length ? new Set(vf.frontIds) : null;
     const filter =
         onlyFront || onlyPhase || offOnly || viewFronts || vf.hideTests || vf.minChurn
@@ -555,9 +552,7 @@ function render() {
         pins,
         now: at,
         filter,
-        offPlan: (path, c) => isOff(c),
         decorateFile: decorateHunks,
-        tipExtra: (node, c) => (isOff(c) ? h("div", { class: "warn" }, "Off-plan: outside what the phases being worked on deliver.") : null),
         badges: cc.walkLink?.files,
         stopOn: cc.walkLink?.stopOn,
         stopKey: cc.walkLink?.key,
@@ -581,9 +576,10 @@ function render() {
         },
         onAddChat: svc.addToCommandChat ? (p) => svc.addToCommandChat([phaseItem(p)]) : null,
     });
-    // Worktrees are plumbing: listed only when there are several (parallel sessions, stacked PRs).
+    // Worktrees are plumbing: tracked always, listed only with the "Show worktrees" setting and when there are several.
     const wt = cc.host.querySelector(".rail-worktrees");
-    wt.hidden = st.fronts.length < 2;
+    wt.hidden = !settings.command.worktrees || st.fronts.length < 2;
+    if (wt.hidden && (cc.ui.focusFront || cc.ui.hoverFront)) cc.ui.focusFront = cc.ui.hoverFront = null;
     if (wt.hidden) put(wt);
     else renderFronts(wt, frontRows(st, changes), {
         title: "Worktrees",
@@ -628,7 +624,7 @@ function render() {
         onMode: (path, mode) => userLayout((l) => (l.monitors = l.monitors.map((m) => (m.path === path ? { ...m, mode } : m)))),
         onFocus: (path) => zoomTo(path),
     });
-    announceChanges(st, offCount);
+    announceChanges(st);
 }
 
 function sparkSeries(now) {
@@ -733,26 +729,12 @@ function buildStrip() {
                 ["auto", "1m", "5m", "15m", "1h", "all"].map((k) => h("option", { value: k }, k)),
             ),
         ),
-        h(
-            "button",
-            {
-                class: "offplan",
-                hidden: true,
-                "aria-pressed": "false",
-                onclick: () => {
-                    cc.ui.offOnly = !cc.ui.offOnly;
-                    schedule(true);
-                },
-            },
-            h("span", { class: "hatch-swatch" }),
-            h("span", { class: "n" }),
-        ),
         h("span", { class: "strip-grow" }),
         h("span", { class: "tour-slot" }),
     );
 }
 
-function renderStrip(st, at, offCount) {
+function renderStrip(st, at) {
     const strip = cc.host.querySelector(".strip");
     const lamp = strip.querySelector(".lamp");
     const ms = st.mission ?? { status: "unknown" };
@@ -776,12 +758,6 @@ function renderStrip(st, at, offCount) {
     const sel = strip.querySelector(".window select");
     sel.value = cc.ui.windowKey;
     sel.options[0].textContent = cc.ui.windowKey === "auto" ? v.label : `auto · ${v.auto.label}`;
-    const chip = strip.querySelector(".offplan");
-    chip.hidden = !offCount && !cc.ui.offOnly;
-    chip.classList.toggle("on", cc.ui.offOnly);
-    chip.setAttribute("aria-pressed", String(cc.ui.offOnly));
-    chip.title = cc.ui.offOnly ? "Showing only off-plan edits (click to show all)" : "Show only off-plan edits";
-    chip.querySelector(".n").textContent = `${offCount} off-plan`;
 }
 
 // ---------- map ----------
@@ -866,7 +842,7 @@ function renderMapHead(st, root, auto = false) {
     const L = cc.ui.layout;
     const legend = cc.host.querySelector(".legend");
     // The colour key; pins live behind the pin button in the controls.
-    if (!legend.childElementCount) put(legend, h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active phase"), h("span", {}, h("i", { class: "lg op" }), "Off-plan"));
+    if (!legend.childElementCount) put(legend, h("span", {}, h("i", { class: "lg fp" }), "Plan"), h("span", {}, h("i", { class: "lg ph" }), "Active phase"));
 
     const ctl = cc.host.querySelector(".view-ctl");
     // Rebuilt only when what it shows changes: a 4 Hz rebuild could swallow a click between mousedown and mouseup.
@@ -1294,7 +1270,7 @@ function announce(msg) {
     if (el) el.textContent = msg;
 }
 
-function announceChanges(st, offCount) {
+function announceChanges(st) {
     const phases = (st.plan?.phases ?? []).map((p) => `${p.id}:${p.state.status}`).join(",");
     if (cc.announced.phases && phases !== cc.announced.phases) {
         const prev = new Map(cc.announced.phases.split(",").map((s) => s.split(":")));
@@ -1302,8 +1278,6 @@ function announceChanges(st, offCount) {
         if (moved) announce(`${moved.title} is now ${moved.state.status}`);
     }
     cc.announced.phases = phases;
-    if (offCount > cc.announced.offPlan) announce(`${offCount} off-plan edit${offCount === 1 ? "" : "s"}`);
-    cc.announced.offPlan = offCount;
 }
 
 export function refresh() {

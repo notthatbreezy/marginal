@@ -2332,28 +2332,6 @@ svg .muted {
     border: 1px solid var(--border);
     white-space: nowrap;
 }
-.cc button.offplan {
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--yellow);
-    background: var(--yellow-muted);
-    border: none;
-    border-radius: 999px;
-    padding: 2px 10px;
-}
-.cc button.offplan:hover {
-    background: color-mix(in srgb, var(--yellow) 24%, transparent);
-}
-.cc .hatch-swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    background: repeating-linear-gradient(45deg, var(--yellow) 0 2px, transparent 2px 5px);
-}
 .cc .map {
     grid-area: map;
     display: flex;
@@ -2451,10 +2429,6 @@ svg .muted {
 .cc .lg.ph {
     background: var(--blue-muted);
     border: 1.5px solid var(--blue);
-}
-.cc .lg.op {
-    background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 40%, transparent) 0 2px, transparent 2px 4px);
-    border: 1px solid var(--yellow);
 }
 .cc .stage {
     position: relative;
@@ -2609,10 +2583,6 @@ svg .muted {
 @keyframes cc-ping {
     0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fc) 55%, transparent); }
     35%, 100% { box-shadow: 0 0 0 10px transparent; }
-}
-.cc .tn.offplan {
-    background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 28%, transparent) 0 3px, transparent 3px 7px);
-    border: 1px solid var(--yellow);
 }
 .cc .tn.deleted {
     background: var(--red-muted);
@@ -2970,14 +2940,6 @@ svg .muted {
 }
 .cc .front .row3 svg {
     margin-left: auto;
-}
-.cc .front .opc {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin: 6px 0 0 16px;
-    font-size: 11.5px;
-    color: var(--yellow);
 }
 .cc .front .addchat {
     position: absolute;
@@ -3454,16 +3416,6 @@ svg .muted {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-}
-.cc button.offplan {
-    cursor: pointer;
-}
-.cc button.offplan.on {
-    color: var(--color-white, #fff);
-    background: var(--yellow);
-}
-.cc button.offplan.on .hatch-swatch {
-    background: repeating-linear-gradient(45deg, currentColor 0 2px, transparent 2px 5px);
 }
 .cc .crumbs .sepc {
     color: var(--muted);

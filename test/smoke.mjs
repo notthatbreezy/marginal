@@ -476,8 +476,12 @@ await test("settings: defaults, partial merges, and bad values fall back", async
     assert.equal(s.shortcuts.markdown, true);
     assert.equal(writeSettings({ effects: false }).theme, "win95");
     assert.equal(readSettings().effects, false);
-    assert.deepEqual(parseSettings({ theme: "nope", effects: "yes", shortcuts: { jump: "no" } }), { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true } });
-    writeSettings({ shortcuts: { jump: true }, theme: "auto", effects: true });
+    assert.deepEqual(parseSettings({ theme: "nope", effects: "yes", shortcuts: { jump: "no" } }), { shortcuts: { jump: true, stepKeys: true, tourKey: true, markdown: true }, theme: "auto", effects: true, interrupt: { doc: false, command: true }, command: { worktrees: false } });
+    assert.equal(readSettings().command.worktrees, false, "worktrees are hidden by default");
+    assert.equal(writeSettings({ command: { worktrees: true } }).command.worktrees, true);
+    assert.equal(writeSettings({ theme: "dark" }).command.worktrees, true, "other changes keep it");
+    assert.equal(parseSettings({ command: { worktrees: "yes" } }).command.worktrees, false);
+    writeSettings({ shortcuts: { jump: true }, theme: "auto", effects: true, command: { worktrees: false } });
 });
 
 await test("database_lens relationship checks", async () => {

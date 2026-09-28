@@ -4,6 +4,11 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Changed
+
+- The Command tab no longer marks off-plan edits: the off-plan chip and its filter, the map's yellow hatch, the legend entry and the per-worktree off-plan counts are gone. Off-plan files are still reported by `command_read` and a view can still filter on them.
+- The Worktrees list under the phases is hidden unless **Show worktrees** is on in Settings (Command center). Worktrees are tracked either way.
+
 ## [0.7.0] - 2026-09-28
 
 ### Changed

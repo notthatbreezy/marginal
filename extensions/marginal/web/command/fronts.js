@@ -13,7 +13,7 @@ export function spark(values, w = 48, hgt = 14) {
     return h("span", { html: `<svg width="${w}" height="${hgt}" viewBox="0 0 ${w} ${hgt}" aria-hidden="true"><polygon class="area" points="0,${hgt} ${pts.join(" ")} ${w},${hgt}"/><polyline points="${pts.join(" ")}"/></svg>` });
 }
 
-/** fronts: [{front, add, del, files, offPlan, where:{phase, step}}]; opts: {focusId, onToggle, onHover, onAddChat, series: Map} */
+/** fronts: [{front, add, del, files, where:{phase, step}}]; opts: {focusId, onToggle, onHover, onAddChat, series: Map} */
 // Stages in the order the rail lists them: what's moving first, then what's waiting, then what's finished.
 export const STAGES = ["implementing", "review", "blocked", "planned", "complete"];
 const STAGE = {
@@ -66,7 +66,6 @@ export function renderFronts(host, rows, opts) {
                           r.stage === "planned" && !f.worktree
                               ? h("div", { class: "row3 muted" }, "No worktree yet")
                               : h("div", { class: "row3" }, h("span", { class: "add" }, `+${r.add}`), h("span", { class: "del" }, `−${r.del}`), h("span", { class: "files" }, `${r.files} file${r.files === 1 ? "" : "s"}`), r.stage !== "complete" && opts.series.get(f.id) ? spark(opts.series.get(f.id)) : null),
-                          r.offPlan ? h("div", { class: "opc" }, h("span", { class: "hatch-swatch" }), `${r.offPlan} off-plan`) : null,
                           opts.onAddChat ? h("button", { class: "addchat", title: "Add front to chat", "aria-label": `Add ${f.label} to chat`, html: ADD_CHAT_SVG, onclick: () => opts.onAddChat(f.id) }) : null,
                       );
                       return li;
