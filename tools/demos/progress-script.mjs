@@ -54,7 +54,7 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
     const start = (name, description, { type = "task", mode = "background", model = "gpt-5.6-terra" } = {}) => {
         const toolCallId = `toolu_${++n}`;
         const agentId = `agent-${n}`;
-        tasks.set(toolCallId, { type: "agent", id: agentId, toolCallId, displayName: name, description, status: "running", agentType: type, executionMode: mode, model, startedAt: new Date().toISOString() });
+        tasks.set(toolCallId, { type: "agent", id: agentId, toolCallId, displayName: name, description, status: "running", agentType: type, executionMode: mode, model, startedAt: new Date().toISOString(), activeStartedAt: new Date().toISOString() });
         emit("subagent.started", { toolCallId, agentName: type, agentDisplayName: name, agentDescription: description, agentType: type, model, executionMode: mode }, agentId);
         burst();
         return toolCallId;
@@ -65,6 +65,7 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
         t.status = "running";
         delete t.idleSince;
         t.resumedAt = Date.now();
+        t.activeStartedAt = new Date().toISOString();
         burst();
     };
     const end = (toolCallId, { failed = null, cancelled = false } = {}) => {

@@ -422,3 +422,29 @@ test("collector: owning a doc again (same plan) reads afresh", async () => {
         stopHeartbeat(docId);
     }
 });
+test("runs: a resume starts at activeStartedAt; a helper recovered after a reload never draws its idle time; the oldest run is dropped past the cap", () => {
+    const T = (m, s = 0) => `2026-01-01T00:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.000Z`;
+    const plan = planOf(phase("p1", "active"));
+    let p = P.emptyProgress(0);
+    p = P.reduceProgress(p, started("h1", T(0)), { plan });
+    p = P.reduceProgress(p, { type: "subagent.completed", timestamp: T(1), agentId: "a-h1", data: { toolCallId: "h1" } }, { plan });
+    // resumed at 00:30, first seen by a read at 00:30:30
+    p = P.applyTasks(p, { tasks: [{ type: "agent", id: "a-h1", toolCallId: "h1", status: "running", startedAt: T(0), activeStartedAt: T(30) }] }, { plan, readAt: Date.parse(T(30, 30)) });
+    assert.deepEqual(p.helpers[0].spans, [[T(0), T(1)], [T(30), null]]);
+    // recovered after a reload: running since its latest resume, or idle with 3 min of activity in total
+    const q = P.applyTasks(P.emptyProgress(0), { tasks: [
+        { type: "agent", id: "a2", toolCallId: "h2", status: "running", startedAt: T(0), activeStartedAt: T(40) },
+        { type: "agent", id: "a3", toolCallId: "h3", status: "idle", startedAt: T(0), idleSince: T(50), activeTimeMs: 3 * 60_000 },
+    ] }, { plan, readAt: Date.parse(T(55)) });
+    assert.deepEqual(q.helpers.map((h) => h.spans), [[[T(40), null]], [[T(47), T(50)]]]);
+    assert.equal(q.helpers[0].startedAt, T(0), "the helper keeps its real start");
+    // past SPANS_MAX runs, the oldest goes (its idle gap is never filled in)
+    let r = P.reduceProgress(P.emptyProgress(0), started("h4", T(0)), { plan });
+    for (let i = 1; i <= P.SPANS_MAX + 2; i++) {
+        r = P.reduceProgress(r, { type: "subagent.completed", timestamp: new Date(Date.parse(T(0)) + i * 10_000 - 5_000).toISOString(), agentId: "a-h4", data: { toolCallId: "h4" } }, { plan });
+        r = P.applyTasks(r, { tasks: [{ type: "agent", id: "a-h4", toolCallId: "h4", status: "running", startedAt: T(0), activeStartedAt: new Date(Date.parse(T(0)) + i * 10_000).toISOString() }] }, { plan, readAt: Date.parse(T(0)) + i * 10_000 + 100 });
+    }
+    const sp = r.helpers[0].spans;
+    assert.equal(sp.length, P.SPANS_MAX);
+    for (const [s, e] of sp.slice(0, -1)) assert.equal(Date.parse(e) - Date.parse(s), 5_000, "every kept run is its own 5 s");
+});

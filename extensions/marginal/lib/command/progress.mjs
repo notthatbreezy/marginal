@@ -12,7 +12,7 @@ import { atomicWriteJson } from "../paths.mjs";
 import { commandDir, noteProgressWritten } from "./state.mjs";
 
 export const HELPERS_MAX = 200;
-export const SPANS_MAX = 20;
+export const SPANS_MAX = 50;
 export const TODOS_MAX = 500;
 const TEXT_MAX = 200;
 
@@ -107,10 +107,23 @@ const closeSpan = (h, at) => {
 };
 const openSpan = (h, at) => {
     const sp = [...spansOf(h).map((x) => [...x]), [at, null]];
-    // Past the cap, the two oldest stretches merge (the idle gap between them is lost, nothing else).
-    while (sp.length > SPANS_MAX) sp.splice(0, 2, [sp[0][0], sp[1][1]]);
+    // Past the cap the oldest run is dropped (never merged: that would draw its idle gap as activity).
+    while (sp.length > SPANS_MAX) sp.shift();
     return sp;
 };
+/**
+ * The runs of a helper first seen in tasks.list (missed while reloading). Earlier runs of a resumed helper can't be
+ * placed, so none of its idle time is drawn as activity: a running one shows its current run (activeStartedAt); an
+ * idle one its total active time, ending when it went idle.
+ */
+function recoveredSpans(t, started, status, end) {
+    const active = Date.parse(t.activeStartedAt);
+    if (status === "running") return [[new Date(Number.isFinite(active) && active >= started ? active : started).toISOString(), null]];
+    const e = end ? Date.parse(end) : NaN;
+    if (!Number.isFinite(e)) return [[new Date(started).toISOString(), null]];
+    const s = typeof t.activeTimeMs === "number" && t.activeTimeMs >= 0 ? Math.max(started, e - t.activeTimeMs) : started;
+    return [[new Date(s).toISOString(), new Date(e).toISOString()]];
+}
 /** Keep the newest HELPERS_MAX; note until when older ones were dropped (the lanes say so). */
 function capHelpers(p, helpers) {
     if (helpers.length <= HELPERS_MAX) return { ...p, helpers };
@@ -226,7 +239,7 @@ export function applyTasks(p, result, { plan, readAt = Date.now() } = {}) {
             if (!Number.isFinite(started) || started < since) continue; // earlier work
             const h = { id, agentId: t.id ?? null, name: clip(t.displayName || t.agentType || "helper", 80), description: clip(t.description), type: clip(t.agentType || "", 40), model: t.model ? clip(t.model, 60) : null, mode: t.executionMode ? clip(t.executionMode, 20) : null, startedAt: new Date(started).toISOString(), status, phaseId: matchHelper(plan, started) };
             if (status !== "running" && ended) h.endedAt = iso(ended, readAt);
-            h.spans = [[h.startedAt, h.endedAt ?? null]];
+            h.spans = recoveredSpans(t, started, status, h.endedAt);
             if (status !== "running" && typeof t.activeTimeMs === "number") h.durationMs = t.activeTimeMs;
             helpers = [...(helpers === p.helpers ? helpers.slice() : helpers), h];
             continue;
@@ -240,7 +253,11 @@ export function applyTasks(p, result, { plan, readAt = Date.now() } = {}) {
             // Resumed (a follow-up message to a background helper): the runtime sends no subagent event for it, so this
             // read is the first sign. A new active stretch starts; the idle gap before it holds no lane.
             const { endedAt, durationMs, ...rest } = h;
-            edit(i, { ...rest, status: "running", spans: openSpan(h, new Date(readAt).toISOString()) });
+            // The run began at activeStartedAt (when the runtime gives it and it's after the last run ended), else
+            // about when this read began.
+            const active = Date.parse(t.activeStartedAt);
+            const began = Number.isFinite(active) && active >= Date.parse(h.endedAt) ? active : readAt;
+            edit(i, { ...rest, status: "running", spans: openSpan(h, new Date(began).toISOString()) });
         }
     }
     if (helpers === p.helpers) return p;
