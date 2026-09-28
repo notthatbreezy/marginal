@@ -12,6 +12,7 @@ import { atomicWriteJson } from "../paths.mjs";
 import { commandDir, noteProgressWritten } from "./state.mjs";
 
 export const HELPERS_MAX = 200;
+export const SPANS_MAX = 20;
 export const TODOS_MAX = 500;
 const TEXT_MAX = 200;
 
@@ -19,7 +20,9 @@ const TEXT_MAX = 200;
 /** @typedef {"running"|"done"|"failed"|"cancelled"} HelperStatus */
 /** @typedef {{id:string,title:string,status:TodoStatus,changedAt:string}} Todo */
 /** @typedef {{at:string,phaseId:string|null,skip?:true}} Seen  phaseId null = Other; skip = earlier work, not counted */
-/** @typedef {{id:string,agentId:string|null,name:string,description:string,type:string,model:string|null,mode:string|null,startedAt:string,endedAt?:string,durationMs?:number,status:HelperStatus,phaseId:string|null,error?:string}} Helper */
+/** A helper's active stretches: [start, end|null]. A background helper resumed after idling gets a new one. */
+/** @typedef {[string, string|null]} Span */
+/** @typedef {{id:string,agentId:string|null,name:string,description:string,type:string,model:string|null,mode:string|null,startedAt:string,endedAt?:string,durationMs?:number,status:HelperStatus,phaseId:string|null,error?:string,spans:Span[]}} Helper */
 /** @typedef {{since:string,planId:string|null,intent:{text:string,at:string}|null,todos:{rows:Todo[],at:string}|null,firstSeen:Record<string,Seen>,helpers:Helper[]}} Progress */
 
 /** @returns {Progress} */
@@ -93,6 +96,29 @@ export const matchTodo = (plan, todo, at) => phaseByName(plan, todo.id, todo.tit
 /** Helpers: by timing only (when it started). */
 export const matchHelper = (plan, at) => inPlayAt(plan, at)[0] ?? null;
 
+// ---------- helper spans ----------
+
+/** A helper's spans (older files have none: one span from start to end). */
+export const spansOf = (h) => (Array.isArray(h.spans) && h.spans.length ? h.spans : [[h.startedAt, h.endedAt ?? null]]);
+const closeSpan = (h, at) => {
+    const sp = spansOf(h).map((x) => [...x]);
+    if (sp.at(-1)[1] === null) sp.at(-1)[1] = at;
+    return sp;
+};
+const openSpan = (h, at) => {
+    const sp = [...spansOf(h).map((x) => [...x]), [at, null]];
+    // Past the cap, the two oldest stretches merge (the idle gap between them is lost, nothing else).
+    while (sp.length > SPANS_MAX) sp.splice(0, 2, [sp[0][0], sp[1][1]]);
+    return sp;
+};
+/** Keep the newest HELPERS_MAX; note until when older ones were dropped (the lanes say so). */
+function capHelpers(p, helpers) {
+    if (helpers.length <= HELPERS_MAX) return { ...p, helpers };
+    const gone = helpers.slice(0, helpers.length - HELPERS_MAX);
+    const until = Math.max(Date.parse(p.trimmedUntil ?? 0) || 0, ...gone.map((h) => Date.parse(h.endedAt ?? h.startedAt)));
+    return { ...p, helpers: helpers.slice(-HELPERS_MAX), trimmedUntil: new Date(until).toISOString() };
+}
+
 // ---------- reducers (pure; return the same object when nothing changes) ----------
 
 /** @returns {Progress} */
@@ -120,8 +146,9 @@ export function reduceProgress(p, ev, { plan, now = Date.now() } = {}) {
             startedAt: at,
             status: "running",
             phaseId: matchHelper(plan, Date.parse(at)),
+            spans: [[at, null]],
         };
-        return { ...p, helpers: [...p.helpers, h].slice(-HELPERS_MAX) };
+        return capHelpers(p, [...p.helpers, h]);
     }
     if (ev?.type === "subagent.completed" || ev?.type === "subagent.failed") {
         const id = d.toolCallId ?? null;
@@ -130,7 +157,7 @@ export function reduceProgress(p, ev, { plan, now = Date.now() } = {}) {
         const h = p.helpers[i];
         const status = ev.type === "subagent.failed" ? "failed" : d.cancelled ? "cancelled" : "done";
         if (h.status === status && h.endedAt) return p;
-        const next = { ...h, status, endedAt: at, ...(typeof d.durationMs === "number" ? { durationMs: d.durationMs } : {}), ...(status === "failed" ? { error: clip(String(d.error?.message ?? d.error ?? "failed")) } : {}) };
+        const next = { ...h, status, endedAt: at, spans: closeSpan(h, at), ...(typeof d.durationMs === "number" ? { durationMs: d.durationMs } : {}), ...(status === "failed" ? { error: clip(String(d.error?.message ?? d.error ?? "failed")) } : {}) };
         const helpers = p.helpers.slice();
         helpers[i] = next;
         return { ...p, helpers };
@@ -199,20 +226,25 @@ export function applyTasks(p, result, { plan, readAt = Date.now() } = {}) {
             if (!Number.isFinite(started) || started < since) continue; // earlier work
             const h = { id, agentId: t.id ?? null, name: clip(t.displayName || t.agentType || "helper", 80), description: clip(t.description), type: clip(t.agentType || "", 40), model: t.model ? clip(t.model, 60) : null, mode: t.executionMode ? clip(t.executionMode, 20) : null, startedAt: new Date(started).toISOString(), status, phaseId: matchHelper(plan, started) };
             if (status !== "running" && ended) h.endedAt = iso(ended, readAt);
+            h.spans = [[h.startedAt, h.endedAt ?? null]];
             if (status !== "running" && typeof t.activeTimeMs === "number") h.durationMs = t.activeTimeMs;
             helpers = [...(helpers === p.helpers ? helpers.slice() : helpers), h];
             continue;
         }
         const h = helpers[i];
-        if (h.status === "running" && status !== "running") edit(i, { ...h, status, endedAt: iso(ended, readAt), ...(typeof t.activeTimeMs === "number" && h.durationMs === undefined ? { durationMs: t.activeTimeMs } : {}) });
+        if (h.status === "running" && status !== "running") {
+            const end = iso(ended, readAt);
+            edit(i, { ...h, status, endedAt: end, spans: closeSpan(h, end), ...(typeof t.activeTimeMs === "number" && h.durationMs === undefined ? { durationMs: t.activeTimeMs } : {}) });
+        }
         else if (h.status === "done" && status === "running" && h.endedAt && readAt > Date.parse(h.endedAt)) {
-            // Resumed (a follow-up message to a background helper).
+            // Resumed (a follow-up message to a background helper): the runtime sends no subagent event for it, so this
+            // read is the first sign. A new active stretch starts; the idle gap before it holds no lane.
             const { endedAt, durationMs, ...rest } = h;
-            edit(i, { ...rest, status: "running" });
+            edit(i, { ...rest, status: "running", spans: openSpan(h, new Date(readAt).toISOString()) });
         }
     }
     if (helpers === p.helpers) return p;
-    return { ...p, helpers: helpers.slice(-HELPERS_MAX) };
+    return capHelpers(p, helpers);
 }
 
 // ---------- what the panel shows ----------
@@ -234,7 +266,7 @@ export function summarizeProgress(p, plan, now = Date.now()) {
     let nowLine = null;
     if (p.intent && (!doing.length || intentAt + READ_LAG_MS >= Date.parse(doing[0].changedAt)) && now - intentAt < FRESH_INTENT_MS) nowLine = { text: p.intent.text, source: "intent", at: p.intent.at };
     else if (doing.length) nowLine = { text: doing[0].title, source: "todo", at: doing[0].changedAt, todoId: doing[0].id };
-    const helpers = p.helpers.map((h) => ({ ...h, phaseId: h.phaseId && phaseIds.has(h.phaseId) ? h.phaseId : null }));
+    const helpers = p.helpers.map((h) => ({ ...h, spans: spansOf(h), phaseId: h.phaseId && phaseIds.has(h.phaseId) ? h.phaseId : null }));
     const bucket = () => ({ done: 0, total: 0, now: null, helpers: [] });
     const phases = {};
     for (const id of phaseIds) phases[id] = bucket();
@@ -254,7 +286,7 @@ export function summarizeProgress(p, plan, now = Date.now()) {
         since: p.since,
         now: nowLine,
         todos: counted.length ? { done: counted.filter((t) => t.status === "done").length, total: counted.length, rows: counted, at: p.todos.at } : null,
-        helpers: helpers.length ? { running: helpers.filter((h) => h.status === "running").length, list: helpers } : null,
+        helpers: helpers.length ? { running: helpers.filter((h) => h.status === "running").length, list: helpers, trimmedUntil: p.trimmedUntil ?? null } : null,
         phases,
         other: other.total || other.helpers.length ? other : null,
     };

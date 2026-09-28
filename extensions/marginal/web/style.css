@@ -6839,29 +6839,13 @@ del.sg-del {
 }
 .cc .lanes-h {
     align-self: flex-start;
-    border: none;
-    background: none;
-    padding: 0;
-    font: inherit;
     font-size: 11.5px;
     color: var(--muted);
-    cursor: pointer;
-}
-.cc .lanes-h:disabled {
-    cursor: default;
-    color: var(--muted);
-}
-.cc .lanes-h:not(:disabled):hover {
-    color: var(--fg);
 }
 .cc .lanes {
     display: flex;
     flex-direction: column;
     gap: 3px;
-}
-.cc .lanes.scroll {
-    max-height: 104px;
-    overflow-y: auto;
 }
 .cc .lane {
     position: relative;
@@ -6913,21 +6897,138 @@ del.sg-del {
         animation: none;
     }
 }
-.cc .lanes-sum {
-    display: flex;
-    align-items: flex-end;
-    gap: 1px;
-    height: 12px;
+.cc .helper-lanes {
+    position: relative;
 }
-.cc .lanes-sum i {
-    flex: 1;
+.cc .lane-bar {
+    cursor: default;
+    transition: opacity 0.15s ease;
+}
+.cc .lane-bar:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 1px;
+}
+/* A helper's idle stretch between two runs in the same lane. */
+.cc .lane-idle {
+    position: absolute;
+    top: 50%;
+    height: 0;
+    border-top: 1.5px dotted color-mix(in srgb, var(--muted) 60%, transparent);
+    pointer-events: none;
+}
+/* Hovering one run highlights all of that helper's runs. */
+.cc .helper-lanes.hl-on .lane-bar:not(.hl) {
+    opacity: 0.35;
+}
+.cc .lane-idle.hl {
+    border-top-color: var(--fg);
+}
+/* The overflow lane: extra runs merged into "+n" blocks. */
+.cc .lane-block {
+    background: repeating-linear-gradient(90deg, var(--surface-2) 0 3px, color-mix(in srgb, var(--muted) 18%, var(--bg)) 3px 6px);
+    box-shadow: inset 0 0 0 1px var(--border);
+    animation: none;
+}
+.cc .lane-block.hs-running {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--purple) 60%, transparent);
+    animation: none;
+    background: repeating-linear-gradient(90deg, var(--purple-muted) 0 3px, color-mix(in srgb, var(--purple) 16%, var(--bg)) 3px 6px);
+}
+.cc .lane-block.has-failed {
+    box-shadow: inset 0 0 0 1px var(--red);
+}
+.cc .lane-block span {
+    text-align: center;
+}
+.cc .lane-tip {
+    position: absolute;
+    z-index: 45;
+    max-width: 340px;
+    min-width: 180px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+    font-size: 12px;
+    line-height: 1.45;
+    pointer-events: none;
+}
+.cc .lane-tip[hidden] {
+    display: none;
+}
+.cc .lane-tip .lt-h {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.cc .lane-tip .lt-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.cc .lane-tip .lt-row + .lt-row {
+    margin-top: 3px;
+}
+.cc .lane-tip .lt-row b {
+    overflow: hidden;
+    text-overflow: ellipsis;
     min-width: 0;
-    display: flex;
-    align-items: flex-end;
 }
-.cc .lanes-sum b {
-    display: block;
-    width: 100%;
-    border-radius: 1px;
-    background: color-mix(in srgb, var(--purple) 55%, var(--bg));
+.cc .lane-tip .lt-m {
+    color: var(--muted);
+    margin-left: auto;
+    padding-left: 8px;
+}
+.cc .lane-tip .lt-d {
+    margin-top: 3px;
+    color: var(--muted);
+}
+.cc .lane-tip .lt-err {
+    margin-top: 3px;
+    color: var(--red);
+}
+.cc .lane-tip .hi {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--muted);
+}
+.cc .lane-tip .hi .pulse {
+    width: 6px;
+    height: 6px;
+}
+.cc .lane-tip .hi.hs-done {
+    background: var(--green);
+    border-color: var(--green);
+    color: var(--color-white, #fff);
+}
+.cc .lane-tip .hi.hs-running {
+    border-color: var(--purple);
+}
+.cc .lane-tip .hi.hs-failed {
+    border-color: var(--red);
+    color: var(--red);
+}
+.cc .tl-range {
+    align-self: flex-end;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 11.5px;
+    color: var(--muted);
+    cursor: pointer;
+}
+.cc .tl-range:hover {
+    color: var(--fg);
+}
+.cc .tl-range[hidden] {
+    display: none;
 }

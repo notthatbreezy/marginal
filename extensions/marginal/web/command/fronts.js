@@ -3,6 +3,8 @@ import { h, put } from "../core.js";
 import { buckets } from "./derive.js";
 import { renderLanes } from "./progress.js";
 
+const RECENT_MS = 60 * 60_000;
+
 const ADD_CHAT_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 3.5h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 14v-2.5H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>';
 
 export function spark(values, w = 48, hgt = 14) {
@@ -89,7 +91,8 @@ export function renderFronts(host, rows, opts) {
 /**
  * Timeline: the plan's phases in order (widths ∝ elapsed for done/active; click one for its menu), over a histogram
  * of edits across the same span, stacked by front. The histogram is read-only.
- * o: { plan, fronts, events, from, now, onPhase(phase, el), helpers?, lanesOpen?, onLanes?() }
+ * Runs longer than RECENT_MS show their last hour, with a toggle for the whole run.
+ * o: { plan, fronts, events, from, now, onPhase(phase, el), helpers?, trimmedUntil?, wholeRun?, onRange?() }
  */
 export function renderTimeline(host, o) {
     const now = o.now;
@@ -119,13 +122,21 @@ export function renderTimeline(host, o) {
         host._track = h("div", { class: "track" });
         host._hist = h("div", { class: "hist", role: "img" });
         host._lanes = h("div", { class: "helper-lanes", hidden: true });
-        put(host, host._track, host._hist, host._lanes);
+        host._range = h("button", { class: "tl-range", hidden: true });
+        put(host, host._track, host._hist, host._lanes, host._range);
     }
     const focused = document.activeElement?.closest?.(".seg")?.dataset.phase;
     put(host._track, seg.length ? seg : h("span", { class: "muted" }, "No checkpoints yet"));
     if (focused) host._track.querySelector(`.seg[data-phase="${CSS.escape(focused)}"]`)?.focus();
     const N = 72;
-    const from = Math.min(o.from ?? now, now - 60_000);
+    const whole = Math.min(o.from ?? now, now - 60_000);
+    const long = now - whole > RECENT_MS;
+    const from = long && !o.wholeRun ? now - RECENT_MS : whole;
+    host._range.hidden = !long;
+    if (long) {
+        host._range.textContent = o.wholeRun ? "Whole run · show the last hour" : "Last hour · show the whole run";
+        host._range.onclick = () => o.onRange?.();
+    }
     const b = buckets(o.events, { from, to: now, count: N });
     const totals = new Array(N).fill(0);
     for (const arr of b.values()) arr.forEach((v, i) => (totals[i] += v));
@@ -145,7 +156,7 @@ export function renderTimeline(host, o) {
     );
     host._hist.setAttribute("aria-label", `Edits over time by front, ${hhmm(from)} to now`);
     // Helper agents on the same time axis (observed progress, option D).
-    renderLanes(host._lanes, o.helpers, { from, now, open: o.lanesOpen, onToggle: o.onLanes });
+    renderLanes(host._lanes, o.helpers, { from, now, trimmedUntil: o.trimmedUntil });
 }
 
 export function fmtDur(ms) {

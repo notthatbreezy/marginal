@@ -59,8 +59,22 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
         burst();
         return toolCallId;
     };
+    // Resuming an idle background helper: the runtime sends no subagent event, only a task-list change.
+    const resume = (toolCallId) => {
+        const t = tasks.get(toolCallId);
+        t.status = "running";
+        delete t.idleSince;
+        t.resumedAt = Date.now();
+        burst();
+    };
     const end = (toolCallId, { failed = null, cancelled = false } = {}) => {
         const t = tasks.get(toolCallId);
+        if (t.resumedAt) {
+            // A resumed run ends silently too.
+            Object.assign(t, { status: "idle", idleSince: new Date().toISOString(), activeTimeMs: (t.activeTimeMs ?? 0) + Date.now() - t.resumedAt });
+            delete t.resumedAt;
+            return burst();
+        }
         const durationMs = Date.now() - Date.parse(t.startedAt);
         Object.assign(t, { status: failed ? "failed" : cancelled ? "cancelled" : "idle", idleSince: new Date().toISOString(), activeTimeMs: durationMs });
         if (failed) emit("subagent.failed", { toolCallId, agentName: t.agentType, agentDisplayName: t.displayName, error: failed, durationMs }, t.id);
@@ -71,6 +85,25 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
     return {
         session,
         /** Before any phase is in play: the planning todos, which land in Other. */
+        /** --long: 2.5 hours of earlier helper runs (event times in the past), 1–3 at a time. */
+        seedHistory() {
+            const t0 = Date.now() - 150 * 60_000;
+            let t = t0;
+            let i = 0;
+            while (t < Date.now() - 8 * 60_000) {
+                const n = 1 + (i % 3 === 0 ? 2 : i % 2);
+                for (let k = 0; k < n; k++) {
+                    const toolCallId = `toolu_hist_${i}_${k}`;
+                    const s = t + k * 20_000;
+                    const d = (2 + ((i * 7 + k * 3) % 7)) * 60_000;
+                    const name = ["explore-api", "review-sol", "run-tests", "fix-types", "review-terra", "scan-docs"][(i + k) % 6];
+                    for (const fn of [...handlers]) fn({ type: "subagent.started", timestamp: new Date(s).toISOString(), agentId: `hist-${i}-${k}`, data: { toolCallId, agentDisplayName: `${name}-${i}`, agentDescription: `Earlier run ${i}`, agentType: "task", executionMode: "background" } });
+                    for (const fn of [...handlers]) fn({ type: "subagent.completed", timestamp: new Date(s + d).toISOString(), agentId: `hist-${i}-${k}`, data: { toolCallId, durationMs: d } });
+                }
+                t += (4 + (i % 5)) * 60_000;
+                i++;
+            }
+        },
         async start() {
             setTodos([
                 ["read-issue", "Read the issue and draft the plan", "done"],
@@ -134,6 +167,9 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
             await at(16, () => end(lint, { failed: "lint: 3 errors in executor.ts" }));
             await at(18, () => intent("Waiting on 2 reviewers"));
             await at(22, () => end(rv1));
+            // The orchestrator sends review-sol a follow-up: it runs again (back in its lane) and goes idle again.
+            await at(27, () => resume(rv1));
+            await at(32, () => end(rv1));
             await at(24, () => end(rv2, { cancelled: true }));
             await at(26, () => {
                 status("p2-sched", "done");

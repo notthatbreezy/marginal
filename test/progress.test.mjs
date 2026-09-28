@@ -109,10 +109,12 @@ test("tasks.list: idle means done; a read begun before the end can't reopen; a l
     assert.equal(resumed.helpers[0].status, "running");
     assert.equal(resumed.helpers[0].endedAt, undefined);
     assert.equal(resumed.helpers.length, 1, "shell tasks are ignored");
+    assert.deepEqual(resumed.helpers[0].spans, [["2026-01-01T00:00:01.000Z", "2026-01-01T00:00:09.000Z"], ["2026-01-01T00:00:20.000Z", null]], "a resumed helper starts a new run");
     const idle = { tasks: [{ type: "agent", id: "a-h1", toolCallId: "h1", status: "idle", startedAt: "2026-01-01T00:00:01Z", idleSince: "2026-01-01T00:00:30Z", activeTimeMs: 12000 }] };
     const settled = P.applyTasks(resumed, idle, { plan, readAt: Date.parse("2026-01-01T00:00:31Z") });
     assert.equal(settled.helpers[0].status, "done");
     assert.equal(settled.helpers[0].endedAt, "2026-01-01T00:00:30.000Z");
+    assert.equal(settled.helpers[0].spans[1][1], "2026-01-01T00:00:30.000Z", "the second run ends when it went idle");
 });
 
 test("helpers are capped", () => {
@@ -120,6 +122,7 @@ test("helpers are capped", () => {
     for (let i = 0; i < P.HELPERS_MAX + 20; i++) p = P.reduceProgress(p, started(`h${i}`, new Date(1000 + i).toISOString()), { plan: null });
     assert.equal(p.helpers.length, P.HELPERS_MAX);
     assert.equal(p.helpers[0].id, "h20");
+    assert.ok(Date.parse(p.trimmedUntil) >= 1019, "notes until when older helpers were dropped");
 });
 
 // ---------- phase matching ----------

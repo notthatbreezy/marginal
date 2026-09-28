@@ -4,7 +4,8 @@
 //   --single    every phase in one checkout (the usual case: no fronts, no Worktrees list)   → prints JSON {url, instance, docId, repo, fronts}
 //   --progress  observed progress from a scripted orchestrator session (tools/demos/progress-script.mjs); with
 //               --many-helpers a burst of helpers (the collapsed lane row), with --reload the collector restarts mid-run,
-//               with --stages P2 then goes to review and complete; --bare: helpers only (no todo list, no intent)
+//               with --stages P2 then goes to review and complete; --bare: helpers only (no todo list, no intent);
+//               --long adds 2.5 h of earlier helper runs (the timeline shows the last hour, with a toggle)
 //   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
 //   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
 //   --canned-chat  the Command chat answers with scripted, streamed replies (demos)
@@ -117,6 +118,7 @@ if (!single) {
 const progressOn = args.has("--progress") || args.has("--many-helpers") || args.has("--bare");
 const fake = progressOn ? await (await import("./demos/progress-script.mjs")).createProgressSession({ sessionId: ctx.sessionId, logFile: join(tmp, "progress-emits.jsonl"), bare: args.has("--bare") }) : null;
 if (fake) await fake.start();
+if (fake && args.has("--long")) fake.seedHistory();
 if (single) await call("command_plan", { op: "phase", phaseId: "p1", status: "implementing" });
 else await call("command_plan", { op: "phase", phaseId: "p1", status: "implementing", frontIds: ["orchestrator"] });
 

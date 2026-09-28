@@ -43,7 +43,9 @@ The Command tab shows how the work is going without the orchestrator reporting a
 
 - **Status line** (the instrument strip): `Now: …`, `Todos n / m` and `k helpers running`. The last two open popovers: the todos grouped by phase, and the helpers with their state and time.
 - **Phase cards**: each phase's todo count, its todo in progress as "Now:", and its running helpers. An **Other** card collects what matched no phase.
-- **Helper lanes** under the timeline's histogram, on the same time axis: one bar per helper from start to end (running, done, failed, cancelled). More than three lanes collapse into one row of how many ran at once; click it for the lanes.
+- **Helper lanes** under the timeline's histogram, on the same time axis: one bar per run (running, done, failed, cancelled). A background helper idling between runs holds no lane, so the lanes track how many run at once, not how many there have been; when it's resumed it returns to its lane if that's free (a dotted line joins its runs), and hovering a run highlights all of them. At most four lanes: past that, the extra runs merge into `+n` blocks on the last lane, and hovering one lists what's in it. Runs longer than an hour show their last hour, with a toggle for the whole run; if more than 200 helpers have come and gone, the lanes say from when older ones weren't kept.
+
+Resuming an idle background helper sends no event, so its new run starts when the next task-list read sees it running (within a second or two).
 
 Each todo and helper is matched to a phase once, the first time it's seen, and keeps it: a todo whose id or title starts with a phase id (`p2-wire`, `P2: …`) belongs to that phase; otherwise it belongs to the first phase that was in play (implementing or in review) when the todo was created, or to Other when none was. Helpers match by when they started. Each phase records its stage changes (history in its state), so a blocked or delivered stretch doesn't count as in play even after the phase resumes. A todo that's already done when the Command center first sees it, was created before it started watching and isn't named for a phase is earlier work and isn't counted.
 

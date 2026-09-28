@@ -5,7 +5,7 @@
 //   D  helper lanes under the timeline's histogram
 // `progress` is the server's summary (lib/command/progress.mjs summarizeProgress); absent pieces are null and hidden.
 import { h, put } from "../core.js";
-import { packLanes } from "./derive.js";
+import { capLanes, packLanes } from "./derive.js";
 
 /** 42s · 3m · 1h 5m (seconds matter: helpers often finish in under a minute). */
 export function fmtDur(ms) {
@@ -114,58 +114,103 @@ export function helpersPopover(progress, plan, { now, onClose }) {
 }
 
 // ---------- D · helper lanes ----------
-export const LANES_MAX = 3;
+export const LANES_MAX = 4;
+
+const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const stateIcon = (state) => h("span", { class: `hi hs-${state}` }, state === "running" ? h("span", { class: "pulse" }) : state === "done" ? "✓" : state === "failed" ? "!" : "–");
+/** A run's state: an earlier run of a resumed helper ended with it going idle (done). */
+const runState = (x) => (x.k === (Array.isArray(x.h.spans) && x.h.spans.length ? x.h.spans.length : 1) - 1 ? x.h.status : "done");
 
 /**
- * Helper lanes on the histogram's time axis [from, now]. Up to LANES_MAX lanes; more collapse into one summary row
- * (how many ran at once over time) that expands on click. opts: { from, now, open, onToggle() }
+ * Helper lanes on the histogram's time axis [from, now], one bar per active run: a helper idling between runs holds
+ * no lane, and its next run returns to its lane when that's free (a dotted line joins them). At most LANES_MAX lanes;
+ * past that, the extra runs merge into "+n" blocks on the last lane. Hovering (or focusing) a bar or block shows what's
+ * in it, and a bar highlights all of that helper's runs. opts: { from, now, trimmedUntil? }
  */
-export function renderLanes(host, helpers, { from, now, open, onToggle }) {
-    const list = (helpers ?? []).filter((x) => (x.endedAt ? Date.parse(x.endedAt) : now) >= from);
-    host.hidden = !list.length;
-    if (!list.length) return void put(host);
+export function renderLanes(host, helpers, { from, now, trimmedUntil = null }) {
+    const all = helpers ?? [];
+    const width = host.clientWidth || host.parentElement?.clientWidth || 800;
     const span = Math.max(1, now - from);
+    // Bars in a lane stay ~6 px apart whatever the time span, so lanes track real overlap.
+    const gap = (6 / width) * span;
+    const packed = packLanes(all, now, gap, from);
+    const shownIds = new Set(packed.flat().map((x) => x.h.id));
+    host.hidden = !shownIds.size;
+    if (!shownIds.size) return void put(host);
+    const { lanes, overflow } = capLanes(packed, LANES_MAX, gap);
     const pos = (t) => Math.max(0, Math.min(100, ((t - from) / span) * 100));
-    // Bars in one lane keep a little room between them (3% of the axis) so their names stay readable.
-    const lanes = packLanes(list, now, span * 0.03);
-    const bar = (x) => {
-        const s = Math.max(from, Date.parse(x.startedAt));
-        const e = x.endedAt ? Date.parse(x.endedAt) : now;
-        const left = pos(s);
-        const width = Math.max(0.6, pos(e) - left);
-        const dur = helperTime(x, now);
-        return h("b", { class: `lane-bar hs-${x.status}`, style: `left:${left}%;width:${width}%`, title: `${x.name} · ${HELPER_LABEL[x.status]}${dur ? ` · ${dur}` : ""}${x.phaseId ? ` · ${x.phaseId.toUpperCase()}` : ""}${x.description ? `\n${x.description}` : ""}${x.error ? `\n${x.error}` : ""}` }, h("span", {}, x.name));
+    const running = all.filter((x) => shownIds.has(x.id) && x.status === "running").length;
+    const label = `${plural(shownIds.size, "helper")}${running ? ` · ${running} running` : ""}`;
+    const trimmed = trimmedUntil && Date.parse(trimmedUntil) >= from ? h("span", { class: "muted" }, ` · earlier helpers not kept (before ${hhmm(trimmedUntil)})`) : null;
+
+    const tip = h("div", { class: "lane-tip", role: "tooltip", hidden: true });
+    const showTip = (el, content) => {
+        put(tip, content);
+        tip.hidden = false;
+        const r = el.getBoundingClientRect();
+        const hr = host.getBoundingClientRect();
+        const w = tip.offsetWidth;
+        tip.style.left = `${Math.max(0, Math.min(r.left - hr.left + r.width / 2 - w / 2, hr.width - w))}px`;
+        tip.style.bottom = `${hr.bottom - r.top + 6}px`;
     };
-    const running = list.filter((x) => x.status === "running").length;
-    const label = `${plural(list.length, "helper")}${running ? ` · ${running} running` : ""}`;
-    const many = lanes.length > LANES_MAX;
-    if (many && !open) {
-        // Concurrency over time: how many helpers were running in each slice.
-        const N = 72;
-        const counts = new Array(N).fill(0);
-        for (const x of list) {
-            const s = Math.max(from, Date.parse(x.startedAt));
-            const e = x.endedAt ? Date.parse(x.endedAt) : now;
-            for (let i = Math.floor(((s - from) / span) * N); i <= Math.min(N - 1, Math.floor(((e - from) / span) * N)); i++) {
-                if (i < 0) continue;
-                counts[i]++;
-            }
-        }
-        const mx = Math.max(1, ...counts);
-        put(
-            host,
-            h("button", { class: "lanes-h", title: "Show one lane per helper", "aria-expanded": "false", onclick: onToggle }, "▸ ", label, h("span", { class: "muted" }, ` · at most ${mx} at once`)),
-            h("div", { class: "lanes-sum", role: "img", "aria-label": `${label}; at most ${mx} at once` }, counts.map((c, i) => h("i", c ? { title: `${c} running` } : {}, c ? h("b", { style: `height:${(c / mx) * 12}px` }) : null))),
-        );
-        return;
-    }
+    const hideTip = () => (tip.hidden = true);
+    const hl = (id, on) => {
+        host.classList.toggle("hl-on", on);
+        for (const el of host.querySelectorAll(`[data-h="${CSS.escape(id)}"]`)) el.classList.toggle("hl", on);
+    };
+    // The timeline is rebuilt several times a second: remember what's hovered or focused and restore it after.
+    const hover = (el, content, id, key) => {
+        el.dataset.key = key;
+        el._on = () => (showTip(el, content()), id && hl(id, true));
+        const on = () => ((host._hover = key), el._on());
+        const off = () => ((host._hover = null), hideTip(), id && hl(id, false));
+        el.addEventListener("mouseenter", on);
+        el.addEventListener("mouseleave", off);
+        el.addEventListener("focus", on);
+        el.addEventListener("blur", off);
+        return el;
+    };
+    const runLine = (x) => {
+        const runs = Array.isArray(x.h.spans) && x.h.spans.length ? x.h.spans.length : 1;
+        const state = runState(x);
+        return h("div", { class: "lt-row" }, stateIcon(state), h("b", {}, x.h.name), h("span", { class: "lt-m" }, `${HELPER_LABEL[state]} · ${fmtDur(x.e - x.s)}${runs > 1 ? ` · run ${x.k + 1} of ${runs}` : ""}`), x.h.phaseId ? phaseTag(x.h.phaseId) : null);
+    };
+    const bar = (x) => {
+        const state = runState(x);
+        const left = pos(x.s);
+        const el = h("b", { class: `lane-bar hs-${state}`, "data-h": x.h.id, tabindex: "0", "aria-label": `${x.h.name}, ${HELPER_LABEL[state]}`, style: `left:${left}%;width:${Math.max(0.6, pos(x.e) - left)}%` }, h("span", {}, x.h.name));
+        return hover(el, () => [runLine(x), x.h.description ? h("div", { class: "lt-d" }, x.h.description) : null, state === "failed" && x.h.error ? h("div", { class: "lt-err" }, x.h.error) : null], x.h.id, `${x.h.id}:${x.k}`);
+    };
+    const laneEl = (items) => {
+        const kids = [];
+        items.forEach((x, i) => {
+            const prev = items[i - 1];
+            // The same helper's previous run in this lane: a dotted line over the idle gap between them.
+            if (prev && prev.h.id === x.h.id && prev.k === x.k - 1) kids.push(h("i", { class: "lane-idle", "data-h": x.h.id, style: `left:${pos(prev.e)}%;width:${Math.max(0, pos(x.s) - pos(prev.e))}%`, "aria-hidden": "true" }));
+            kids.push(bar(x));
+        });
+        return h("div", { class: "lane" }, kids);
+    };
+    const blockEl = (b) => {
+        const ids = new Set(b.items.map((x) => x.h.id));
+        const live = b.items.some((x) => runState(x) === "running");
+        const bad = b.items.some((x) => runState(x) === "failed");
+        const left = pos(b.s);
+        const el = h("b", { class: `lane-bar lane-block${live ? " hs-running" : ""}${bad ? " has-failed" : ""}`, tabindex: "0", "aria-label": `${ids.size} more helpers`, style: `left:${left}%;width:${Math.max(0.6, pos(b.e) - left)}%` }, h("span", {}, `+${ids.size}`));
+        const rows = [...b.items].sort((p, q) => (runState(q) === "running") - (runState(p) === "running") || p.s - q.s);
+        return hover(el, () => [h("div", { class: "lt-h" }, `${plural(ids.size, "more helper")} · ${hhmm(b.s)}–${b.e >= now - 1000 ? "now" : hhmm(b.e)}`), rows.slice(0, 8).map(runLine), rows.length > 8 ? h("div", { class: "lt-d" }, `and ${rows.length - 8} more`) : null], null, `block:${b.items[0].h.id}:${b.items[0].k}`);
+    };
+    const focused = host.contains(document.activeElement) ? document.activeElement.dataset?.key : null;
     put(
         host,
-        h("button", { class: "lanes-h", title: many ? "Collapse into one row" : "Helper agents the orchestrator started, on the same time axis", "aria-expanded": String(!!(many && open)), onclick: many ? onToggle : null, disabled: many ? null : "" }, many ? "▾ " : "", label),
-        h("div", { class: `lanes${many ? " scroll" : ""}` }, lanes.map((items) => h("div", { class: "lane" }, items.map(bar)))),
+        h("div", { class: "lanes-h", title: "Helper agents the orchestrator started, on the timeline's time axis: one bar per run, and idle time holds no lane" }, label, overflow ? h("span", { class: "muted" }, ` · ${LANES_MAX} lanes, the rest grouped`) : null, trimmed),
+        h("div", { class: "lanes" }, lanes.map(laneEl), overflow ? h("div", { class: "lane lane-over" }, overflow.map(blockEl)) : null),
+        tip,
     );
+    const find = (key) => key && [...host.querySelectorAll("[data-key]")].find((el) => el.dataset.key === key);
+    find(focused)?.focus({ preventScroll: true });
+    find(host._hover)?._on();
 }
-
 /** C · the progress line on a phase card, and the Other card for unmatched todos. */
 export function phaseProgress(b) {
     if (!b || (!b.total && !b.helpers.length)) return null;

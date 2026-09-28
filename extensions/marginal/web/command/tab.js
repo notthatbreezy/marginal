@@ -616,9 +616,10 @@ function render() {
         now,
         onPhase: (p, el) => openPhaseMenu(p, el, st),
         helpers: cc.data.progress?.helpers?.list,
-        lanesOpen: cc.ui.lanesOpen,
-        onLanes: () => {
-            cc.ui.lanesOpen = !cc.ui.lanesOpen;
+        trimmedUntil: cc.data.progress?.helpers?.trimmedUntil,
+        wholeRun: cc.ui.wholeRun,
+        onRange: () => {
+            cc.ui.wholeRun = !cc.ui.wholeRun;
             schedule(true);
         },
     });

@@ -100,17 +100,52 @@ export function relTime(ms, now = Date.now()) {
     return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
-/** Greedy interval packing: each helper goes in the first lane free at its start. */
-export function packLanes(helpers, now, gapMs = 4000) {
-    const lanes = [];
-    for (const x of [...helpers].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))) {
-        const s = Date.parse(x.startedAt);
-        const e = x.endedAt ? Date.parse(x.endedAt) : now;
-        const lane = lanes.find((l) => l.end + gapMs <= s);
-        if (lane) {
-            lane.items.push(x);
-            lane.end = e;
-        } else lanes.push({ end: e, items: [x] });
+/**
+ * Lane packing by active span, not by helper: a helper idling between runs holds no lane, so lanes track how many ran
+ * at once. Each span goes in the lane its helper last used when that lane is free (a resumed helper returns to its
+ * lane), else the first free lane, else a new one. `gapMs` keeps bars in a lane apart. Spans ending before `from` are
+ * left out. Returns lanes of { h, s, e, k } (k: the span's index in its helper's spans).
+ */
+export function packLanes(helpers, now, gapMs = 0, from = -Infinity) {
+    const spans = [];
+    for (const h of helpers) {
+        const list = Array.isArray(h.spans) && h.spans.length ? h.spans : [[h.startedAt, h.endedAt ?? null]];
+        list.forEach(([s, e], k) => {
+            const S = Date.parse(s);
+            const E = e ? Date.parse(e) : now;
+            if (Number.isFinite(S) && E >= from) spans.push({ h, s: S, e: Math.max(S, E), k });
+        });
+    }
+    spans.sort((a, b) => a.s - b.s || a.e - b.e);
+    const lanes = []; // { end, items }
+    const home = new Map(); // helper id -> lane index it last used
+    for (const x of spans) {
+        const free = (l) => l.end + gapMs <= x.s;
+        let li = home.get(x.h.id);
+        if (li === undefined || !free(lanes[li])) li = lanes.findIndex(free);
+        if (li < 0) li = lanes.push({ end: -Infinity, items: [] }) - 1;
+        lanes[li].items.push(x);
+        lanes[li].end = x.e;
+        home.set(x.h.id, li);
     }
     return lanes.map((l) => l.items);
+}
+
+/**
+ * At most `max` lanes. When more are needed, the first max-1 stay as they are and every run in the rest merges into
+ * blocks on one overflow lane (runs that overlap, or sit closer than `gapMs`, share a block). Returns
+ * { lanes: items[][], overflow: [{ s, e, items }] | null }.
+ */
+export function capLanes(lanes, max = 4, gapMs = 0) {
+    if (lanes.length <= max) return { lanes, overflow: null };
+    const rest = lanes.slice(max - 1).flat().sort((a, b) => a.s - b.s);
+    const blocks = [];
+    for (const x of rest) {
+        const b = blocks.at(-1);
+        if (b && x.s <= b.e + gapMs) {
+            b.items.push(x);
+            b.e = Math.max(b.e, x.e);
+        } else blocks.push({ s: x.s, e: x.e, items: [x] });
+    }
+    return { lanes: lanes.slice(0, max - 1), overflow: blocks };
 }

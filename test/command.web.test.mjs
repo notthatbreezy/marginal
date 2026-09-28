@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 const { buildTree, weigh, squarify, findNode } = await import("../extensions/marginal/web/command/squarify.js");
-const { changesAt, velocity, autoWindow, buckets, heatOf, packLanes } = await import("../extensions/marginal/web/command/derive.js");
+const { changesAt, velocity, autoWindow, buckets, heatOf, packLanes, capLanes } = await import("../extensions/marginal/web/command/derive.js");
 
 test("squarify: areas proportional to value, inside the rect, no overlap", () => {
     const items = [6, 6, 4, 3, 2, 2, 1].map((v, i) => ({ id: i, value: v }));
@@ -123,9 +123,29 @@ test("layoutFromView normalizes pins/monitors; viewChoices merges agent, phase a
     const ch = views.viewChoices(state, { savedViews: [{ id: "my-view-1", title: "Mine" }] });
     assert.deepEqual(ch.map((v) => [v.id, v.origin, v.phaseId ?? null]), [["p2v", "agent", "p2"], ["agent2", "agent", null], ["my-view-1", "user", null]]);
 });
-test("packLanes: helpers share a lane only when they don't overlap (plus the gap); running ones end now", () => {
-    const x = (id, s, e) => ({ id, startedAt: new Date(s).toISOString(), ...(e ? { endedAt: new Date(e).toISOString() } : {}) });
-    const lanes = packLanes([x("c", 12_000, 20_000), x("a", 0, 5_000), x("b", 2_000, 9_000), x("d", 6_000, null)], 30_000, 1000);
-    assert.deepEqual(lanes.map((l) => l.map((h) => h.id)), [["a", "d"], ["b", "c"]]);
-    assert.equal(packLanes([x("a", 0, 5_000), x("b", 5_500, 9_000)], 10_000, 1000).length, 2, "closer than the gap: a new lane");
+test("packLanes: by run, not by helper; idle time holds no lane; a resumed helper returns to its lane when free", () => {
+    const T = (s) => new Date(s * 1000).toISOString();
+    const x = (id, ...spans) => ({ id, startedAt: T(spans[0][0]), spans: spans.map(([s, e]) => [T(s), e === null ? null : T(e)]) });
+    const ids = (lanes) => lanes.map((l) => l.map((r) => `${r.h.id}${r.k}`));
+    // a runs 0–10, idles, runs again 40–50; b runs 12–30 in a's idle time; c overlaps b at 20–35.
+    const lanes = packLanes([x("a", [0, 10], [40, 50]), x("b", [12, 30]), x("c", [20, 35])], 60_000, 1000);
+    assert.deepEqual(ids(lanes), [["a0", "b0", "a1"], ["c0"]], "b uses a's lane while a idles; a comes back to it");
+    // a comes back while its lane is busy: it takes the first free lane
+    const busy = packLanes([x("a", [0, 10], [25, 50]), x("c", [11, 40]), x("b", [12, 20])], 60_000, 1000);
+    assert.deepEqual(ids(busy), [["a0", "c0"], ["b0", "a1"]], "c holds a's lane, so a goes to the free one");
+    // a running run ends now; runs ending before `from` are left out
+    assert.equal(packLanes([x("a", [0, 10]), x("b", [5, null])], 100_000, 0, 20_000).flat().map((r) => r.h.id).join(), "b");
+    // older helpers without spans: one run from start to end
+    assert.equal(packLanes([{ id: "o", startedAt: T(0), endedAt: T(5) }], 10_000).flat()[0].e, 5000);
+    // closer than the gap: a new lane
+    assert.equal(packLanes([x("a", [0, 5]), x("b", [5.5, 9])], 10_000, 1000).length, 2);
+});
+
+test("capLanes: at most 4 lanes; the rest merge into blocks on the last one", () => {
+    const run = (id, s, e) => ({ h: { id }, s, e, k: 0 });
+    const lanes = [[run("a", 0, 100)], [run("b", 0, 100)], [run("c", 0, 100)], [run("d", 10, 20), run("f", 60, 70)], [run("e", 15, 30)], [run("g", 65, 90)]];
+    assert.deepEqual(capLanes(lanes.slice(0, 4), 4), { lanes: lanes.slice(0, 4), overflow: null });
+    const { lanes: kept, overflow } = capLanes(lanes, 4, 5);
+    assert.equal(kept.length, 3);
+    assert.deepEqual(overflow.map((b) => [b.s, b.e, b.items.map((r) => r.h.id).join("")]), [[10, 30, "de"], [60, 90, "fg"]]);
 });
