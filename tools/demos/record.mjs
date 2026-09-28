@@ -252,7 +252,9 @@ async function command() {
         await rec.caption("Live: each front's edits light up the file map");
         await rec.watch(async () => false, { max: 3000, every: 260, frameMs: 260 });
         await rec.caption("The orchestrator explains each checkpoint with a walkthrough");
-        await rec.click(page.locator(".cc .walk-reopen"), { settle: 700 });
+        await rec.click(page.locator(".cc .walk-reopen"), { settle: 500 });
+        await rec.frame(900);
+        await rec.click(page.locator(".cc .walk-menu .wm-open").first(), { settle: 700 });
         await rec.frame(1800);
         for (let k = 0; k < 3; k++) {
             await rec.caption(k ? "" : "Each stop zooms the map to the code it's about", k ? undefined : "→");
