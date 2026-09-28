@@ -20,7 +20,7 @@ export function startCommandTour(o = {}) {
                     p({ class: "guide-muted" }, "About a minute. Use ", kbd("→"), " and ", kbd("←"), " to move, ", kbd("Esc"), " to stop."),
                 ],
             },
-            { id: "init", when: () => !plan(), target: ".cc .cc-init", title: "Start here", body: () => p("Nothing is being tracked yet. ", h("b", {}, "Initialize command center"), " asks this panel's Copilot session to read the doc and the branch, set the plan and register its worktrees. Add a goal to steer it.") },
+            { id: "init", when: () => !plan(), target: ".cc .cc-init", title: "Start here", body: () => p("Nothing is being tracked yet. ", h("b", {}, "Initialize command center"), " asks this panel's Copilot session to read the doc and the branch, set the plan and watch the checkout it builds in. Add a goal to steer it.") },
             {
                 id: "strip",
                 target: ".cc .strip",
@@ -28,17 +28,18 @@ export function startCommandTour(o = {}) {
                 title: "Instruments",
                 body: () => [
                     p("The lamp tells you what the orchestrator is doing: ", h("b", {}, "Working"), ", ", h("b", {}, "Waiting on you"), " (with its question) or ", h("b", {}, "Complete"), ". It goes grey when the orchestrator is offline."),
+                    p("Beside it, progress read from the session: ", h("b", {}, "Now"), " (what it's doing), its ", h("b", {}, "todos"), " done / total and the ", h("b", {}, "helpers"), " running. Click either count for the list. The agent never reports any of it."),
                     p("Churn is lines added plus removed per minute. The window scales with session age; pick one to override it."),
                 ],
             },
-            { id: "offplan", when: plan, target: ".cc button.offplan:not([hidden])", placement: "bottom", title: "Off-plan edits", body: () => p("Files a front touched outside the checkpoints it's working on get a yellow hatch. Click the chip to show only those; click again for everything.") },
+            { id: "offplan", when: plan, target: ".cc button.offplan:not([hidden])", placement: "bottom", title: "Off-plan edits", body: () => p("Files changed outside what the phases being worked on deliver get a yellow hatch. Click the chip to show only those; click again for everything.") },
             {
                 id: "map",
                 when: plan,
                 target: ".cc .stage",
                 title: "The territory map",
                 body: () => [
-                    p("Every file in the repository, sized by lines. Changed files take their front's colour and warm up with churn; a ring pings when one changes. Dashed outlines are the plan's footprint, blue is the active checkpoint."),
+                    p("Every file in the repository, sized by lines. Changed files are coloured and warm up with churn; a ring pings when one changes. Dashed outlines are the plan's footprint, blue marks the active phase's files."),
                     ul(["Hover a tile for who changed it, how much and when"], ["Double-click a folder to zoom in; ", kbd("⌫"), " zooms out"], [kbd("P"), " over a tile pins it (drawn 3× larger); ", kbd("M"), " opens a monitor on its folder"], ["Big changed files list their changed functions"]),
                 ],
             },
@@ -50,8 +51,8 @@ export function startCommandTour(o = {}) {
                 placement: "bottom",
                 title: "Views and follow",
                 body: () => [
-                    p("A view is a saved zoom, pins and monitors. The orchestrator can suggest one per checkpoint (✦); with follow on ", h("span", { class: "guide-ic" }, "◎"), ", it applies as each checkpoint starts."),
-                    p("Change the layout and follow holds off for that checkpoint; ", h("b", {}, "Return to suggested"), " brings it back, ", h("b", {}, "Save view"), " keeps yours."),
+                    p("A view is a saved zoom, pins and monitors. The orchestrator can suggest one per phase (✦); with follow on ", h("span", { class: "guide-ic" }, "◎"), ", it applies as each phase starts. The pin button lists what's pinned."),
+                    p("Change the layout and follow holds off for that phase; ", h("b", {}, "Return to suggested"), " brings it back, ", h("b", {}, "Save view"), " keeps yours."),
                 ],
             },
             { id: "dock", when: plan, target: ".cc .dock:not([hidden])", placement: "top", title: "Monitors", body: () => p("A monitor follows one folder: a feed of edits as they land (click a row for the file's current diff) or a table of every changed file. Close it with ✕.") },
@@ -61,15 +62,15 @@ export function startCommandTour(o = {}) {
                 target: ".cc .rail-fronts",
                 placement: "left",
                 title: "Phases",
-                body: () => [p("One card per phase: its stage (planned, implementing, in review, blocked with why, complete), what it delivers, what it has changed so far and its recent pace."), ul(["Hover a card to preview its files on the map"], ["Click it to show only that phase's files; click again for all"], ["The chat bubble adds the phase to the Command chat"]), p({ class: "guide-muted" }, "With several worktrees at once (parallel sessions, stacked PRs), a Worktrees list appears below.")],
+                body: () => [p("One card per phase: its stage (planned, implementing, in review, blocked with why, complete), what it delivers, what it has changed so far and its recent pace. Its todos done / total, the todo it's on and its running helpers show there too; ", h("b", {}, "Other"), " collects todos that match no phase."), ul(["Hover a card to preview its files on the map"], ["Click it to show only that phase's files; click again for all"], ["The chat bubble adds the phase to the Command chat"]), p({ class: "guide-muted" }, "With several worktrees at once (parallel sessions, stacked PRs), a Worktrees list appears below.")],
             },
             {
                 id: "timeline",
                 when: plan,
                 target: ".cc .timeline .track",
                 placement: "top",
-                title: "Checkpoints",
-                body: () => [p("The plan's phases in order: ✓ done, blue active, grey still to come. Click one to apply its view or ask the orchestrator about it."), p("Under them, edits over the same time, stacked by front: where the work happened and how busy it was.")],
+                title: "Timeline",
+                body: () => [p("The plan's phases in order: ✓ done, blue active, grey still to come. Click one to apply its view or ask the orchestrator about it."), p("Under them, edits over the same time, and one bar per helper run (hover for what it was). An idle helper holds no lane; past four lanes, the rest merge into a +n block.")],
             },
             {
                 id: "chat",
@@ -78,10 +79,10 @@ export function startCommandTour(o = {}) {
                 title: "Talk to the orchestrator",
                 body: () => [
                     p("The Command chat goes to the session running the plan and remembers the conversation when you close it."),
-                    ul(["Point at things first: the ", h("b", {}, "+"), " on a hovered tile, a front's chat bubble, or a checkpoint's menu adds them as chips"], ["Ctrl-click tiles to select several (Shift-click for a range), then ", h("b", {}, "Add to chat"), " in the header"], ["Ask “walk me through the last checkpoint” for a guided walkthrough of what changed"]),
+                    ul(["Point at things first: the ", h("b", {}, "+"), " on a hovered tile, a phase's chat bubble, or a phase's menu on the timeline adds them as chips"], ["Ctrl-click tiles to select several (Shift-click for a range), then ", h("b", {}, "Add to chat"), " in the header"], ["Ask “walk me through P2” for a guided walkthrough of what a phase delivered"]),
                 ],
             },
-            { id: "walk", target: ".cc .walk-reopen", placement: "bottom", title: "Walkthroughs", body: () => p("When the orchestrator explains a change, it opens as a walkthrough beside the map: one stop per idea, with the diff, and the map zooming to each stop's files. This button brings back one you closed.") },
+            { id: "walk", target: ".cc .walk-reopen", placement: "bottom", title: "Walkthroughs", body: () => p("When the orchestrator explains a change, it opens as a walkthrough beside the map: one stop per idea, with the diff, and the map zooming to each stop's files. This button lists them all: reopen one, or see which you've reviewed.") },
             {
                 id: "done",
                 title: "That's the tour",

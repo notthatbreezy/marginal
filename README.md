@@ -2,7 +2,7 @@
 
 **Code-linked docs and a live Command center for GitHub Copilot.**
 
-Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions). Copilot draws structured, reviewable explanations of your code as RFC-style **docs**: prose with sequence and flow diagrams, call-stack diffs, database schema views and verified code peeks. You can comment on any paragraph, diagram or line range in the margin, and the feedback goes straight back to the agent. When Copilot implements a multi-step plan across several worktrees, a doc's **Command** tab becomes a live mission wall: a territory map of the repository lights up as each worktree edits files.
+Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions). Copilot draws structured, reviewable explanations of your code as RFC-style **docs**: prose with sequence and flow diagrams, call-stack diffs, database schema views and verified code peeks. You can comment on any paragraph, diagram or line range in the margin, and the feedback goes straight back to the agent. When Copilot implements a multi-step plan, a doc's **Command** tab becomes a live mission wall: the plan's phases, a territory map of the repository that lights up as files change, and what the orchestrator and its helper agents are doing right now.
 
 > **Status: alpha.** It depends on the Copilot SDK's canvas extension surface, which is marked **experimental** and may change between Copilot releases.
 
@@ -41,18 +41,18 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 
 ![The Command center](docs/images/command-center.png)
 
-- **Territory map:** every file in the repository, sized by lines of code. Changed files take their worktree's colour and warm with churn, and a ring pings on each change. Dashed outlines show the plan's footprint and blue shows the active checkpoint. Edits outside the plan get a yellow hatch.
-- **Phases:** the plan's deliverables, each with its stage (planned, implementing, in review, blocked with a reason, complete), what it builds, what it has changed so far and its recent pace. Click one to show only its files on the map. The orchestrator gives the plan the worktree it builds in; with several worktrees at once (parallel sessions, stacked PRs) they're listed too, as Worktrees.
-- **Progress, observed:** what the orchestrator is doing now, how far through its todo list it is and which helper agents it's waiting on, in the instrument strip, on each phase and as lanes on the timeline. It comes from the session's own events and todo list; the orchestrator never reports it.
-- **Timeline:** the phases in order over a histogram of edits. Click a phase to apply its suggested view or ask the orchestrator about it.
-- **Views, follow, pins and monitors:** the agent can suggest a view per checkpoint, and it applies automatically while you follow. You can pin areas to draw them 3× larger, or open live diff-feed monitors on folders.
-- **Checkpoint walkthroughs:** ask "walk me through the last checkpoint" to get a stepper with one stop per idea, each with its diff. The map zooms and badges each stop's files. The Command chat docks under the walkthrough, and Copilot revises or expands stops in place when you ask about them.
-- **Command chat:** a persistent chat with the orchestrating session. Point at tiles, fronts, checkpoints or walkthrough stops to attach them as focus chips.
+- **Phases:** the plan's deliverables, each with its stage (planned, implementing, in review, blocked with a reason, complete), what it builds, what it has changed so far and its recent pace. Click one to show only its files on the map. The orchestrator builds the phases in one checkout, which the canvas watches; with several at once (parallel sessions, stacked PRs) they're listed too, as Worktrees.
+- **Progress, observed:** the instrument strip shows what the orchestrator is doing now, its todos done / total and how many helper agents are running; click either count for the list. Each phase card shows its todos, the one it's on and its running helpers, and an **Other** card collects todos that match no phase. All of it comes from the session's own events and todo list: the orchestrator never reports progress.
+- **Territory map:** every file in the repository, sized by lines of code. Changed files are coloured and warm with churn, and a ring pings on each change. Dashed outlines show the plan's footprint and blue marks the active phase's files. Edits outside the plan get a yellow hatch.
+- **Timeline:** the phases in order over a histogram of edits, and under it one bar per helper-agent run. A helper that sits idle holds no lane and returns to one when it's resumed; past four lanes, the extra runs merge into a `+n` block that lists them on hover. Click a phase to apply its suggested view or ask the orchestrator about it.
+- **Views, follow, pins and monitors:** the orchestrator can suggest a view for each phase, and it applies automatically while you follow. Pin areas to draw them 3× larger (the pin button lists them), or open live diff-feed monitors on folders.
+- **Walkthroughs:** ask "walk me through P2" (or "what's new since my last review") to get a stepper with one stop per idea, each with its diff. The map zooms and badges each stop's files. The Command chat docks under the walkthrough, and Copilot revises or expands stops in place when you ask about them. Every walkthrough is kept in a list, where you can reopen one and see which you've reviewed.
+- **Command chat:** a persistent chat with the orchestrating session. Point at tiles, phases or walkthrough stops to attach them as focus chips.
 - **Guided tour:** press **?** (or click the **?** in the map header) for a one-minute tour of all of the above.
 
-**Watch the plan land, then get walked through it.** Fronts' edits light up the map live. A checkpoint walkthrough zooms the map to each stop's code, and you can ask the orchestrator about any stop.
+**Watch the plan land, then get walked through it.** Edits light up the map live while the orchestrator works through its todos. A walkthrough zooms the map to each stop's code, and you can ask the orchestrator about any stop.
 
-![Live edits on the map, a checkpoint walkthrough stepping through its stops, and a question to the orchestrator](docs/images/demo-command.webp)
+![Live edits on the map, a walkthrough stepping through its stops, and a question to the orchestrator](docs/images/demo-command.webp)
 
 | Walkthrough | Guided tour |
 |---|---|
@@ -71,7 +71,7 @@ copilot plugin install marginal@marginal
 
 Then restart the Copilot app, or ask Copilot to reload extensions. The canvas registers as **Marginal** (canvas id `marginal`). Update with `copilot plugin update marginal`, remove with `copilot plugin uninstall marginal`.
 
-To stay on a tagged release instead of the latest `main`, add the marketplace at a tag, e.g. `copilot plugin marketplace add notthatbreezy/marginal#v0.1.0`. Releases and their notes are on the [releases page](https://github.com/notthatbreezy/marginal/releases); see [CHANGELOG.md](CHANGELOG.md).
+To stay on a tagged release instead of the latest `main`, add the marketplace at a tag, e.g. `copilot plugin marketplace add notthatbreezy/marginal#v0.6.0`. Releases and their notes are on the [releases page](https://github.com/notthatbreezy/marginal/releases); see [CHANGELOG.md](CHANGELOG.md).
 
 Your docs live in `~/.copilot/marginal/` (or `$COPILOT_HOME/marginal/`), outside the plugin, so updating or reinstalling keeps them.
 
@@ -90,22 +90,26 @@ Ask Copilot things like:
 - "Explain my branch in Marginal."
 - "Sketch how checkout calls the payment service on the Marginal scratchpad."
 - "Organize the Diff tab into file groups."
+- "Start a Marginal doc for this issue and put the plan in it."
 
-The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses` for file groups, `command`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens` (file groups).
+The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses` for file groups, `command`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens` (file groups). The same actions work without an open panel through the `marginal` tool, and `export` writes a doc (or one heading's part) to a Markdown file, diagrams included as text, for handing to people or helper agents.
 
 **Command center.** Open a doc that has a repository target and switch to the **Command** tab.
 
-- Click **Initialize command center**, optionally describing the goal. This session reads the doc and the branch, sets a plan, and registers the worktrees being edited.
-- Alternatively, ask the agent to follow the `command` instructions topic when it starts a multi-step implementation.
+- Click **Initialize command center**, optionally describing the goal. This session reads the doc and the branch, sets a plan of phases, and gives the canvas the checkout it builds in.
+- Or ask the agent to follow the `command` instructions topic when it starts a multi-step implementation.
+
+The orchestrator moves each phase through its stages as the work goes; everything else (edits, its todos, its helper agents) the canvas observes on its own.
 
 The protocol is described in [docs/command-center.md](docs/command-center.md).
 
 ## How it works
 
 - The plugin (`plugin.json`) ships one canvas extension, `extensions/marginal/`. Its `extension.mjs` joins the Copilot session with `joinSession()` and declares the canvas and its actions with `createCanvas()`. Each panel is served by a local HTTP server bound to `127.0.0.1`; every request needs a random per-panel token.
-- Docs, pins and the Command center's state and event log live in `~/.copilot/marginal/` and never leave your machine. Set `MARGINAL_DATA_DIR` to store them elsewhere.
-- Code is read from your local repositories with `git` at pinned commits. The Command center polls each registered worktree with `git diff` and `git ls-files`, running at most four git processes at once and passing `--no-optional-locks`.
-- **Checkpoint snapshots:** when a checkpoint finishes without a commit, the worktree's current contents are captured as a hidden commit under `refs/marginal/checkpoints/<doc>/…` in your repository. This uses a temporary index; your branch, HEAD, index and files are never touched. The refs are removed when the doc is deleted.
+- Docs, pins and the Command center's state, event log and progress live in `~/.copilot/marginal/` and never leave your machine. Set `MARGINAL_DATA_DIR` to store them elsewhere.
+- Code is read from your local repositories with `git` at pinned commits. The Command center polls each watched worktree with `git diff` and `git ls-files`, running at most four git processes at once and passing `--no-optional-locks`.
+- Progress comes from the orchestrator's session: its intent and helper-agent events, plus two read-only runtime calls for its todo list and its tasks, debounced and sent to the panel at most once a second.
+- **Checkpoint snapshots:** when a phase completes without a commit, the worktree's current contents are captured as a hidden commit under `refs/marginal/checkpoints/<doc>/…` in your repository. This uses a temporary index; your branch, HEAD, index and files are never touched. The refs are removed when the doc is deleted.
 - Only one Copilot session drives a doc's Command state at a time. That session holds a lease, claimed when it sets the plan. Other sessions can read the state but can't change it.
 - The browser UI is plain ES modules (`extensions/marginal/web/`) with no framework and no build step.
 
@@ -116,7 +120,7 @@ npm test                 # unit + integration tests (node:test, real git repos i
 npm run dev              # a standalone Command tab with a fake repo, worktrees and scripted edits; prints a URL
 ```
 
-`tools/devserver.mjs` also takes `--walk` (show a walkthrough), `--revising` (a rejected walkthrough), `--not-owner` (read-only chat) and `--empty` (no plan yet). After changing the extension, reload extensions in the Copilot app. See [CONTRIBUTING.md](CONTRIBUTING.md).
+`tools/devserver.mjs` also takes `--single` (every phase in one checkout), `--progress` (a scripted orchestrator's todos, intent and helpers; add `--many-helpers`, `--long`, `--reload`, `--stages` or `--bare` for other cases), `--walk` (show a walkthrough), `--revising` (a rejected walkthrough), `--canned-chat` (scripted Command chat replies), `--not-owner` (read-only chat) and `--empty` (no plan yet). `tools/demos/record.mjs` records the README's images and demos headlessly. After changing the extension, reload extensions in the Copilot app. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits and license
 

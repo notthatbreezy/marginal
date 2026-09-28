@@ -1,6 +1,7 @@
 // Records the README demo animations headlessly (nothing takes focus) into docs/images/demo-*.webp.
 //   npm i --no-save playwright-core sharp gifenc pngjs
-//   node tools/demos/record.mjs [docs-comment] [docs-inspect] [command] [stills] [--gif] [--sheet] [--out=dir]
+//   node tools/demos/record.mjs [docs-comment] [docs-inspect] [command] [stills] [readme] [--gif] [--sheet] [--out=dir]
+//   readme: the README's stills (doc.png, command-center.png, walkthrough.png, guided-tour.png)
 // Doc demos run a private server over a COPY of your Marginal data (MARGINAL_DATA_DIR in a temp dir) with a canned
 // chat, so nothing reaches a real Copilot session. They use DEMO_DOC, which must exist in your data and whose repo
 // must be registered; the Command demo uses tools/devserver.mjs's fictional "relay" repo and needs nothing.
@@ -31,18 +32,18 @@ const browser = await chromium.launch({ channel: process.env.DEMO_BROWSER ?? "ms
 const temps = [];
 let lastPage = null;
 
-async function newPage(url, ready, size = { width: W, height: H }) {
+async function newPage(url, ready, size = { width: W, height: H }, { toc = false } = {}) {
     const page = await browser.newPage({ viewport: size });
     page.on("pageerror", (e) => console.error("page error:", e.message));
-    await page.addInitScript(({ css }) => {
-        localStorage.setItem("marginal.toc", "closed"); // keep recordings about the feature they show
+    await page.addInitScript(({ css, toc }) => {
+        localStorage.setItem("marginal.toc", toc ? "open" : "closed"); // keep recordings about the feature they show
         addEventListener("DOMContentLoaded", () => {
             document.documentElement.dataset.colorMode = "light";
             const st = document.createElement("style");
             st.textContent = css;
             document.head.prepend(st);
         });
-    }, { css: theme });
+    }, { css: theme, toc });
     await page.addInitScript(overlayScript);
     lastPage = page;
     await page.goto(url);
@@ -226,32 +227,89 @@ async function stills() {
     await page.close();
 }
 
+// ---------------------------------------------------------------- the fixture devserver (Command tab)
+async function devserver(flags) {
+    const proc = spawn(process.execPath, [join(root, "tools", "devserver.mjs"), ...flags, "--seconds=240"], { windowsHide: true, stdio: ["ignore", "pipe", "inherit"] });
+    proc.info = await new Promise((resolve, reject) => {
+        let buf = "";
+        proc.stdout.on("data", (x) => {
+            buf += x;
+            const line = buf.split("\n").find((l) => l.startsWith("{"));
+            if (line) resolve(JSON.parse(line));
+        });
+        proc.on("exit", (c) => reject(new Error(`devserver exited ${c}`)));
+        setTimeout(() => reject(new Error("devserver did not start")), 90_000);
+    });
+    temps.push(proc.info.tmp);
+    return proc;
+}
+
+// ---------------------------------------------------------------- README stills
+async function readme() {
+    const SIZE = { width: 1440, height: 900 };
+    const hide = "#demo-cursor,#demo-caption{display:none!important}";
+    const { url } = await docs();
+    const doc = await newPage(url, "#main .block", { width: 1280, height: 800 }, { toc: true });
+    await doc.addStyleTag({ content: hide });
+    await doc.screenshot({ path: join(out, "doc.png") });
+    await doc.close();
+    const dev = await devserver(["--single", "--progress", "--walk"]);
+    try {
+        const t0 = Date.now();
+        const page = await newPage(`${dev.info.url}&tab=command`, ".cc .map-head", SIZE);
+        await page.addStyleTag({ content: hide });
+        await page.evaluate(() => localStorage.setItem("marginal.cc.tourSeen", "1"));
+        // The walkthrough the devserver shows.
+        await page.waitForSelector(".cc .walk", { timeout: 15_000 });
+        await page.waitForTimeout(1500);
+        await page.mouse.move(2, 896); // off every control, so nothing shows a hover state
+        await page.screenshot({ path: join(out, "walkthrough.png") });
+        await page.locator(".cc .walk .tour-close").click();
+        await page.waitForTimeout(400);
+        if (await page.locator(".cc .tour-nudge-x").isVisible()) await page.locator(".cc .tour-nudge-x").click();
+        // Mid-run: phases, progress in the strip and on the cards, helper lanes (about 20 s into the progress script).
+        const wait = 21_000 - (Date.now() - t0);
+        if (wait > 0) await page.waitForTimeout(wait);
+        await page.mouse.move(2, 896);
+        await page.screenshot({ path: join(out, "command-center.png") });
+        await tourStill(page, /phase/i, join(out, "guided-tour.png"));
+        console.log(`readme stills → ${out}: doc.png, walkthrough.png, command-center.png, guided-tour.png`);
+        await page.close();
+    } finally {
+        dev.kill();
+    }
+}
+/** Open the Command tour and step to the first stop whose title matches. */
+async function tourStill(page, title, file) {
+    await page.locator(".cc .tour-help").click();
+    await page.waitForSelector("#guide-title", { timeout: 10_000 });
+    await page.waitForTimeout(700);
+    for (let i = 0; i < 14; i++) {
+        const t = await page.evaluate(() => document.querySelector("#guide-title")?.textContent ?? "");
+        if (title.test(t)) break;
+        await page.keyboard.press("ArrowRight");
+        await page.waitForTimeout(450);
+    }
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: file });
+}
+
 // ---------------------------------------------------------------- Command center demo: fixture devserver
 async function command() {
-    const dev = spawn(process.execPath, [join(root, "tools", "devserver.mjs"), "--edits", "--walk", "--canned-chat", "--seconds=240"], { windowsHide: true, stdio: ["ignore", "pipe", "inherit"] });
+    const dev = await devserver(["--single", "--progress", "--edits", "--walk", "--canned-chat"]);
+    const info = dev.info;
     try {
-        const info = await new Promise((resolve, reject) => {
-            let buf = "";
-            dev.stdout.on("data", (x) => {
-                buf += x;
-                const line = buf.split("\n").find((l) => l.startsWith("{"));
-                if (line) resolve(JSON.parse(line));
-            });
-            dev.on("exit", (c) => reject(new Error(`devserver exited ${c}`)));
-            setTimeout(() => reject(new Error("devserver did not start")), 90_000);
-        });
-        temps.push(info.tmp);
         const page = await newPage(`${info.url}&tab=command`, ".cc .map-head");
         const rec = await createRecorder(page, { width: W, height: H });
         await page.evaluate(() => localStorage.setItem("marginal.cc.tourSeen", "1"));
         if (await page.locator(".cc .walk .tour-close").count()) await page.locator(".cc .walk .tour-close").click();
         if (await page.locator(".cc .tour-nudge-x").count()) await page.locator(".cc .tour-nudge-x").click();
         await page.waitForTimeout(600);
-        await rec.caption("The plan, and every front working on it");
-        await rec.frame(1400);
-        await rec.caption("Live: each front's edits light up the file map");
+        await rec.caption("The plan's phases, and what the orchestrator is doing now");
+        await rec.frame(1600);
+        await rec.caption("Live: edits light up the file map as the work happens");
         await rec.watch(async () => false, { max: 3000, every: 260, frameMs: 260 });
-        await rec.caption("The orchestrator explains each checkpoint with a walkthrough");
+        await rec.caption("The orchestrator explains what a phase delivered with a walkthrough");
         await rec.click(page.locator(".cc .walk-reopen"), { settle: 500 });
         await rec.frame(900);
         await rec.click(page.locator(".cc .walk-menu .wm-open").first(), { settle: 700 });
@@ -281,6 +339,7 @@ try {
     if (want("docs-inspect")) await docsInspect();
     if (want("command")) await command();
     if (want("stills")) await stills();
+    if (want("readme")) await readme();
 } catch (e) {
     console.error(e);
     await lastPage?.screenshot({ path: join(out, "demo-failure.png") }).catch(() => {});

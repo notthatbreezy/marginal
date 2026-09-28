@@ -179,6 +179,8 @@ else {
     await call("command_front", { op: "status", id: "tests", status: "review", note: "Sol Fast + Terra reviewing" });
 }
 
+// The runner worktree's front: "work" when every phase is built in one checkout.
+const runnerFront = single ? "work" : "runner";
 if (args.has("--walk") || args.has("--revising")) {
     const policy = `import type { RunError } from "../errors";
 
@@ -212,7 +214,7 @@ export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): 
         id: "p1-p2",
         title: "What changed from Scaffold to Retry policy",
         from: { phaseId: "p1" },
-        to: { ref: "live", frontId: "runner" },
+        to: { ref: "live", frontId: runnerFront },
         stops: [
             { id: "policy", title: "A policy decides whether and when to retry", category: "feature", explanation: "`RetryPolicy` is plain data plus one predicate. `nextDelay()` returns **null** when the run should fail now (attempts exhausted, or the error isn't transient), otherwise an exponential delay capped at `maxDelayMs`.", ranges: [{ file: "src/runner/retry/policy.ts", startLine: 3, endLine: 22 }] },
             { id: "executor", title: "The executor asks the policy instead of throwing", category: "feature", explanation: "Before P2 any step failure bubbled straight out of `handleFailure`. Now it asks `nextDelay()` and requeues the job with jittered backoff; `null` still throws.", ranges: [{ file: "src/runner/executor.ts", startLine: 9, endLine: 17 }] },
@@ -224,7 +226,7 @@ export function nextDelay(policy: RetryPolicy, attempt: number, err: RunError): 
     if (args.has("--revising")) await rw({ ...walkthrough, stops: [{ ...walkthrough.stops[0], ranges: [{ file: "src/runner/retry/polcy.ts", startLine: 1, endLine: 5 }] }] });
     else {
         // An earlier walkthrough, so the list has history (the one in view is the newer one below).
-        const early = await rw({ id: "first-look", title: "First look at the retry policy", from: { ref: "base" }, to: { ref: "live", frontId: "runner" }, stops: [{ id: "delay", title: "nextDelay decides when to give up", category: "feature", explanation: "One function owns the retry decision.", ranges: [{ file: "src/runner/retry/policy.ts", symbol: "nextDelay" }] }] });
+        const early = await rw({ id: "first-look", title: "First look at the retry policy", from: { ref: "base" }, to: { ref: "live", frontId: runnerFront }, stops: [{ id: "delay", title: "nextDelay decides when to give up", category: "feature", explanation: "One function owns the retry decision.", ranges: [{ file: "src/runner/retry/policy.ts", symbol: "nextDelay" }] }] });
         if (!early.ok) throw new Error(`walkthrough: ${JSON.stringify(early.issues)}`);
         const r = await rw(walkthrough);
         if (!r.ok) throw new Error(`walkthrough: ${JSON.stringify(r.issues)}`);

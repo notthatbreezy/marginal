@@ -33,11 +33,11 @@ Thanks for helping. Marginal is small on purpose: no build step, no npm dependen
 
 ## Demo animations
 
-The README's animated WebPs are recorded headlessly by `tools/demos/record.mjs`, which drives the real UI with Playwright and a scripted chat (`tools/demos/canned-chat.mjs`), so no Copilot session is involved. It is stop-motion: a frame is captured only when something changes and held for as long as a viewer needs, so waiting never shows.
+The README's animated WebPs and screenshots are recorded headlessly by `tools/demos/record.mjs`, which drives the real UI with Playwright and a scripted chat (`tools/demos/canned-chat.mjs`), so no Copilot session is involved. It is stop-motion: a frame is captured only when something changes and held for as long as a viewer needs, so waiting never shows.
 
 ```sh
 npm i --no-save playwright-core sharp gifenc pngjs
-node tools/demos/record.mjs                 # everything; or name some: docs-comment docs-inspect command stills
+node tools/demos/record.mjs                 # everything; or name some: docs-comment docs-inspect command stills readme
 node tools/demos/record.mjs --sheet --out=/tmp/demos   # review a take: contact sheet of the held frames
 ```
 
