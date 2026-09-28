@@ -58,7 +58,7 @@ export function renderProgressLine(host, progress, opts) {
                   "button",
                   { class: `pg-pill pg-helpers${running ? " on" : ""}`, title: "Helper agents the orchestrator started", "aria-haspopup": "dialog", onclick: (e) => opts.onHelpers(e.currentTarget) },
                   running ? h("span", { class: "pulse" }) : null,
-                  running ? `${plural(running, "helper")} running` : plural(p.helpers.list.length, "helper"),
+                  running ? `${plural(running, "helper")} running` : `None running · ${plural(p.helpers.list.length, "helper")}`,
               )
             : null,
     );

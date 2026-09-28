@@ -269,3 +269,90 @@ test("collector: ignores docs this session doesn't own", async () => {
         stopHeartbeat(docId);
     }
 });
+
+// ---------- review fixes ----------
+test("matching by time: a todo created (or helper started) while P1 was in play stays on P1 even if read after P2 began", () => {
+    const t = (s) => `2026-01-01T00:00:${String(s).padStart(2, "0")}Z`;
+    const plan = planOf(
+        { ...phase("p1"), state: { status: "done", startedAt: t(0), since: t(20) } },
+        { ...phase("p2"), state: { status: "active", startedAt: t(20), since: t(20) } },
+        { ...phase("p3"), state: { status: "blocked", startedAt: t(30), since: t(40), note: "x" } },
+    );
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(10))), ["p1"]);
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(35))), ["p2", "p3"], "a blocked phase was in play until it got blocked");
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(45))), ["p2"]);
+    let p = P.emptyProgress(0);
+    p = P.applyTodos(p, { rows: [{ id: "wire", title: "Wire", status: "pending", createdAt: "2026-01-01 00:00:10" }] }, { plan, now: Date.parse(t(25)) });
+    assert.equal(p.firstSeen.wire.phaseId, "p1");
+    p = P.applyTasks(p, { tasks: [{ type: "agent", id: "a1", toolCallId: "h1", status: "running", startedAt: t(12) }] }, { plan, readAt: Date.parse(t(25)) });
+    assert.equal(p.helpers[0].phaseId, "p1", "rebuilt after a reload: matched by its start");
+    p = P.reduceProgress(p, started("h2", t(22)), { plan, now: Date.parse(t(22)) });
+    assert.equal(p.helpers[1].phaseId, "p2");
+});
+
+test("collector: overlapping reads apply in order (a slow older result can't land after a newer one)", async () => {
+    const docId = "progress-doc-3";
+    claim(docId, "s-3");
+    writeState(docId, (s) => {
+        s.plan = planOf(phase("p1", "active"));
+    });
+    const replies = [];
+    const s = fakeSession("s-3", { todos: () => ({ rows: [] }), tasks: () => ({ tasks: [] }) });
+    // First read is slow and returns an old snapshot; the second is fast and newer.
+    let call = 0;
+    s.rpc.plan.readSqlTodosWithDependencies = () => {
+        const n = ++call;
+        replies.push(n);
+        const slow = n === 2; // the read after the first signal: slow, and older than the one after it
+        return new Promise((r) => setTimeout(() => r({ rows: [{ id: "p1-a", title: "A", status: slow ? "pending" : "done" }] }), slow ? 150 : 5));
+    };
+    const c = attachProgress(s, { flushMs: 20, todoWait: 1, taskWait: 1, maxWait: 5 });
+    try {
+        await c.refresh();
+        await sleep(30);
+        s.emit({ type: "session.todos_changed" });
+        await sleep(30); // the slow read is in flight
+        s.emit({ type: "session.todos_changed" });
+        await sleep(400);
+        assert.equal(P.readProgress(docId).todos.rows[0].status, "done");
+    } finally {
+        c.stop();
+        stopHeartbeat(docId);
+    }
+});
+
+test("collector: a flush scheduled before the lease moved doesn't write; a new plan starts progress afresh", async () => {
+    const docId = "progress-doc-4";
+    claim(docId, "s-4");
+    writeState(docId, (s) => {
+        s.plan = planOf(phase("p1", "active"));
+    });
+    const s = fakeSession("s-4", { todos: () => ({ rows: [] }), tasks: () => ({ tasks: [] }) });
+    const c = attachProgress(s, { flushMs: 200, todoWait: 1, taskWait: 1, maxWait: 5 });
+    try {
+        await c.refresh();
+        await sleep(250);
+        s.emit(started("h1", new Date().toISOString()));
+        await sleep(30);
+        assert.equal(P.readProgress(docId).helpers.length, 1);
+        s.emit(started("h2", new Date().toISOString())); // flush pending (throttled)
+        const { atomicWriteJson } = await import("../extensions/marginal/lib/paths.mjs");
+        const { commandDir } = await import("../extensions/marginal/lib/command/state.mjs");
+        const lease = JSON.parse(readFileSync(join(commandDir(docId), "owner.json"), "utf8"));
+        atomicWriteJson(join(commandDir(docId), "owner.json"), { ...lease, sessionId: "someone-else" });
+        await sleep(300);
+        assert.equal(P.readProgress(docId).helpers.length, 1, "the old owner's pending flush was dropped");
+        atomicWriteJson(join(commandDir(docId), "owner.json"), { ...lease, heartbeatAt: new Date().toISOString() });
+        writeState(docId, (st) => {
+            st.plan = { ...planOf(phase("q1", "active")), id: "other-plan" };
+        });
+        s.emit(started("h3", new Date().toISOString()));
+        await sleep(300);
+        const fresh = P.readProgress(docId);
+        assert.equal(fresh.planId, "other-plan");
+        assert.deepEqual(fresh.helpers.map((h) => h.id), ["h3"]);
+    } finally {
+        c.stop();
+        stopHeartbeat(docId);
+    }
+});

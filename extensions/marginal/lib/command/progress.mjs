@@ -20,10 +20,10 @@ const TEXT_MAX = 200;
 /** @typedef {{id:string,title:string,status:TodoStatus,changedAt:string}} Todo */
 /** @typedef {{at:string,phaseId:string|null,skip?:true}} Seen  phaseId null = Other; skip = earlier work, not counted */
 /** @typedef {{id:string,agentId:string|null,name:string,description:string,type:string,model:string|null,mode:string|null,startedAt:string,endedAt?:string,durationMs?:number,status:HelperStatus,phaseId:string|null,error?:string}} Helper */
-/** @typedef {{since:string,intent:{text:string,at:string}|null,todos:{rows:Todo[],at:string}|null,firstSeen:Record<string,Seen>,helpers:Helper[]}} Progress */
+/** @typedef {{since:string,planId:string|null,intent:{text:string,at:string}|null,todos:{rows:Todo[],at:string}|null,firstSeen:Record<string,Seen>,helpers:Helper[]}} Progress */
 
 /** @returns {Progress} */
-export const emptyProgress = (now = Date.now()) => ({ since: new Date(now).toISOString(), intent: null, todos: null, firstSeen: {}, helpers: [] });
+export const emptyProgress = (now = Date.now(), planId = null) => ({ since: new Date(now).toISOString(), planId, intent: null, todos: null, firstSeen: {}, helpers: [] });
 
 const clip = (s, n = TEXT_MAX) => (typeof s === "string" ? s.trim().slice(0, n) : "");
 const iso = (t, fallback) => {
@@ -49,6 +49,25 @@ export function inPlay(plan) {
     return (plan?.phases ?? []).filter((p) => p.state?.status === "active" || p.state?.status === "review").map((p) => p.id);
 }
 
+/**
+ * Phases in play at time `t`, reconstructed from each phase's startedAt and its current stage's since: an active or
+ * in-review phase from its start on, a done or blocked one from its start until it got there. Matching by when a todo
+ * was created (or a helper started) rather than when a read happened to land keeps a P1 todo on P1 even if the read
+ * arrives after P2 began (or after a reload). Without `t`, the phases in play now.
+ */
+export function inPlayAt(plan, t) {
+    if (!Number.isFinite(t)) return inPlay(plan);
+    return (plan?.phases ?? [])
+        .filter((p) => {
+            const st = p.state ?? {};
+            const start = Date.parse(st.startedAt ?? st.since);
+            if (st.status === "active" || st.status === "review") return !Number.isFinite(start) || start <= t;
+            if (st.status === "done" || st.status === "blocked") return Number.isFinite(start) && start <= t && t < Date.parse(st.since);
+            return false;
+        })
+        .map((p) => p.id);
+}
+
 /** By name: an id or title that starts with a phase id followed by a separator (`p2-…`, `P2: …`). Longest id wins. */
 export function phaseByName(plan, ...texts) {
     const ids = (plan?.phases ?? []).map((p) => p.id).sort((a, b) => b.length - a.length);
@@ -62,10 +81,10 @@ export function phaseByName(plan, ...texts) {
     return null;
 }
 
-/** Todos: by name, else the first phase in play, else Other (null). */
-export const matchTodo = (plan, todo) => phaseByName(plan, todo.id, todo.title) ?? inPlay(plan)[0] ?? null;
-/** Helpers: by timing only. */
-export const matchHelper = (plan) => inPlay(plan)[0] ?? null;
+/** Todos: by name, else the first phase in play when it was created (`at`), else Other (null). */
+export const matchTodo = (plan, todo, at) => phaseByName(plan, todo.id, todo.title) ?? inPlayAt(plan, at)[0] ?? null;
+/** Helpers: by timing only (when it started). */
+export const matchHelper = (plan, at) => inPlayAt(plan, at)[0] ?? null;
 
 // ---------- reducers (pure; return the same object when nothing changes) ----------
 
@@ -93,7 +112,7 @@ export function reduceProgress(p, ev, { plan, now = Date.now() } = {}) {
             mode: d.executionMode ? clip(d.executionMode, 20) : null,
             startedAt: at,
             status: "running",
-            phaseId: matchHelper(plan),
+            phaseId: matchHelper(plan, Date.parse(at)),
         };
         return { ...p, helpers: [...p.helpers, h].slice(-HELPERS_MAX) };
     }
@@ -137,7 +156,7 @@ export function applyTodos(p, snapshot, { plan, now = Date.now() } = {}) {
             const named = phaseByName(plan, id, title);
             const created = sqliteTime(r.createdAt);
             const earlier = !named && status === "done" && Number.isFinite(created) && created < since;
-            firstSeen[id] = earlier ? { at, phaseId: null, skip: true } : { at, phaseId: named ?? matchTodo(plan, { id, title }) };
+            firstSeen[id] = earlier ? { at, phaseId: null, skip: true } : { at, phaseId: named ?? matchTodo(plan, { id, title }, Number.isFinite(created) ? created + 999 : now) }; // createdAt has whole seconds
         }
     }
     const ids = new Set(rows.map((t) => t.id));
@@ -171,7 +190,7 @@ export function applyTasks(p, result, { plan, readAt = Date.now() } = {}) {
         if (i < 0) {
             const started = Date.parse(t.startedAt);
             if (!Number.isFinite(started) || started < since) continue; // earlier work
-            const h = { id, agentId: t.id ?? null, name: clip(t.displayName || t.agentType || "helper", 80), description: clip(t.description), type: clip(t.agentType || "", 40), model: t.model ? clip(t.model, 60) : null, mode: t.executionMode ? clip(t.executionMode, 20) : null, startedAt: new Date(started).toISOString(), status, phaseId: matchHelper(plan) };
+            const h = { id, agentId: t.id ?? null, name: clip(t.displayName || t.agentType || "helper", 80), description: clip(t.description), type: clip(t.agentType || "", 40), model: t.model ? clip(t.model, 60) : null, mode: t.executionMode ? clip(t.executionMode, 20) : null, startedAt: new Date(started).toISOString(), status, phaseId: matchHelper(plan, started) };
             if (status !== "running" && ended) h.endedAt = iso(ended, readAt);
             if (status !== "running" && typeof t.activeTimeMs === "number") h.durationMs = t.activeTimeMs;
             helpers = [...(helpers === p.helpers ? helpers.slice() : helpers), h];

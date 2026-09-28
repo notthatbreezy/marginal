@@ -37,6 +37,8 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
         lastFlush.set(docId, now());
         const p = mem.get(docId);
         if (!p || stopped) return;
+        // The lease may have moved (or the doc gone) since this was scheduled: only the owner writes progress.json.
+        if (!isOwner(docId, session.sessionId) || !readState(docId).plan) return void mem.delete(docId);
         try {
             writeProgress(docId, p);
             emitCommand({ documentId: docId, kind: "progress", progress: summarizeProgress(p, readState(docId).plan, now()) });
@@ -53,8 +55,14 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
     const update = (fn) => {
         for (const docId of owned()) {
             const plan = readState(docId).plan;
-            const cur = mem.get(docId) ?? readProgress(docId) ?? emptyProgress(now());
-            if (!mem.has(docId)) mem.set(docId, cur);
+            let cur = mem.get(docId) ?? readProgress(docId) ?? emptyProgress(now(), plan.id);
+            // Progress belongs to one plan: a different plan on this doc starts afresh (a revision of it doesn't).
+            // Files from before plan ids were recorded adopt the current plan.
+            if (cur.planId !== plan.id) cur = cur.planId == null ? { ...cur, planId: plan.id } : emptyProgress(now(), plan.id);
+            if (mem.get(docId) !== cur) {
+                mem.set(docId, cur);
+                scheduleFlush(docId);
+            }
             let next = cur;
             try {
                 next = fn(cur, plan);
@@ -66,21 +74,44 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
         }
     };
 
-    const readTodos = async () => {
+    // One read of each kind at a time, applied in order: a slow older result can't land after a newer one. A signal
+    // during a read queues exactly one more.
+    const serial = (fn) => {
+        let running = null;
+        let again = false;
+        return async () => {
+            if (running) {
+                again = true;
+                return running;
+            }
+            running = (async () => {
+                do {
+                    again = false;
+                    await fn();
+                } while (again && !stopped);
+            })();
+            try {
+                await running;
+            } finally {
+                running = null;
+            }
+        };
+    };
+    const readTodos = serial(async () => {
         if (stopped || !owned().length) return;
         try {
             const snap = await session.rpc.plan.readSqlTodosWithDependencies();
             update((p, plan) => applyTodos(p, snap, { plan, now: now() }));
         } catch {}
-    };
-    const readTasks = async () => {
+    });
+    const readTasks = serial(async () => {
         if (stopped || !owned().length) return;
         const readAt = now();
         try {
             const res = await session.rpc.tasks.list();
             update((p, plan) => applyTasks(p, res, { plan, readAt }));
         } catch {}
-    };
+    });
     const todosSoon = debounce(readTodos, todoWait, maxWait);
     const tasksSoon = debounce(readTasks, taskWait, maxWait);
 
@@ -101,9 +132,11 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
 
     const off = session.on((ev) => {
         try {
-            noticeNew();
-            if (EVENTS.has(ev.type)) update((p, plan) => reduceProgress(p, ev, { plan, now: now() }));
-            else if (ev.type === "session.todos_changed") todosSoon();
+            // Only the few event types progress uses touch the lease (every session event would otherwise read it).
+            if (EVENTS.has(ev.type)) {
+                noticeNew();
+                update((p, plan) => reduceProgress(p, ev, { plan, now: now() }));
+            } else if (ev.type === "session.todos_changed") todosSoon();
             else if (ev.type === "session.background_tasks_changed") tasksSoon();
         } catch {}
     });

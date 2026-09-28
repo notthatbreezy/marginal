@@ -24,7 +24,10 @@ const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; cha
 const MAX_BODY = 256 * 1024;
 const progressView = (docId) => {
     try {
-        return summarizeProgress(readProgress(docId), readState(docId).plan);
+        const p = readProgress(docId);
+        const plan = readState(docId).plan;
+        // Progress recorded for an earlier plan on this doc isn't this plan's.
+        return p && p.planId && p.planId !== plan?.id ? null : summarizeProgress(p, plan);
     } catch {
         return null;
     }
