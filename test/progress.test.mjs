@@ -356,3 +356,41 @@ test("collector: a flush scheduled before the lease moved doesn't write; a new p
         stopHeartbeat(docId);
     }
 });
+test("matching by time with stage history: a blocked or delivered gap isn't in play, even after the phase resumes", () => {
+    const t = (s) => `2026-01-01T00:00:${String(s).padStart(2, "0")}Z`;
+    const plan = planOf(
+        { ...phase("p1"), state: { status: "active", startedAt: t(0), since: t(30), history: [["active", t(0)], ["blocked", t(10)], ["active", t(20)], ["done", t(25)], ["review", t(30)]] } },
+        { ...phase("p2"), state: { status: "active", startedAt: t(12), since: t(12), history: [["active", t(12)]] } },
+    );
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(5))), ["p1"]);
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(15))), ["p2"], "P1 was blocked then");
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(22))), ["p1", "p2"]);
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(27))), ["p2"], "P1 was delivered then");
+    assert.deepEqual(P.inPlayAt(plan, Date.parse(t(40))), ["p1", "p2"], "reopened for review");
+});
+
+test("collector: a replaced plan gets fresh reads without waiting for another event", async () => {
+    const docId = "progress-doc-5";
+    claim(docId, "s-5");
+    writeState(docId, (s) => {
+        s.plan = { ...planOf(phase("p1", "active")), id: "one" };
+    });
+    const s = fakeSession("s-5", { todos: () => ({ rows: [{ id: "x", title: "X", status: "pending" }] }), tasks: () => ({ tasks: [] }) });
+    const c = attachProgress(s, { flushMs: 20, todoWait: 1, taskWait: 1, maxWait: 5, tickMs: 50 });
+    try {
+        await sleep(120);
+        assert.equal(P.readProgress(docId).planId, "one");
+        const reads = s.calls.todos;
+        writeState(docId, (st) => {
+            st.plan = { ...planOf(phase("q1", "active")), id: "two" };
+        });
+        await sleep(200);
+        assert.ok(s.calls.todos > reads, "read again for the new plan");
+        const p = P.readProgress(docId);
+        assert.equal(p.planId, "two");
+        assert.equal(p.firstSeen.x.phaseId, "q1");
+    } finally {
+        c.stop();
+        stopHeartbeat(docId);
+    }
+});

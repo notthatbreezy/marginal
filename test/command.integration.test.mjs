@@ -581,6 +581,7 @@ test("phases are the unit: one watched worktree, stages with notes, phase diffs,
     assert.equal(readState(pdoc.documentId).plan.phases[0].state.note, "waiting on API review");
     assert.ok((await run("command_plan", { op: "phase", phaseId: "p1", status: "review" })).ok);
     assert.equal(readState(pdoc.documentId).plan.phases[0].state.startedAt, startedAt, "started once, across stages");
+    assert.deepEqual(readState(pdoc.documentId).plan.phases[0].state.history.map(([s]) => s), ["active", "blocked", "review"], "every stage change is recorded");
     writeFileSync(join(wtP, "src", "runner", "phase1.ts"), "export const one = 1;\nexport const fix = 2;\n");
     await until(() => eventsSince(pdoc.documentId, 0).filter((e) => e.file === "src/runner/phase1.ts").at(-1)?.totals.add === 2);
     assert.ok(eventsSince(pdoc.documentId, 0).filter((e) => e.file === "src/runner/phase1.ts").at(-1).phaseIds.includes("p1"));

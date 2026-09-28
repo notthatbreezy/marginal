@@ -176,10 +176,14 @@ export async function commandPlan(input, ctx) {
             // since: when this stage began; startedAt: when the phase was first worked on (kept across stages).
             const since = ph.state.status === status ? ph.state.since : now();
             const startedAt = ph.state.startedAt ?? (status === "pending" ? undefined : ph.state.since ?? now());
-            if (status === "pending") ph.state = { status: "pending" };
-            else if (status === "done") ph.state = { status: "done", since: now(), frontIds: fronts, checkpoint, ...(startedAt ? { startedAt } : {}), ...(note ? { note } : {}) };
+            // history: every stage change [status, at] (last 40), so "which phases were in play at t" can be answered
+            // exactly, across blocked or delivered gaps (observed progress matches work to phases by time).
+            const history = ph.state.status === status ? ph.state.history : [...(ph.state.history ?? []), [status, since]].slice(-40);
+            const kept = history?.length ? { history } : {};
+            if (status === "pending") ph.state = { status: "pending", ...kept };
+            else if (status === "done") ph.state = { status: "done", since: now(), frontIds: fronts, checkpoint, ...(startedAt ? { startedAt } : {}), ...(note ? { note } : {}), ...kept };
             // Reopening a delivered phase keeps its checkpoint until it's delivered again.
-            else ph.state = { status, since, frontIds: fronts, ...(startedAt ? { startedAt } : {}), ...(note ? { note } : {}), ...(ph.state.checkpoint ? { checkpoint: ph.state.checkpoint } : {}) };
+            else ph.state = { status, since, frontIds: fronts, ...(startedAt ? { startedAt } : {}), ...(note ? { note } : {}), ...(ph.state.checkpoint ? { checkpoint: ph.state.checkpoint } : {}), ...kept };
             s.plan.revision++;
         });
         for (const f of next.fronts) nudge(docId, f.id);

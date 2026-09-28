@@ -24,7 +24,7 @@ function debounce(fn, wait, maxWait) {
     };
 }
 
-export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWait = 500, maxWait = 2000, now = () => Date.now() } = {}) {
+export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWait = 500, maxWait = 2000, tickMs = 3000, now = () => Date.now() } = {}) {
     const mem = new Map(); // docId -> Progress (this process is its owner)
     const flushTimers = new Map();
     const lastFlush = new Map();
@@ -115,15 +115,17 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
     const todosSoon = debounce(readTodos, todoWait, maxWait);
     const tasksSoon = debounce(readTasks, taskWait, maxWait);
 
-    // A doc this session just started owning (plan set, or re-adopted after a reload) gets a full read.
-    const known = new Set();
+    // A doc this session just started owning, or whose plan was replaced, gets a full read (keyed by doc and plan).
+    const known = new Map(); // docId -> plan id
     const noticeNew = () => {
         let fresh = false;
-        for (const docId of owned())
-            if (!known.has(docId)) {
-                known.add(docId);
+        for (const docId of owned()) {
+            const planId = readState(docId).plan.id;
+            if (known.get(docId) !== planId) {
+                known.set(docId, planId);
                 fresh = true;
             }
+        }
         if (fresh) {
             todosSoon();
             tasksSoon();
@@ -140,7 +142,7 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
             else if (ev.type === "session.background_tasks_changed") tasksSoon();
         } catch {}
     });
-    const tick = setInterval(noticeNew, 3000);
+    const tick = setInterval(noticeNew, tickMs);
     tick.unref?.();
     noticeNew();
 

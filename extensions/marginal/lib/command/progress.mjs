@@ -60,6 +60,13 @@ export function inPlayAt(plan, t) {
     return (plan?.phases ?? [])
         .filter((p) => {
             const st = p.state ?? {};
+            // Exact when the stage history is recorded: the stage the phase was in at t.
+            if (Array.isArray(st.history) && st.history.length) {
+                let at = null;
+                for (const [status, when] of st.history) if (Date.parse(when) <= t) at = status;
+                return at === "active" || at === "review";
+            }
+            // Older plans: approximate from the first start and the current stage.
             const start = Date.parse(st.startedAt ?? st.since);
             if (st.status === "active" || st.status === "review") return !Number.isFinite(start) || start <= t;
             if (st.status === "done" || st.status === "blocked") return Number.isFinite(start) && start <= t && t < Date.parse(st.since);
