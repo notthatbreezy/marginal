@@ -252,5 +252,42 @@ test("history: live-only items (doc changes, questions) are merged in where they
     const later = [ev("user.message", { messageId: "b", content: "two" }), ev("assistant.message", { messageId: "rb", content: "r2" })];
     for (const e of later) (evs.push(e), tr.onEvent(e));
     const h = await tr.history();
-    assert.deepEqual(h.items.map((i) => i.id), ["a", "chg-a-d", "ra", "b", "rb"]);
+    assert.deepEqual(h.items.map((i) => i.id), ["a", "ra", "chg-a-d", "b", "rb"], "under its turn's reply");
+});
+test("history: paging through many turns with tiny raw pages never splits a question from its answer", async () => {
+    const evs = [];
+    for (let i = 0; i < 23; i++) {
+        evs.push(ev("user.message", { messageId: `u${i}`, content: `turn ${i}` }));
+        evs.push(ev("tool.execution_start", { toolCallId: `q${i}`, toolName: "ask_user", arguments: { question: `Q${i}?` } }));
+        for (let k = 0; k < i % 4; k++) evs.push(ev("tool.execution_start", { toolCallId: `v${i}-${k}`, toolName: "view", arguments: { path: "f" } }));
+        evs.push(ev("tool.execution_complete", { toolCallId: `q${i}`, result: { content: `User responded: A${i}` } }));
+        evs.push(ev("assistant.message", { messageId: `r${i}`, content: `R${i}` }));
+    }
+    const tr = T.createTranscript(() => fakeSession({ events: evs, page: 9 }));
+    const all = [];
+    let cur;
+    let first = true;
+    for (let guard = 0; guard < 50 && (first || cur); guard++) {
+        const p = await tr.history({ cursor: cur, want: 3 });
+        all.unshift(...p.items);
+        cur = p.cursor;
+        first = false;
+    }
+    const qs = all.filter((i) => i.kind === "question");
+    assert.equal(qs.length, 23);
+    assert.ok(qs.every((q) => q.status === "answered"), qs.filter((q) => q.status !== "answered").map((q) => q.id).join());
+    assert.equal(all.filter((i) => i.kind === "user").length, 23);
+    assert.equal(new Set(all.map((i) => i.id)).size, all.length);
+});
+
+test("doc changes belong to the turn that made them: a message steering it doesn't take them", () => {
+    const tr = T.createTranscript(() => null);
+    tr.onEvent(ev("user.message", { messageId: "A", content: "edit it", delivery: "idle" }));
+    tr.noteDocEdit("d", "Doc", { type: "update", targetId: "x" });
+    tr.onEvent(ev("user.message", { messageId: "B", content: "also this", delivery: "steering" }));
+    tr.noteDocEdit("d", "Doc", { type: "update", targetId: "y" });
+    assert.deepEqual(tr._state.byId.get("chg-A-d").edits.map((e) => e.targetId), ["x", "y"]);
+    assert.equal(tr._state.byId.has("chg-B-d"), false);
+    tr.onEvent(ev("assistant.message", { messageId: "R", content: "done" }));
+    assert.equal(tr._state.byId.get("chg-A-d").afterId, "R", "listed under the turn's reply");
 });

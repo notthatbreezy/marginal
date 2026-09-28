@@ -111,7 +111,17 @@ export function reduce(s, ev) {
                 }
             }
             const source = marginal ? "marginal" : typeof d.source === "string" && d.source.startsWith("agent-") ? "session" : "app";
-            s.lastUser = put(s, { kind: "user", id: d.messageId ?? ev.id, at, text: text.slice(0, TEXT_MAX), source, ...(context ? { context } : {}), ...(d.delivery && d.delivery !== "idle" ? { delivery: d.delivery } : {}) }, changed);
+            const startsTurn = s.status === "idle" || !d.delivery || d.delivery === "idle";
+            const userItem = put(s, { kind: "user", id: d.messageId ?? ev.id, at, text: text.slice(0, TEXT_MAX), source, ...(context ? { context } : {}), ...(d.delivery && d.delivery !== "idle" ? { delivery: d.delivery } : {}) }, changed);
+            if (startsTurn || !s.turnUser) {
+                // A new turn: the last one's changes are complete.
+                for (const it of s.items)
+                    if (it.kind === "changes" && !it.done && it.id !== `chg-${userItem.id}`) {
+                        it.done = true;
+                        changed.add(it.id);
+                    }
+                s.turnUser = userItem;
+            }
             closeActivity();
             setStatus("working");
             break;
@@ -158,6 +168,12 @@ export function reduce(s, ev) {
             item.text = text.slice(0, TEXT_MAX);
             delete item.streaming;
             changed.add(id);
+            s.lastReply = item;
+            for (const it of s.items)
+                if (it.kind === "changes" && !it.done && it.afterId !== id) {
+                    it.afterId = id;
+                    changed.add(it.id);
+                }
             closeActivity();
             break;
         }
@@ -266,6 +282,10 @@ export function itemsFrom(events) {
  */
 export function createTranscript(getSession, { now = () => Date.now() } = {}) {
     const s = createState();
+    // The older part of a batch that a turn boundary split: the next page starts with it. Our cursor "m:<n>" names
+    // one; the newest few are kept.
+    const tails = new Map();
+    let tailN = 0;
     const listeners = new Set();
     let seq = 0; // every live event is numbered; a history snapshot says which number it includes up to
     const emit = (e) => {
@@ -302,8 +322,15 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
         let events = [];
         let next = cursor ?? undefined;
         let hasMore = true;
+        if (typeof cursor === "string" && cursor.startsWith("m:")) {
+            const tail = tails.get(cursor);
+            if (!tail) return { items: [], cursor: null, hasMore: false, status: s.status, seq, expired: true };
+            events = tail.events;
+            next = tail.cursor;
+            hasMore = tail.hasMore;
+        }
         const t0 = now();
-        for (let page = 0; page < maxPages && hasMore; page++) {
+        for (let page = 0; page < maxPages && hasMore && !(events.length && itemsFrom(events).filter((i) => i.kind === "user" || i.kind === "reply").length >= want); page++) {
             const r = await session.rpc.eventLog.read({ direction: "backward", agentScope: "primary", includeEphemeral: false, types: HISTORY_TYPES, max, ...(next ? { cursor: next } : {}) });
             events = [...(r.events ?? []), ...events];
             next = r.cursor;
@@ -317,12 +344,21 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
             const r = await session.rpc.eventLog.read({ direction: "backward", agentScope: "primary", includeEphemeral: false, types: HISTORY_TYPES, max, cursor: next });
             const got = r.events ?? [];
             const start = got.findLastIndex((e) => e.type === "user.message" && !e.agentId);
-            // Take only back to that user message; the rest belongs to the next page (a cursor can't split a batch,
-            // so if the boundary is mid-batch the whole batch is taken).
+            const more = !!r.hasMore && r.cursorStatus !== "expired";
+            if (start > 0) {
+                // Take back to that user message; what's before it opens the next (older) page.
+                events = [...got.slice(start), ...events];
+                const key = `m:${++tailN}`;
+                tails.set(key, { events: got.slice(0, start), cursor: r.cursor, hasMore: more });
+                for (const k of [...tails.keys()].slice(0, Math.max(0, tails.size - 20))) tails.delete(k);
+                next = key;
+                hasMore = true;
+                break;
+            }
             events = [...got, ...events];
             next = r.cursor;
-            hasMore = !!r.hasMore && r.cursorStatus !== "expired";
-            if (start >= 0) break;
+            hasMore = more;
+            if (start === 0) break;
         }
         const items = itemsFrom(events);
         // A page can start mid-turn (its user message is on the next, older page): that's fine, it reads on.
@@ -336,8 +372,9 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
                 } else if (["question", "plan", "changes"].includes(it.kind) || (it.kind === "reply" && it.streaming) || Date.parse(it.at) >= Date.parse(items.at(-1)?.at ?? 0)) {
                     // Live-only items (not in the log) go where they happened, by time.
                     const t = Date.parse(it.at);
-                    const i = items.findIndex((x) => Date.parse(x.at) > t);
-                    if (i < 0 || it.kind === "reply") items.push(it);
+                    const after = it.afterId ? items.findIndex((x) => x.id === it.afterId) : -1;
+                    const i = after >= 0 ? after + 1 : items.findIndex((x) => Date.parse(x.at) > t);
+                    if (i < 0 || i >= items.length || it.kind === "reply") items.push(it);
                     else items.splice(i, 0, it);
                 }
             }
@@ -348,12 +385,14 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
     /** Copilot changed a doc during the current turn: listed under that turn's reply (from any tab or panel). */
     function noteDocEdit(docId, title, le) {
         if (s.status === "idle" || !le) return; // an edit outside any turn isn't a reply's
-        const id = `chg-${s.lastUser?.id ?? "turn"}-${docId}`;
+        const id = `chg-${s.turnUser?.id ?? "turn"}-${docId}`;
         const changed = new Set();
         const it = s.byId.get(id) ?? put(s, { kind: "changes", id, at: new Date(Math.max(now(), Date.parse(s.lastAt ?? 0) || 0)).toISOString(), docId, title: String(title ?? "").slice(0, 160), edits: [], done: false }, changed);
         const key = le.targetId ?? le.blockId;
         it.edits = [...it.edits.filter((e) => (e.targetId ?? e.blockId) !== key), le].slice(-30);
         it.done = false;
+        // Listed under the turn's latest reply (updated as later replies arrive), else at its end.
+        if (s.lastReply && s.turnUser && Date.parse(s.lastReply.at) >= Date.parse(s.turnUser.at)) it.afterId = s.lastReply.id;
         emit({ op: "upsert", item: it });
     }
 

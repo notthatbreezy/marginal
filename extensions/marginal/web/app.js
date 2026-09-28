@@ -1912,12 +1912,26 @@ function upsertItem(it, { at }) {
     TR.els.set(it.id, el);
     if (old || pending) {
         if ((old ?? pending) !== el) (old ?? pending).replaceWith(el);
-        // What changed follows the reply while the turn runs, so it ends up under it.
-        if (it.kind === "changes" && !it.done) chatLog.insertBefore(el, chat.statusEl);
+        if (it.kind === "changes") placeUnder(el, it.afterId);
         return el;
     }
+    if (it.kind === "changes" && it.afterId && TR.els.get(it.afterId)?.isConnected) return (placeUnder(el, it.afterId), el);
     if (at === "start") (chatLog.querySelector(":scope > .chat-older")?.nextSibling ? chatLog.querySelector(":scope > .chat-older").after(el) : chatLog.prepend(el));
     else chatLog.insertBefore(el, chat.statusEl);
+    return el;
+}
+/** Put an element right under a transcript item (a reply), or at the end if that isn't shown. */
+function placeUnder(el, afterId) {
+    const ref = afterId && TR.els.get(afterId);
+    if (ref?.isConnected) ref.after(el);
+    else chatLog.insertBefore(el, chat.statusEl);
+}
+/** Where a turn's reply ends: after its user message, before the next one. */
+function endOfTurn(userId) {
+    const u = userId && TR.els.get(userId);
+    if (!u?.isConnected) return null;
+    let el = u;
+    while (el.nextElementSibling && !el.nextElementSibling.matches(".chat-u, .chat-status")) el = el.nextElementSibling;
     return el;
 }
 function itemEl(it, reuse) {
@@ -2235,7 +2249,9 @@ function showSuggestion(ev) {
     if (!el) {
         el = h("div", { class: "chat-suggest", role: "group", "aria-label": "Suggested doc change" });
         chat.suggestions.set(ev.proposalId, el);
-        chatLog.insertBefore(el, chat.statusEl); // follows the reply as it streams
+        const end = !turn && endOfTurn(ev.proposalId);
+        if (end) end.after(el);
+        else chatLog.insertBefore(el, chat.statusEl); // follows the reply as it streams
         if (turn) turn.suggest = el;
     }
     const threadId = ev.threadId ?? chat.threadId;
