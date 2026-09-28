@@ -426,6 +426,11 @@ await test("edit feedback: scoped conflicts, clear messages, atomic batches, exp
     const v2 = store.getDoc(d).version;
     await rejects(() => store.applyEdits(d, [{ type: "patch", targetId: md, ops: [{ find: "today", replace: "now" }] }, { type: "remove", targetId: "nope" }]), /edits\[1\] failed, so nothing was saved/);
     assert.equal(store.getDoc(d).version, v2);
+    // ...and applying a held suggestion tags its versions, so the transcript doesn't count them as the running turn's
+    await store.applyEdits(d, [{ type: "patch", targetId: md, ops: [{ find: "today", replace: "soon" }] }], { origin: "suggestion" });
+    assert.equal(store.getDoc(d).lastEdit.origin, "suggestion");
+    await store.applyEdits(d, [{ type: "patch", targetId: md, ops: [{ find: "soon", replace: "today" }] }]);
+    assert.equal(store.getDoc(d).lastEdit.origin, undefined);
     // 3. expect may be the whole range or just its first line
     await store.applyEdit(d, { type: "patch", targetId: md, ops: [{ lines: [1, 3], expect: "# Goals", text: "# Goals\n\nShip it now." }] });
     await rejects(() => store.applyEdit(d, { type: "patch", targetId: md, ops: [{ lines: [1, 3], expect: "# Nope", text: "x" }] }), /all of them, or just line 1/);

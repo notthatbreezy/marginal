@@ -212,7 +212,7 @@ function unitKind(unit, parent) {
     return parent.nodes.includes(unit) ? "flow_node" : "flow_edge";
 }
 
-async function applyEditInner(doc, edit, { dryRun = false } = {}) {
+async function applyEditInner(doc, edit, { dryRun = false, origin } = {}) {
     if (!edit || typeof edit !== "object") throw new InputError("edit must be an object.");
     const draft = structuredClone(doc);
     const next = counter(draft);
@@ -379,7 +379,7 @@ async function applyEditInner(doc, edit, { dryRun = false } = {}) {
 
     const topBlock = topBlockOf(draft.content, blockId)[0];
     draft.version = doc.version + 1;
-    draft.lastEdit = { type: edit.type, targetId, blockId, topBlockId: topBlock?.id, kind, ...(kind !== topBlock?.type && UNIT_TYPES[kind] ? { unit: targetId } : {}), ...(linkId ? { linkId } : {}), ...(fields ? { fields } : {}), at: new Date().toISOString() };
+    draft.lastEdit = { type: edit.type, targetId, blockId, topBlockId: topBlock?.id, kind, ...(kind !== topBlock?.type && UNIT_TYPES[kind] ? { unit: targetId } : {}), ...(linkId ? { linkId } : {}), ...(fields ? { fields } : {}), ...(origin ? { origin } : {}), at: new Date().toISOString() };
     if (dryRun) return { draft };
     persist(draft, "edit");
     touchActivity(doc.id);
@@ -396,7 +396,7 @@ export async function applyEdit(docId, edit) {
  * and only if all pass are they applied (each still saves its own version and animates). baseVersion guards compare
  * with the doc as the batch found it, so a batch never conflicts with itself.
  */
-export function applyEdits(docId, edits) {
+export function applyEdits(docId, edits, { origin } = {}) {
     return withLock(docId, async () => {
         const start = getDoc(docId);
         let draft = start;
@@ -412,7 +412,7 @@ export function applyEdits(docId, edits) {
         for (const e of edits) {
             const doc = getDoc(docId);
             const conv = convertEdit(doc, e, start);
-            const res = await applyEditInner(doc, conv.edit);
+            const res = await applyEditInner(doc, conv.edit, { origin });
             conv.after?.();
             results.push(conv.note ? { ...res, note: conv.note } : res);
         }

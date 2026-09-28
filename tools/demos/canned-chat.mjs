@@ -2,7 +2,8 @@
 // real replies are (status → deltas → final message → done), so the chat UI behaves exactly as in the app.
 //   const chat = createCannedChat({ reply: (m) => ({ text, statuses?, after?, ask? }) });
 //   m = { instanceId, threadId?, prompt, displayPrompt, docId?, discuss? }; after(m) runs once the reply has finished (e.g. edit the doc).
-//   suggest: [edits] holds those edits as a suggestion under the reply (what a Discuss turn does with Copilot's edits).
+//   suggest: [edits] holds those edits as a suggestion under the reply (what a Discuss turn does with Copilot's edits);
+//   suggestFirst: true makes it before any reply text, as when Copilot edits before it writes.
 //   ask: {question, choices?} asks the user first (as ask_user does) and waits for the answer, from Marginal or appMessage.
 // It also plays the session's event stream into a real transcript (chat.transcript), so the chat shows the conversation
 // as it would in the app; seed(events) puts earlier history in its log, appMessage(text) is a message typed in the app.
@@ -81,6 +82,11 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
             fire(ev("tool.execution_start", { toolCallId: `tc-${++n}`, toolName: path ? "view" : TOOL[s] ?? "grep", arguments: path ? { path } : { pattern: s } }));
             await wait(thinkMs);
         }
+        const hold = () => {
+            proposals.set(`${threadId}\0${userId}`, { docId: m.docId, edits: r.suggest });
+            emit(m.instanceId, threadId, { kind: "proposal", proposalId: userId, count: r.suggest.length });
+        };
+        if (r.suggest?.length && r.suggestFirst) (hold(), await wait(thinkMs));
         await r.before?.(m);
         const messageId = `reply-${++n}`;
         const text = String(typeof r.text === "function" ? r.text("") : r.text);
@@ -91,10 +97,7 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
             fire(ev("assistant.message_delta", { messageId, deltaContent: chunk }));
             await wait(wordMs * 3);
         }
-        if (r.suggest?.length) {
-            proposals.set(`${threadId}\0${userId}`, { docId: m.docId, edits: r.suggest });
-            emit(m.instanceId, threadId, { kind: "proposal", proposalId: userId, count: r.suggest.length });
-        }
+        if (r.suggest?.length && !r.suggestFirst) hold();
         emit(m.instanceId, threadId, { kind: "message", messageId, text });
         fire(ev("assistant.message", { messageId, content: text }));
         await r.after?.(m); // edits land within the turn, as Copilot's do

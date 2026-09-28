@@ -1913,12 +1913,25 @@ function upsertItem(it, { at }) {
     if (old || pending) {
         if ((old ?? pending) !== el) (old ?? pending).replaceWith(el);
         if (it.kind === "changes") placeUnder(el, it.afterId);
+        if (it.kind === "reply") reanchorSuggestions();
         return el;
     }
     if (it.kind === "changes" && it.afterId && TR.els.get(it.afterId)?.isConnected) return (placeUnder(el, it.afterId), el);
     if (at === "start") (chatLog.querySelector(":scope > .chat-older")?.nextSibling ? chatLog.querySelector(":scope > .chat-older").after(el) : chatLog.prepend(el));
     else chatLog.insertBefore(el, chat.statusEl);
+    if (it.kind === "reply") reanchorSuggestions();
     return el;
+}
+/** Suggestions sit at the end of the turn that asked for them, below its reply (which can arrive after them). */
+function reanchorSuggestions() {
+    for (const [proposalId, el] of chat.suggestions ?? []) {
+        const u = TR.els.get(proposalId);
+        if (!el.isConnected || !u?.isConnected) continue;
+        // The turn's last item that isn't a suggestion.
+        let last = u;
+        for (let n = u.nextElementSibling; n && !n.matches(".chat-u, .chat-status"); n = n.nextElementSibling) if (!n.matches(".chat-suggest")) last = n;
+        if (last.nextElementSibling !== el) last.after(el);
+    }
 }
 /** Put an element right under a transcript item (a reply), or at the end if that isn't shown. */
 function placeUnder(el, afterId) {
@@ -2249,7 +2262,7 @@ function showSuggestion(ev) {
     if (!el) {
         el = h("div", { class: "chat-suggest", role: "group", "aria-label": "Suggested doc change" });
         chat.suggestions.set(ev.proposalId, el);
-        const end = !turn && endOfTurn(ev.proposalId);
+        const end = endOfTurn(ev.proposalId);
         if (end) end.after(el);
         else chatLog.insertBefore(el, chat.statusEl); // follows the reply as it streams
         if (turn) turn.suggest = el;

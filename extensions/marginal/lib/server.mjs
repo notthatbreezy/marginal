@@ -126,7 +126,6 @@ export async function startServer({ chat, transcript = null, instances, getSessi
         return `[Since your last message, the user edited these Markdown blocks directly: ${ids} (doc v${rec.since} → v${store.getDoc(doc.id).version}). ${diff ? "What they changed:" : `changes {sinceVersion:${rec.since}} shows what they changed.`} Build on their wording; don't restore the old text, and pass baseVersion on edits to those blocks.${diff}]`;
     };
     const clients = new Set(); // { res, instanceId }
-    let applyingSuggestion = 0; // edits made while applying a held suggestion are the user's
 
     function push(client, event) {
         client.res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -148,7 +147,7 @@ export async function startServer({ chat, transcript = null, instances, getSessi
             else if (event.documentId && event.documentId === shown) push(c, event);
         }
         // Copilot's doc edits during a turn go on the transcript, under that turn's reply.
-        if (transcript && !applyingSuggestion && event.type === "version" && event.reason === "edit" && event.lastEdit && event.lastEdit.by !== "user") {
+        if (transcript && event.type === "version" && event.reason === "edit" && event.lastEdit && event.lastEdit.by !== "user" && event.lastEdit.origin !== "suggestion") {
             let title = "";
             try {
                 title = store.getDoc(event.documentId).title;
@@ -371,12 +370,8 @@ export async function startServer({ chat, transcript = null, instances, getSessi
             if (parts[2] === "discard") return send(res, 200, { discarded: true });
             let done = 0;
             try {
-                applyingSuggestion++;
-                try {
-                    done = (await store.applyEdits(p.docId, p.edits)).length; // all or nothing
-                } finally {
-                    applyingSuggestion--;
-                }
+                // Tagged so the transcript doesn't list the user's own apply as the running turn's change.
+                done = (await store.applyEdits(p.docId, p.edits, { origin: "suggestion" })).length; // all or nothing
             } catch (err) {
                 if (!(err instanceof InputError)) throw err;
                 chat.note(threadId, `[The user tried to apply your suggested change, but it no longer fits the doc, so nothing was applied: ${err.message}]`);
