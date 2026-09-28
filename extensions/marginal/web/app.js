@@ -1042,12 +1042,14 @@ function fitHeader() {
     const center = $("#center");
     center.classList.remove("tight");
     const shown = [...center.children].find((x) => !x.hidden);
-    const tabsLeft = $("#tabs").hidden ? bar.getBoundingClientRect().right : $("#tabs").getBoundingClientRect().left;
+    // Where the header's right-hand controls begin: the tabs, or the chat, settings and browser buttons without them.
+    const rightEdge = () => Math.min(bar.getBoundingClientRect().right, ...[...document.querySelectorAll("#tabs:not([hidden]), #chat-btn:not([hidden]), #settings-btn, #open-external:not([hidden])")].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0).map((r) => r.left));
+    const tabsLeft = rightEdge();
     if (shown && (shown.id === "hint" || shown.classList.contains("hint")) && shown.getBoundingClientRect().right > tabsLeft - 8) center.classList.add("tight");
     // Room: up to the centre slot when it shows something, else up to the tabs.
     const tl = titles.getBoundingClientRect().left;
     const centre = center.classList.contains("tight") ? null : [...center.children].find((x) => !x.hidden);
-    const stop = centre ? centre.getBoundingClientRect().left : ($("#tabs").hidden ? bar.getBoundingClientRect().right : $("#tabs").getBoundingClientRect().left);
+    const stop = centre ? centre.getBoundingClientRect().left : rightEdge();
     titles.style.maxWidth = `${Math.max(140, stop - tl - 16)}px`;
     const sub = $("#subtitle");
     const room = Math.max(60, Math.min(titles.getBoundingClientRect().width || Infinity, stop - tl - 16)) - 2;
