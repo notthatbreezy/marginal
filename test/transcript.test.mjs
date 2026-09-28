@@ -290,4 +290,20 @@ test("doc changes belong to the turn that made them: a message steering it doesn
     assert.equal(tr._state.byId.has("chg-B-d"), false);
     tr.onEvent(ev("assistant.message", { messageId: "R", content: "done" }));
     assert.equal(tr._state.byId.get("chg-A-d").afterId, "R", "listed under the turn's reply");
+    assert.equal(tr._state.byId.get("R").turn, "A", "a reply knows its turn");
+});
+
+test("a queued message starts its own turn when Copilot takes it up", () => {
+    const tr = T.createTranscript(() => null);
+    tr.onEvent(ev("user.message", { messageId: "A", content: "edit it", delivery: "idle" }));
+    tr.onEvent(ev("assistant.message", { messageId: "RA", content: "done A" }));
+    tr.onEvent(ev("assistant.turn_end", {}));
+    // logged when dequeued: after A's turn ended, with no idle in between
+    tr.onEvent(ev("user.message", { messageId: "B", content: "then this", delivery: "queued" }));
+    tr.noteDocEdit("d", "Doc", { type: "update", targetId: "z" });
+    tr.onEvent(ev("assistant.message", { messageId: "RB", content: "done B" }));
+    assert.equal(tr._state.byId.has("chg-A-d"), false);
+    assert.deepEqual(tr._state.byId.get("chg-B-d").edits.map((e) => e.targetId), ["z"]);
+    assert.equal(tr._state.byId.get("RA").turn, "A");
+    assert.equal(tr._state.byId.get("RB").turn, "B");
 });

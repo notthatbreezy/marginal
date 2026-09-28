@@ -111,7 +111,9 @@ export function reduce(s, ev) {
                 }
             }
             const source = marginal ? "marginal" : typeof d.source === "string" && d.source.startsWith("agent-") ? "session" : "app";
-            const startsTurn = s.status === "idle" || !d.delivery || d.delivery === "idle";
+            // A queued message is logged when Copilot takes it up, after the last turn ended: it starts a turn too.
+            // Only a message steering the running turn joins it.
+            const startsTurn = s.status === "idle" || d.delivery !== "steering";
             const userItem = put(s, { kind: "user", id: d.messageId ?? ev.id, at, text: text.slice(0, TEXT_MAX), source, ...(context ? { context } : {}), ...(d.delivery && d.delivery !== "idle" ? { delivery: d.delivery } : {}) }, changed);
             if (startsTurn || !s.turnUser) {
                 // A new turn: the last one's changes are complete.
@@ -144,7 +146,7 @@ export function reduce(s, ev) {
             if (!id || !d.deltaContent) break;
             let item = s.byId.get(id);
             if (!item) {
-                item = put(s, { kind: "reply", id, at, text: "", streaming: true }, changed);
+                item = put(s, { kind: "reply", id, at, text: "", streaming: true, ...(s.turnUser ? { turn: s.turnUser.id } : {}) }, changed);
                 closeActivity();
             }
             if (!item.streaming) break;
@@ -164,7 +166,7 @@ export function reduce(s, ev) {
                 }
                 break;
             }
-            const item = existing ?? put(s, { kind: "reply", id, at, text: "" }, changed);
+            const item = existing ?? put(s, { kind: "reply", id, at, text: "", ...(s.turnUser ? { turn: s.turnUser.id } : {}) }, changed);
             item.text = text.slice(0, TEXT_MAX);
             delete item.streaming;
             changed.add(id);

@@ -1796,7 +1796,7 @@ function bubble(messageId) {
         el = h("div", { class: "chat-msg bot md" });
         el.dataset.raw = "";
         chat.bubbles.set(messageId, el);
-        chatLog.insertBefore(el, chat.statusEl);
+        chatLog.insertBefore(el, logEnd());
     }
     return el;
 }
@@ -1809,8 +1809,9 @@ function onChatEvent(ev) {
     if (ev.kind === "done") {
         const turn = chat.turn;
         if (turn) {
-            if (turn.el) chatLog.insertBefore(turn.el, chat.statusEl); // under the final reply
-            if (turn.suggest) chatLog.insertBefore(turn.suggest, chat.statusEl);
+            // Keep this turn's cards where they belong, even if a later message is already below it.
+            if (turn.el && turn.anchor?.isConnected) turn.anchor.after(turn.el);
+            reanchorSuggestions();
             setTimeout(() => turn === chat.turn && (turn.open = false), 2500); // edits can land just after the reply
         }
     }
@@ -1892,6 +1893,8 @@ function onTranscript(e) {
 }
 function setTrStatus(status) {
     chat.trStatus = status;
+    // Idle: nothing is waiting any more (a message whose copy never matched stops holding the end).
+    if (status === "idle") for (const q of chatLog.querySelectorAll(":scope > .chat-u.queued")) q.classList.remove("queued");
     setStatus(status === "working" ? "Working" : status === "waiting" ? "Waiting on you" : null);
     chat.statusEl?.classList.toggle("waiting", status === "waiting");
 }
@@ -1918,26 +1921,36 @@ function upsertItem(it, { at }) {
     }
     if (it.kind === "changes" && it.afterId && TR.els.get(it.afterId)?.isConnected) return (placeUnder(el, it.afterId), el);
     if (at === "start") (chatLog.querySelector(":scope > .chat-older")?.nextSibling ? chatLog.querySelector(":scope > .chat-older").after(el) : chatLog.prepend(el));
-    else chatLog.insertBefore(el, chat.statusEl);
+    else chatLog.insertBefore(el, logEnd());
     if (it.kind === "reply") reanchorSuggestions();
     return el;
+}
+/** Where new items go: above messages sent while Copilot was busy, which wait below until it takes them up. */
+function logEnd() {
+    return chatLog.querySelector(":scope > .chat-u.pending.queued") ?? chat.statusEl;
 }
 /** Suggestions sit at the end of the turn that asked for them, below its reply (which can arrive after them). */
 function reanchorSuggestions() {
     for (const [proposalId, el] of chat.suggestions ?? []) {
-        const u = TR.els.get(proposalId);
-        if (!el.isConnected || !u?.isConnected) continue;
-        // The turn's last item that isn't a suggestion.
-        let last = u;
-        for (let n = u.nextElementSibling; n && !n.matches(".chat-u, .chat-status"); n = n.nextElementSibling) if (!n.matches(".chat-suggest")) last = n;
-        if (last.nextElementSibling !== el) last.after(el);
+        if (!el.isConnected) continue;
+        // Under the turn's last reply (and the changes listed under it)...
+        let last = [...chatLog.querySelectorAll(":scope > .chat-msg.bot[data-turn]")].findLast((r) => r.dataset.turn === proposalId) ?? null;
+        while (last?.nextElementSibling?.matches(".chat-changes")) last = last.nextElementSibling;
+        // ...or, before it has one, at the end of the turn.
+        if (!last) {
+            const u = TR.els.get(proposalId);
+            if (!u?.isConnected) continue;
+            last = u;
+            for (let n = u.nextElementSibling; n && !n.matches(".chat-u, .chat-status"); n = n.nextElementSibling) if (!n.matches(".chat-suggest")) last = n;
+        }
+        if (last !== el && last.nextElementSibling !== el) last.after(el);
     }
 }
 /** Put an element right under a transcript item (a reply), or at the end if that isn't shown. */
 function placeUnder(el, afterId) {
     const ref = afterId && TR.els.get(afterId);
     if (ref?.isConnected) ref.after(el);
-    else chatLog.insertBefore(el, chat.statusEl);
+    else chatLog.insertBefore(el, logEnd());
 }
 /** Where a turn's reply ends: after its user message, before the next one. */
 function endOfTurn(userId) {
@@ -1951,6 +1964,7 @@ function itemEl(it, reuse) {
     if (it.kind === "reply") {
         const el = reuse?.classList.contains("bot") ? reuse : h("div", { class: "chat-msg bot md" });
         el.dataset.id = it.id;
+        if (it.turn) el.dataset.turn = it.turn;
         el.dataset.raw = it.text;
         el.innerHTML = markdown(it.text);
         el.classList.toggle("streaming", !!it.streaming);
@@ -2107,7 +2121,7 @@ function recordChange(le) {
     turn.changes.set(key, le);
     turn.el ??= h("div", { class: "chat-changes", role: "group", "aria-label": "Doc changes in this reply" });
     if (turn.anchor?.isConnected) turn.anchor.after(turn.el);
-    else chatLog.insertBefore(turn.el, chat.statusEl); // follows the reply as it streams
+    else chatLog.insertBefore(turn.el, logEnd()); // follows the reply as it streams
     // Labels read the updated doc, which loads a moment after the event.
     setTimeout(() => renderChanges(turn), 250);
     renderChanges(turn);
@@ -2264,8 +2278,7 @@ function showSuggestion(ev) {
         chat.suggestions.set(ev.proposalId, el);
         const end = endOfTurn(ev.proposalId);
         if (end) end.after(el);
-        else chatLog.insertBefore(el, chat.statusEl); // follows the reply as it streams
-        if (turn) turn.suggest = el;
+        else chatLog.insertBefore(el, logEnd()); // follows the reply as it streams
     }
     const threadId = ev.threadId ?? chat.threadId;
     const act = async (what) => {
@@ -2326,7 +2339,7 @@ async function sendChat({ flip = false } = {}) {
     const board = chat.mode === "board" && !chat.docked;
     // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
     if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), chat.statusEl);
-    const mine = h("div", { class: "chat-u src-marginal pending", "data-text": message.slice(0, 2000).trim() }, h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message));
+    const mine = h("div", { class: `chat-u src-marginal pending${chat.trStatus && chat.trStatus !== "idle" ? " queued" : ""}`, "data-text": message.slice(0, 2000).trim() }, h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message));
     chatLog.insertBefore(mine, chat.statusEl);
     chatText.value = "";
     autosize();

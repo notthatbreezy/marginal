@@ -51,6 +51,8 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         transcript.onEvent(e);
     };
     const TOOL = { "Reading the plan": "view", Thinking: null };
+    let line = Promise.resolve(); // one turn at a time, as in a session
+    let inFlight = 0;
 
     async function play(m, threadId, userId) {
         const r = reply(m) ?? { text: "OK." };
@@ -122,8 +124,15 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         async send(m) {
             const threadId = m.threadId ?? `canned-${++n}`;
             const messageId = `msg-${++n}`;
-            fire(ev("user.message", { messageId, content: m.displayPrompt ?? m.prompt, transformedContent: m.prompt, delivery: "idle" }));
-            setTimeout(() => play(m, threadId, messageId).catch((e) => console.error("canned chat:", e)), 250);
+            // Sent while Copilot is busy, a message waits; it is logged (as queued) when Copilot takes it up.
+            const queued = inFlight > 0;
+            inFlight++;
+            const run = async () => {
+                fire(ev("user.message", { messageId, content: m.displayPrompt ?? m.prompt, transformedContent: m.prompt, delivery: queued ? "queued" : "idle" }));
+                await wait(250);
+                await play(m, threadId, messageId).catch((e) => console.error("canned chat:", e));
+            };
+            line = line.then(run).finally(() => inFlight--);
             return { threadId, messageId };
         },
         end: () => {},
