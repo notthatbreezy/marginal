@@ -138,7 +138,7 @@ test("history pages backward until it has enough messages, and pages on by curso
     assert.equal(session.calls.read[0].agentScope, "primary");
     assert.deepEqual(session.calls.read[0].types, T.HISTORY_TYPES);
     assert.ok(first.items.filter((i) => i.kind === "user" || i.kind === "reply").length >= 10);
-    assert.ok(first.hasMore && first.cursor);
+    if (first.hasMore) assert.equal(first.items[0].kind, "user", "a page begins at the start of a turn");
     const all = [...first.items];
     let cur = first.cursor;
     while (cur) {
@@ -161,7 +161,9 @@ test("live items merge into the first page; answering goes through the runtime a
     const h = await tr.history();
     assert.ok(h.items.some((i) => i.id === "rq1" && i.answerable), "the pending question is on the first page");
     assert.ok(h.items.some((i) => i.id === "r1" && i.streaming));
-    assert.deepEqual(seen.find((e) => e.op === "delta"), { op: "delta", id: "r1", text: "Stream" });
+    const { seq, ...delta } = seen.find((e) => e.op === "delta");
+    assert.deepEqual(delta, { op: "delta", id: "r1", text: "Stream" });
+    assert.ok(seq > 0 && h.seq >= seq, "events are numbered; the snapshot says how far it includes");
     const bad = await tr.answer({ id: "rq1", answer: "  " });
     assert.equal(bad.ok, false);
     const ok = await tr.answer({ id: "rq1", answer: "b", wasFreeform: false });
@@ -206,4 +208,49 @@ test("live: the first delta of a reply also says the activity before it is done"
     assert.deepEqual(seen.map((e) => e.op), ["upsert", "delta"]);
     assert.equal(seen[0].item.kind, "activity");
     assert.equal(seen[0].item.done, true);
+});
+test("history: a question and its answer stay on one page even when the raw page boundary falls between them", async () => {
+    const evs = [
+        ev("user.message", { messageId: "u1", content: "first" }),
+        ev("tool.execution_start", { toolCallId: "q1", toolName: "ask_user", arguments: { question: "Which?", choices: ["A"] } }),
+        ...Array.from({ length: 30 }, (_, i) => ev("tool.execution_start", { toolCallId: `x${i}`, toolName: "view", arguments: { path: `f${i}` } })),
+        ev("tool.execution_complete", { toolCallId: "q1", result: { content: "User selected: A" } }),
+        ev("assistant.message", { messageId: "r1", content: "Done" }),
+        ev("user.message", { messageId: "u2", content: "second" }),
+        ev("assistant.message", { messageId: "r2", content: "OK" }),
+    ];
+    const tr = T.createTranscript(() => fakeSession({ events: evs, page: 10 }));
+    const h = await tr.history({ want: 2 });
+    const q = h.items.find((i) => i.id === "q1");
+    assert.ok(q, "the question is on the first page with its answer");
+    assert.equal(q.status, "answered");
+    assert.equal(q.answer, "A");
+});
+
+test("doc changes during a turn are one item under it, finished when the turn ends", () => {
+    const tr = T.createTranscript(() => null);
+    const seen = [];
+    tr.subscribe((e) => seen.push(e));
+    tr.noteDocEdit("d1", "Doc", { type: "update", targetId: "md-1" });
+    assert.equal(seen.length, 0, "no turn running: not a reply's change");
+    tr.onEvent(ev("user.message", { messageId: "u9", content: "fix it" }));
+    tr.noteDocEdit("d1", "Doc", { type: "update", targetId: "md-1" });
+    tr.noteDocEdit("d1", "Doc", { type: "update", targetId: "md-1" });
+    tr.noteDocEdit("d1", "Doc", { type: "insert", targetId: "md-2" });
+    const it = tr._state.byId.get("chg-u9-d1");
+    assert.deepEqual(it.edits.map((e) => e.targetId), ["md-1", "md-2"], "one entry per part");
+    tr.onEvent(ev("session.idle"));
+    assert.equal(it.done, true);
+});
+test("history: live-only items (doc changes, questions) are merged in where they happened", async () => {
+    const evs = [ev("user.message", { messageId: "a", content: "one" }), ev("assistant.message", { messageId: "ra", content: "r1" })];
+    const session = fakeSession({ events: evs });
+    const tr = T.createTranscript(() => session);
+    tr.onEvent(evs[0]);
+    tr.noteDocEdit("d", "Doc", { type: "update", targetId: "x" });
+    tr.onEvent(evs[1]);
+    const later = [ev("user.message", { messageId: "b", content: "two" }), ev("assistant.message", { messageId: "rb", content: "r2" })];
+    for (const e of later) (evs.push(e), tr.onEvent(e));
+    const h = await tr.history();
+    assert.deepEqual(h.items.map((i) => i.id), ["a", "chg-a-d", "ra", "b", "rb"]);
 });

@@ -1560,7 +1560,7 @@ function showChatBox(wasHidden) {
     $("#chat").hidden = false;
     if (!chat.docked) placeBox();
     loadTranscript();
-    if (wasHidden && !chat.docked) persistOpen(true);
+    if (wasHidden && !chat.docked && !chat.docking) persistOpen(true);
     syncChatFab();
 }
 function persistOpen(open) {
@@ -1605,12 +1605,14 @@ function dockChat(slot, ctx) {
     if (!slot) return;
     if (chat.docked) undockChat();
     const floating = { style: chatBox.getAttribute("style"), hidden: chatBox.hidden };
+    chat.docking = true; // opening to dock isn't the floating chat being opened
     if (ctx.mode === "command") openChat({ mode: "command" });
     else {
         switchChatMode("board");
         Object.assign(chat, { blockId: null, unit: null, picks: null, quote: null, ref: null, askRows: null, askRange: null });
         openChat({ mode: "board", blockId: ctx.blockId });
     }
+    chat.docking = false;
     chat.docked = { slot, kind: ctx.kind, ref: ctx.ref, context: ctx.context, floating, placeholder: chatText.placeholder };
     if (ctx.placeholder) chatText.placeholder = ctx.placeholder;
     chatBox.removeAttribute("style");
@@ -1824,12 +1826,17 @@ async function loadTranscript() {
     TR.loading = (async () => {
         try {
             const r = await api("/transcript");
+            TR.seq = r.seq ?? 0;
             for (const it of r.items) upsertItem(it, { at: "end" });
             TR.cursor = r.cursor;
+            for (const p of r.proposals ?? []) showSuggestion(p);
             syncOlder();
             setTrStatus(r.status);
             TR.loaded = true;
-            for (const e of TR.buffer.splice(0)) onTranscript(e);
+            // Events that arrived while it loaded: the snapshot already includes those numbered up to its seq.
+            const late = TR.buffer.splice(0).filter((e) => !(e.seq <= TR.seq));
+            TR.buffer = null;
+            for (const e of late) onTranscript(e);
         } catch (e) {
             chatLog.append(h("div", { class: "chat-error" }, `Couldn't load the conversation: ${e.message}`));
         } finally {
@@ -1896,13 +1903,17 @@ function scrollChatIfNear() {
 }
 function upsertItem(it, { at }) {
     const old = TR.els.get(it.id);
-    // A message sent from here shows at once; the transcript's copy takes its place.
+    // A message sent from here shows at once; the transcript's copy takes its place. Copilot starting on it makes
+    // its turn the one that doc changes are listed under.
     let pending = null;
     if (!old && it.kind === "user" && it.source === "marginal") pending = [...chatLog.querySelectorAll(":scope > .chat-u.pending")].find((el) => el.dataset.text === it.text.trim());
+    if (pending?._turn) chat.turn = pending._turn;
     const el = itemEl(it, old ?? pending);
     TR.els.set(it.id, el);
     if (old || pending) {
         if ((old ?? pending) !== el) (old ?? pending).replaceWith(el);
+        // What changed follows the reply while the turn runs, so it ends up under it.
+        if (it.kind === "changes" && !it.done) chatLog.insertBefore(el, chat.statusEl);
         return el;
     }
     if (at === "start") (chatLog.querySelector(":scope > .chat-older")?.nextSibling ? chatLog.querySelector(":scope > .chat-older").after(el) : chatLog.prepend(el));
@@ -1939,11 +1950,40 @@ function itemEl(it, reuse) {
             h("ul", {}, it.recent.map((r) => h("li", {}, r)), it.helpers.map((x) => h("li", { class: `hlp ${x.status}` }, `helper · ${x.name} · ${x.status}`))),
         );
     }
+    if (it.kind === "changes") return changesItemEl(it);
     if (it.kind === "question") return questionEl(it);
     if (it.kind === "plan") return planEl(it);
     return h("div", { "data-id": it.id });
 }
 const ACT_KIND = { read: ["Read", "file", "files"], search: ["Searched", "time", "times"], edit: ["Edited", "file", "files"], run: ["Ran", "command", "commands"], web: ["Looked up", "page", "pages"], canvas: ["Updated", "canvas", "canvases"], todo: ["Updated the todo list"], other: ["Used", "tool", "tools"] };
+/** What Copilot changed in a doc during a turn: on that doc, each change one click away; elsewhere, a count. */
+function changesItemEl(it, again = true) {
+    const here = it.docId === state.documentId;
+    const all = it.edits;
+    const shown = all.slice(-6);
+    const el = h(
+        "div",
+        { class: "chat-changes", "data-id": it.id, role: "group", "aria-label": "Doc changes in this reply" },
+        h("span", { class: "cc-h" }, here ? "Changed" : `Changed “${excerpt(it.title || "a doc", 40)}”`),
+        here
+            ? shown.map((le) =>
+                  le.type === "remove"
+                      ? h("span", { class: "chg gone", title: "Removed from the doc" }, changeLabel(le))
+                      : h("button", { class: "chg", title: "Show in the doc", onclick: () => showChange(le) }, h("span", { class: "chg-ic", "aria-hidden": "true", html: '<svg viewBox="0 0 16 16" width="11" height="11"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' }), changeLabel(le)),
+              )
+            : h("span", { class: "chg more" }, `${all.length} part${all.length === 1 ? "" : "s"}`),
+        here && all.length > shown.length ? h("span", { class: "chg more" }, `+${all.length - shown.length} more`) : null,
+    );
+    // Labels read the doc, which reloads a moment after the edit.
+    if (here && again)
+        setTimeout(() => {
+            if (!el.isConnected || TR.els.get(it.id) !== el) return;
+            const fresh = changesItemEl(it, false);
+            el.replaceWith(fresh);
+            TR.els.set(it.id, fresh);
+        }, 400);
+    return el;
+}
 function activitySummaryText(it) {
     const parts = Object.entries(it.tools).map(([k, n]) => {
         const [verb, one, many] = ACT_KIND[k] ?? ACT_KIND.other;
@@ -2033,7 +2073,8 @@ function changeLabel(le) {
 }
 function recordChange(le) {
     const turn = chat.turn;
-    if (!turn?.open || $("#chat").hidden) return;
+    // A reply's changes are on the transcript; this lists what applying a held suggestion changed, under it.
+    if (!turn?.open || !turn.anchor) return;
     const key = le.targetId ?? le.blockId;
     if (!key) return;
     turn.changes.set(key, le);
@@ -2187,7 +2228,8 @@ function renderChatMode() {
 
 /** A change Copilot suggested in a Discuss turn: held until you apply it. */
 function showSuggestion(ev) {
-    const turn = chat.turn;
+    // The suggestion belongs to the message that asked (its id is the proposal's).
+    const turn = chat.turns?.get(ev.proposalId) ?? chat.turn;
     const count = `${ev.count} edit${ev.count === 1 ? "" : "s"}`;
     let el = chat.suggestions.get(ev.proposalId);
     if (!el) {
@@ -2263,8 +2305,11 @@ async function sendChat({ flip = false } = {}) {
     chat.awaiting = true;
     $("#chat-send").disabled = true;
     const gen = chat.focusGen;
-    // Doc edits Copilot makes while answering are listed under its reply.
-    chat.turn = chat.mode === "board" ? { open: true, changes: new Map(), el: null } : null;
+    // Doc edits Copilot makes while answering are listed under its reply: each message has its own turn, which
+    // becomes current when Copilot starts on it (a message sent while it works waits its turn).
+    const turn = chat.mode === "board" ? { open: true, changes: new Map(), el: null } : null;
+    mine._turn = turn;
+    if (!chat.statusEl) chat.turn = turn;
     try {
         const first = !chat.threadId;
         const cmd = chat.mode === "command";
@@ -2276,6 +2321,7 @@ async function sendChat({ flip = false } = {}) {
                 : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss },
         });
         chat.threadId = res.threadId;
+        if (turn) (chat.turns ??= new Map()).set(res.messageId, turn);
         chat.nextContext = null;
         if (!cmd && chat.focusGen === gen) chat.quoteFresh = false; // unless the focus moved while this was sending
         if (cmd && chat.quote) {

@@ -146,6 +146,14 @@ export async function startServer({ chat, transcript = null, instances, getSessi
             if (event.type === "catalog") push(c, event);
             else if (event.documentId && event.documentId === shown) push(c, event);
         }
+        // Copilot's doc edits during a turn go on the transcript, under that turn's reply.
+        if (transcript && event.type === "version" && event.reason === "edit" && event.lastEdit && event.lastEdit.by !== "user") {
+            let title = "";
+            try {
+                title = store.getDoc(event.documentId).title;
+            } catch {}
+            transcript.noteDocEdit(event.documentId, title, event.lastEdit);
+        }
     });
 
     // Command center: one SSE event type with a `kind`; live change events travel as deltas, never as doc versions.
@@ -293,7 +301,8 @@ export async function startServer({ chat, transcript = null, instances, getSessi
         if (parts[1] === "transcript" && !parts[2] && method === "GET") {
             if (!transcript) return send(res, 200, { items: [], cursor: null, hasMore: false, status: "idle" });
             const cursor = url.searchParams.get("cursor") || undefined;
-            return send(res, 200, await transcript.history({ cursor, want: Number(url.searchParams.get("want")) || 40 }));
+            const h = await transcript.history({ cursor, want: Number(url.searchParams.get("want")) || 40 });
+            return send(res, 200, cursor ? h : { ...h, proposals: chat.pendingProposals?.() ?? [] });
         }
         if (parts[1] === "transcript" && parts[2] === "answer" && method === "POST") {
             if (!transcript) throw new InputError("Not connected to the session.");

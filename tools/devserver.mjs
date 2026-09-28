@@ -244,7 +244,13 @@ const transcriptOn = args.has("--transcript");
 const chat = args.has("--canned-chat") || transcriptOn
     ? createCannedChat({
           reply: (m) =>
-              /\bask\b/i.test(m.prompt) && !m.fromApp
+              /write it/i.test(m.prompt)
+                  ? { statuses: ["Reading the plan"], text: "Added a Retry cap section to the doc.", after: () => store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "## Retry cap\n\nA job is retried at most **5** times; the delay doubles each time, up to 30 s." } }) }
+                  : /suggest/i.test(m.prompt)
+                  ? { text: "I'd add a short note on the cap. It's held below as a suggestion: preview it, then apply or dismiss.", suggest: [{ type: "insert", content: { type: "markdown", markdown: "> The cap applies per job, not per step." } }] }
+                  : /app decides/i.test(m.prompt)
+                  ? { ask: { question: "Should the retry cap be configurable per job?", choices: ["Yes, per job", "No, one global cap"], answeredInAppAfter: 4000, appAnswer: "Yes, per job" }, text: (a) => `Answered in the app: ${a || "Yes, per job"}. I'll add \`retryCap\` to the job options.` }
+                  : /\bask\b/i.test(m.prompt) && !m.fromApp
                   ? { ask: { question: "Which retry cap should P2 use?", choices: ["5 attempts (Recommended)", "3 attempts", "No cap"] }, text: (a) => `OK — ${a ? a.replace(/ \(Recommended\)$/, "") : "5 attempts"} it is. I'll set \`maxAttempts\` in \`DEFAULT_POLICY\` and add a test for the cap.` }
                   : m.fromApp
                   ? { statuses: ["Reading src/runner/queue.ts"], text: m.replyText ?? "The queue persists `runAfter`, so a requeued job keeps its delay across a restart." }

@@ -97,6 +97,12 @@ export function createChat(getSession) {
         const messageId = await session.send({ prompt: [...notes, prompt].join("\n\n"), displayPrompt, mode: immediate ? "immediate" : "enqueue" });
         t.messageIds.add(messageId);
         byMessage.set(messageId, id);
+        // Threads no longer end when the chat closes: keep only the newest messages' routing (proposals live on).
+        for (const old of [...byMessage.keys()].slice(0, Math.max(0, byMessage.size - 200))) {
+            threads.get(byMessage.get(old))?.messageIds.delete(old);
+            byMessage.delete(old);
+            metaByMessage.delete(old);
+        }
         const meta = { threadId: id, messageId, docId, discuss: !!discuss };
         metaByMessage.set(messageId, meta);
         // The user.message event can arrive before send() resolves; if it already did, this thread owns the turn.
@@ -143,6 +149,8 @@ export function createChat(getSession) {
     }
     const peekProposal = (threadId, proposalId) => threads.get(threadId)?.proposals.get(proposalId) ?? null;
     const note = (threadId, text) => threads.get(threadId)?.notes.push(text);
+    /** Suggestions still waiting for Apply or Dismiss, so a panel that (re)connects can show them. */
+    const pendingProposals = () => [...threads].flatMap(([threadId, t]) => [...t.proposals].map(([proposalId, p]) => ({ threadId, proposalId, count: p.edits.length, docId: p.docId })));
 
     return {
         onEvent,
@@ -154,6 +162,7 @@ export function createChat(getSession) {
         takeProposal,
         peekProposal,
         note,
+        pendingProposals,
         subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)),
         /** The side-chat thread that owns the current turn (null = the user's own main-chat work). */
         activeThread: () => current,

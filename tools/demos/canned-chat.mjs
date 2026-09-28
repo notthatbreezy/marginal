@@ -62,6 +62,15 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
             fire(ev("tool.execution_start", { toolCallId, toolName: "ask_user", arguments: { question: r.ask.question, choices: r.ask.choices ?? [] } }));
             const answered = new Promise((res) => waiting.set(requestId, res));
             fire(ev("user_input.requested", { requestId, toolCallId, question: r.ask.question, choices: r.ask.choices ?? [], allowFreeform: true }), { ephemeral: true });
+            // answeredInAppAfter: nobody answers in Marginal, and the app does (the card should settle on its own).
+            if (r.ask.answeredInAppAfter)
+                setTimeout(() => {
+                    const done = waiting.get(requestId);
+                    if (!done) return;
+                    waiting.delete(requestId);
+                    fire(ev("user_input.completed", { requestId, answer: r.ask.appAnswer ?? r.ask.choices?.[0] ?? "OK", wasFreeform: false }), { ephemeral: true });
+                    done(r.ask.appAnswer ?? r.ask.choices?.[0] ?? "OK");
+                }, r.ask.answeredInAppAfter);
             const answer = await answered;
             fire(ev("tool.execution_complete", { toolCallId, success: true, result: { content: `User responded: ${answer}` } }));
             r.text = typeof r.text === "function" ? r.text(answer) : r.text;
@@ -88,9 +97,9 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         }
         emit(m.instanceId, threadId, { kind: "message", messageId, text });
         fire(ev("assistant.message", { messageId, content: text }));
+        await r.after?.(m); // edits land within the turn, as Copilot's do
         emit(m.instanceId, threadId, { kind: "done" });
         fire(ev("session.idle", {}), { ephemeral: true });
-        await r.after?.(m);
     }
     return {
         transcript,
@@ -123,6 +132,7 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         },
         peekProposal: (threadId, id) => proposals.get(`${threadId}\0${id}`) ?? null,
         note: () => {},
+        pendingProposals: () => [...proposals].map(([k, p]) => ({ threadId: k.split("\0")[0], proposalId: k.split("\0")[1], count: p.edits.length, docId: p.docId })),
         activeThread: () => null,
     };
 }

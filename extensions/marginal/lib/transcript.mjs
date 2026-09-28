@@ -7,6 +7,7 @@
 //   activity  {tools: {label: count}, recent: string[], helpers: [{id,name,status}], done}   what it did between replies
 //   question  {question, choices, allowFreeform, requestId?, answerable, status: pending|answered, answer?}
 //   plan      {summary, planContent, actions, recommendedAction, requestId?, answerable, status, approved?, feedback?}
+//   changes   {docId, title, edits: [lastEdit], done}   what Copilot changed in a doc during a turn (live only)
 // Questions and plan approvals are ephemeral events: only the live process knows their requestId, so ones seen only in
 // history (an ask_user tool call) are shown but answered in the app.
 
@@ -84,6 +85,7 @@ export function reduce(s, ev) {
     };
     const d = ev?.data ?? {};
     const at = ev?.timestamp ?? new Date().toISOString();
+    if (!s.lastAt || at > s.lastAt) s.lastAt = at;
     const setStatus = (v) => {
         if (s.status !== v) {
             s.status = v;
@@ -109,7 +111,7 @@ export function reduce(s, ev) {
                 }
             }
             const source = marginal ? "marginal" : typeof d.source === "string" && d.source.startsWith("agent-") ? "session" : "app";
-            put(s, { kind: "user", id: d.messageId ?? ev.id, at, text: text.slice(0, TEXT_MAX), source, ...(context ? { context } : {}), ...(d.delivery && d.delivery !== "idle" ? { delivery: d.delivery } : {}) }, changed);
+            s.lastUser = put(s, { kind: "user", id: d.messageId ?? ev.id, at, text: text.slice(0, TEXT_MAX), source, ...(context ? { context } : {}), ...(d.delivery && d.delivery !== "idle" ? { delivery: d.delivery } : {}) }, changed);
             closeActivity();
             setStatus("working");
             break;
@@ -120,6 +122,11 @@ export function reduce(s, ev) {
         case "session.idle":
         case "session.task_complete":
             closeActivity();
+            for (const it of s.items)
+                if (it.kind === "changes" && !it.done) {
+                    it.done = true;
+                    changed.add(it.id);
+                }
             setStatus("idle");
             break;
         case "assistant.message_delta": {
@@ -260,7 +267,9 @@ export function itemsFrom(events) {
 export function createTranscript(getSession, { now = () => Date.now() } = {}) {
     const s = createState();
     const listeners = new Set();
+    let seq = 0; // every live event is numbered; a history snapshot says which number it includes up to
     const emit = (e) => {
+        e.seq = ++seq;
         for (const fn of listeners)
             try {
                 fn(e);
@@ -302,18 +311,50 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
             const talk = itemsFrom(events).filter((i) => i.kind === "user" || i.kind === "reply").length;
             if (talk >= want) break;
         }
+        // Keep reading back to the start of the turn the page begins in (a user message), within reason, so a
+        // question and its answer, or one turn's activity, are never split across pages.
+        for (let extra = 0; hasMore && events[0]?.type !== "user.message" && extra < 20; extra++) {
+            const r = await session.rpc.eventLog.read({ direction: "backward", agentScope: "primary", includeEphemeral: false, types: HISTORY_TYPES, max, cursor: next });
+            const got = r.events ?? [];
+            const start = got.findLastIndex((e) => e.type === "user.message" && !e.agentId);
+            // Take only back to that user message; the rest belongs to the next page (a cursor can't split a batch,
+            // so if the boundary is mid-batch the whole batch is taken).
+            events = [...got, ...events];
+            next = r.cursor;
+            hasMore = !!r.hasMore && r.cursorStatus !== "expired";
+            if (start >= 0) break;
+        }
         const items = itemsFrom(events);
         // A page can start mid-turn (its user message is on the next, older page): that's fine, it reads on.
+        const upTo = seq; // taken with the live merge below, synchronously: events after this number aren't in it
         if (!cursor) {
             const have = new Set(items.map((x) => x.id));
             for (const it of s.items) {
                 if (have.has(it.id)) {
                     const i = items.findIndex((x) => x.id === it.id);
                     items[i] = it; // the live copy knows more (streaming, answerable questions)
-                } else if (it.kind === "question" || it.kind === "plan" || (it.kind === "reply" && it.streaming) || Date.parse(it.at) >= Date.parse(items.at(-1)?.at ?? 0)) items.push(it);
+                } else if (["question", "plan", "changes"].includes(it.kind) || (it.kind === "reply" && it.streaming) || Date.parse(it.at) >= Date.parse(items.at(-1)?.at ?? 0)) {
+                    // Live-only items (not in the log) go where they happened, by time.
+                    const t = Date.parse(it.at);
+                    const i = items.findIndex((x) => Date.parse(x.at) > t);
+                    if (i < 0 || it.kind === "reply") items.push(it);
+                    else items.splice(i, 0, it);
+                }
             }
         }
-        return { items, cursor: hasMore ? next : null, hasMore, status: s.status, ms: now() - t0 };
+        return { items, cursor: hasMore ? next : null, hasMore, status: s.status, seq: upTo, ms: now() - t0 };
+    }
+
+    /** Copilot changed a doc during the current turn: listed under that turn's reply (from any tab or panel). */
+    function noteDocEdit(docId, title, le) {
+        if (s.status === "idle" || !le) return; // an edit outside any turn isn't a reply's
+        const id = `chg-${s.lastUser?.id ?? "turn"}-${docId}`;
+        const changed = new Set();
+        const it = s.byId.get(id) ?? put(s, { kind: "changes", id, at: new Date(Math.max(now(), Date.parse(s.lastAt ?? 0) || 0)).toISOString(), docId, title: String(title ?? "").slice(0, 160), edits: [], done: false }, changed);
+        const key = le.targetId ?? le.blockId;
+        it.edits = [...it.edits.filter((e) => (e.targetId ?? e.blockId) !== key), le].slice(-30);
+        it.done = false;
+        emit({ op: "upsert", item: it });
     }
 
     /** Answer a pending question or plan approval from Marginal. */
@@ -337,5 +378,5 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
         return { ok: true, item: it };
     }
 
-    return { onEvent, history, answer, status: () => s.status, subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)), _state: s };
+    return { onEvent, history, answer, noteDocEdit, status: () => s.status, subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)), _state: s };
 }
