@@ -113,16 +113,18 @@ const openSpan = (h, at) => {
 };
 /**
  * The runs of a helper first seen in tasks.list (missed while reloading). Earlier runs of a resumed helper can't be
- * placed, so none of its idle time is drawn as activity: a running one shows its current run (activeStartedAt); an
- * idle one its total active time, ending when it went idle.
+ * placed, so none of its idle time is drawn as activity: a running one shows its current run (activeStartedAt). An
+ * idle one that was active its whole life (active time ≈ start to idle) shows that run; otherwise when it ran is
+ * unknown (activeTimeMs is a total), so it's a marker where it went idle, flagged `unplaced`.
  */
 function recoveredSpans(t, started, status, end) {
     const active = Date.parse(t.activeStartedAt);
-    if (status === "running") return [[new Date(Number.isFinite(active) && active >= started ? active : started).toISOString(), null]];
+    if (status === "running") return { spans: [[new Date(Number.isFinite(active) && active >= started ? active : started).toISOString(), null]] };
     const e = end ? Date.parse(end) : NaN;
-    if (!Number.isFinite(e)) return [[new Date(started).toISOString(), null]];
-    const s = typeof t.activeTimeMs === "number" && t.activeTimeMs >= 0 ? Math.max(started, e - t.activeTimeMs) : started;
-    return [[new Date(s).toISOString(), new Date(e).toISOString()]];
+    if (!Number.isFinite(e)) return { spans: [[new Date(started).toISOString(), null]] };
+    const whole = typeof t.activeTimeMs !== "number" || Math.abs(e - started - t.activeTimeMs) <= 5000;
+    const at = new Date(e).toISOString();
+    return whole ? { spans: [[new Date(started).toISOString(), at]] } : { spans: [[at, at]], unplaced: true };
 }
 /** Keep the newest HELPERS_MAX; note until when older ones were dropped (the lanes say so). */
 function capHelpers(p, helpers) {
@@ -239,7 +241,9 @@ export function applyTasks(p, result, { plan, readAt = Date.now() } = {}) {
             if (!Number.isFinite(started) || started < since) continue; // earlier work
             const h = { id, agentId: t.id ?? null, name: clip(t.displayName || t.agentType || "helper", 80), description: clip(t.description), type: clip(t.agentType || "", 40), model: t.model ? clip(t.model, 60) : null, mode: t.executionMode ? clip(t.executionMode, 20) : null, startedAt: new Date(started).toISOString(), status, phaseId: matchHelper(plan, started) };
             if (status !== "running" && ended) h.endedAt = iso(ended, readAt);
-            h.spans = recoveredSpans(t, started, status, h.endedAt);
+            const rs = recoveredSpans(t, started, status, h.endedAt);
+            h.spans = rs.spans;
+            if (rs.unplaced) h.unplaced = true;
             if (status !== "running" && typeof t.activeTimeMs === "number") h.durationMs = t.activeTimeMs;
             helpers = [...(helpers === p.helpers ? helpers.slice() : helpers), h];
             continue;

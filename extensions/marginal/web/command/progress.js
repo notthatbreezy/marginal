@@ -179,7 +179,7 @@ export function renderLanes(host, helpers, { from, now, trimmedUntil = null }) {
         const state = runState(x);
         const left = pos(x.s);
         const el = h("b", { class: `lane-bar hs-${state}`, "data-h": x.h.id, tabindex: "0", "aria-label": `${x.h.name}, ${HELPER_LABEL[state]}`, style: `left:${left}%;width:${Math.max(0.6, pos(x.e) - left)}%` }, h("span", {}, x.h.name));
-        return hover(el, () => [runLine(x), x.h.description ? h("div", { class: "lt-d" }, x.h.description) : null, state === "failed" && x.h.error ? h("div", { class: "lt-err" }, x.h.error) : null], x.h.id, `${x.h.id}:${x.k}`);
+        return hover(el, () => [runLine(x), x.h.unplaced ? h("div", { class: "lt-d" }, `Active ${typeof x.h.durationMs === "number" ? fmtDur(x.h.durationMs) : "for a while"} in total, while Marginal wasn't watching: it went idle here`) : null, x.h.description ? h("div", { class: "lt-d" }, x.h.description) : null, state === "failed" && x.h.error ? h("div", { class: "lt-err" }, x.h.error) : null], x.h.id, `${x.h.id}:${x.k}`);
     };
     const laneEl = (items) => {
         const kids = [];

@@ -436,7 +436,10 @@ test("runs: a resume starts at activeStartedAt; a helper recovered after a reloa
         { type: "agent", id: "a2", toolCallId: "h2", status: "running", startedAt: T(0), activeStartedAt: T(40) },
         { type: "agent", id: "a3", toolCallId: "h3", status: "idle", startedAt: T(0), idleSince: T(50), activeTimeMs: 3 * 60_000 },
     ] }, { plan, readAt: Date.parse(T(55)) });
-    assert.deepEqual(q.helpers.map((h) => h.spans), [[[T(40), null]], [[T(47), T(50)]]]);
+    assert.deepEqual(q.helpers.map((h) => h.spans), [[[T(40), null]], [[T(50), T(50)]]], "idle, runs unknown: a marker where it went idle");
+    assert.equal(q.helpers[1].unplaced, true);
+    const once = P.applyTasks(P.emptyProgress(0), { tasks: [{ type: "agent", id: "a5", toolCallId: "h5", status: "idle", startedAt: T(0), idleSince: T(3), activeTimeMs: 3 * 60_000 - 800 }] }, { plan, readAt: Date.parse(T(55)) });
+    assert.deepEqual(once.helpers[0].spans, [[T(0), T(3)]], "active its whole life: that run, exactly");
     assert.equal(q.helpers[0].startedAt, T(0), "the helper keeps its real start");
     // past SPANS_MAX runs, the oldest goes (its idle gap is never filled in)
     let r = P.reduceProgress(P.emptyProgress(0), started("h4", T(0)), { plan });
