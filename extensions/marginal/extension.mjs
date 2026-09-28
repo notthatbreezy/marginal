@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { CanvasError, createCanvas, joinSession } from "@github/copilot-sdk/extension";
 
 import { createChat } from "./lib/chat.mjs";
+import { createTranscript } from "./lib/transcript.mjs";
 import { adoptLeases, attachMission, commandActions } from "./lib/command/index.mjs";
 import { InputError } from "./lib/errors.mjs";
 import * as git from "./lib/git.mjs";
@@ -32,7 +33,8 @@ let session;
 let serverPromise;
 // The panel can open while the extension is still joining the session, so resolve it lazily.
 const chat = createChat(() => session);
-const server = () => (serverPromise ??= startServer({ chat, instances, getSessionId: () => session?.sessionId }));
+const transcript = createTranscript(() => session);
+const server = () => (serverPromise ??= startServer({ chat, transcript, instances, getSessionId: () => session?.sessionId }));
 
 /** Run a handler, translating validation errors into CanvasErrors the agent can act on. */
 const wrap = (fn) => async (ctx) => {
@@ -413,6 +415,11 @@ session.on((event) => {
         chat.onEvent(event);
     } catch (e) {
         session.log(`marginal side-chat: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
+    }
+    try {
+        transcript.onEvent(event);
+    } catch (e) {
+        session.log(`marginal transcript: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
     }
 });
 

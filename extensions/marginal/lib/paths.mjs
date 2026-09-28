@@ -14,6 +14,7 @@ export const paths = {
     docs: join(root, "docs"),
     repositories: join(root, "repositories.json"),
     settings: join(root, "settings.json"),
+    ui: join(root, "ui.json"),
 };
 
 const isEmptyDir = (d) => !existsSync(d) || !readdirSync(d).length;

@@ -17,6 +17,7 @@ import { readProgress, summarizeProgress } from "./command/progress.mjs";
 
 import * as store from "./store.mjs";
 import { readSettings, writeSettings } from "./settings.mjs";
+import { readUi, writeUi } from "./ui.mjs";
 
 const webDir = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".wasm": "application/wasm" };
@@ -107,7 +108,7 @@ async function sourceSlice(doc, source) {
     return result;
 }
 
-export async function startServer({ chat, instances, getSessionId }) {
+export async function startServer({ chat, transcript = null, instances, getSessionId }) {
     const token = randomBytes(18).toString("base64url");
     const userEdits = new Map(); // docId -> Set of block ids the reader edited since the last chat message
     const editedNote = (doc) => {
@@ -131,7 +132,12 @@ export async function startServer({ chat, instances, getSessionId }) {
     }
 
     chat.subscribe((event) => {
-        for (const c of clients) if (c.instanceId === event.instanceId) push(c, event);
+        // Suggestions held from a Discuss turn show wherever the chat is open; the rest is the transcript's job.
+        for (const c of clients) if (event.kind === "proposal" || c.instanceId === event.instanceId) push(c, event);
+    });
+    // The conversation, live, to every panel and window.
+    transcript?.subscribe((e) => {
+        for (const c of clients) push(c, { type: "transcript", ...e });
     });
 
     store.subscribe("*", (event) => {
@@ -282,6 +288,29 @@ export async function startServer({ chat, instances, getSessionId }) {
         }
 
         if (parts[1] === "command") return commandRoute(req, res, url, parts.slice(2));
+
+        // The chat: the session's transcript, newest first by page, and answering its questions.
+        if (parts[1] === "transcript" && !parts[2] && method === "GET") {
+            if (!transcript) return send(res, 200, { items: [], cursor: null, hasMore: false, status: "idle" });
+            const cursor = url.searchParams.get("cursor") || undefined;
+            return send(res, 200, await transcript.history({ cursor, want: Number(url.searchParams.get("want")) || 40 }));
+        }
+        if (parts[1] === "transcript" && parts[2] === "answer" && method === "POST") {
+            if (!transcript) throw new InputError("Not connected to the session.");
+            const r = await transcript.answer(await readBody(req));
+            if (!r.ok) throw new InputError(r.reason);
+            return send(res, 200, r);
+        }
+        // Where the chat window sits (shared) and whether it's open (per panel).
+        if (parts[1] === "ui" && method === "GET") {
+            const ui = readUi();
+            return send(res, 200, { box: ui.box, open: !!ui.open[url.searchParams.get("instance") ?? ""] });
+        }
+        if (parts[1] === "ui" && method === "POST") {
+            const body = await readBody(req);
+            const ui = writeUi({ box: body?.box, instance: url.searchParams.get("instance") ?? undefined, open: body?.open });
+            return send(res, 200, { box: ui.box });
+        }
 
         if (parts[1] === "instance" && parts[2] && parts[3] === "show" && method === "POST") {
             const { documentId } = await readBody(req);
