@@ -119,7 +119,10 @@ export function attachProgress(session, { flushMs = 1000, todoWait = 300, taskWa
     const known = new Map(); // docId -> plan id
     const noticeNew = () => {
         let fresh = false;
-        for (const docId of owned()) {
+        const mine = owned();
+        // Forget docs we no longer own: owning one again (same plan or not) means reading afresh.
+        for (const docId of [...known.keys()]) if (!mine.includes(docId)) known.delete(docId);
+        for (const docId of mine) {
             const planId = readState(docId).plan.id;
             if (known.get(docId) !== planId) {
                 known.set(docId, planId);

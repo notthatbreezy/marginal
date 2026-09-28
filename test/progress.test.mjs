@@ -394,3 +394,28 @@ test("collector: a replaced plan gets fresh reads without waiting for another ev
         stopHeartbeat(docId);
     }
 });
+test("collector: owning a doc again (same plan) reads afresh", async () => {
+    const docId = "progress-doc-6";
+    claim(docId, "s-6");
+    writeState(docId, (s) => {
+        s.plan = { ...planOf(phase("p1", "active")), id: "same" };
+    });
+    const s = fakeSession("s-6", { todos: () => ({ rows: [] }), tasks: () => ({ tasks: [] }) });
+    const c = attachProgress(s, { flushMs: 20, todoWait: 1, taskWait: 1, maxWait: 5, tickMs: 40 });
+    try {
+        await sleep(100);
+        const { atomicWriteJson } = await import("../extensions/marginal/lib/paths.mjs");
+        const { commandDir } = await import("../extensions/marginal/lib/command/state.mjs");
+        const file = join(commandDir(docId), "owner.json");
+        const lease = JSON.parse(readFileSync(file, "utf8"));
+        atomicWriteJson(file, { ...lease, sessionId: "someone-else" });
+        await sleep(100);
+        const reads = s.calls.todos;
+        atomicWriteJson(file, { ...lease, heartbeatAt: new Date().toISOString() });
+        await sleep(150);
+        assert.ok(s.calls.todos > reads, "read again after owning it again");
+    } finally {
+        c.stop();
+        stopHeartbeat(docId);
+    }
+});
