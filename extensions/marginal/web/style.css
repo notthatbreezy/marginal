@@ -6931,6 +6931,3 @@ del.sg-del {
     border-radius: 1px;
     background: color-mix(in srgb, var(--purple) 55%, var(--bg));
 }
-.cc .lanes-sum i.f b {
-    background: var(--red);
-}

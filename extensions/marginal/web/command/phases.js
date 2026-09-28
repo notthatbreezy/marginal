@@ -48,8 +48,9 @@ export function renderPhases(host, rows, opts) {
         const step = p.steps.find((s) => s.state.status === "active");
         const on = opts.focusId === p.id;
         const pg = opts.progress?.phases?.[p.id];
-        // Now: the phase's todo in progress (observed), else the plan step marked active.
-        const nowText = pg?.now ?? step?.title ?? null;
+        // Now: the phase's todo in progress (observed), else the plan step marked active. A delivered phase has no "now"
+        // (its unfinished todos still show in the count).
+        const nowText = r.stage === "complete" ? null : pg?.now ?? step?.title ?? null;
         return h(
             "li",
             {

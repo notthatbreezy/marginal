@@ -3,7 +3,8 @@
 // Usage: node tools/devserver.mjs [--single] [--edits] [--walk] [--revising] [--progress] [--many-helpers] [--reload] [--seconds=N]
 //   --single    every phase in one checkout (the usual case: no fronts, no Worktrees list)   → prints JSON {url, instance, docId, repo, fronts}
 //   --progress  observed progress from a scripted orchestrator session (tools/demos/progress-script.mjs); with
-//               --many-helpers a burst of helpers (the collapsed lane row), with --reload the collector restarts mid-run
+//               --many-helpers a burst of helpers (the collapsed lane row), with --reload the collector restarts mid-run,
+//               with --stages P2 then goes to review and complete; --bare: helpers only (no todo list, no intent)
 //   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
 //   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
 //   --canned-chat  the Command chat answers with scripted, streamed replies (demos)
@@ -113,8 +114,8 @@ if (!single) {
 }
 // --progress: observed progress (todos, intent, helpers) from a scripted orchestrator session, fed through the real
 // collector. Todos seen before any phase is in play land in Other. --many-helpers adds a burst (the collapsed row).
-const progressOn = args.has("--progress") || args.has("--many-helpers");
-const fake = progressOn ? await (await import("./demos/progress-script.mjs")).createProgressSession({ sessionId: ctx.sessionId, logFile: join(tmp, "progress-emits.jsonl") }) : null;
+const progressOn = args.has("--progress") || args.has("--many-helpers") || args.has("--bare");
+const fake = progressOn ? await (await import("./demos/progress-script.mjs")).createProgressSession({ sessionId: ctx.sessionId, logFile: join(tmp, "progress-emits.jsonl"), bare: args.has("--bare") }) : null;
 if (fake) await fake.start();
 if (single) await call("command_plan", { op: "phase", phaseId: "p1", status: "implementing" });
 else await call("command_plan", { op: "phase", phaseId: "p1", status: "implementing", frontIds: ["orchestrator"] });
@@ -248,7 +249,15 @@ const chat = args.has("--canned-chat")
     : { subscribe: () => () => {}, send: async () => ({ threadId: "t", messageId: "m" }), end: () => {} };
 const s = await startServer({ chat, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
 process.stdout.write(JSON.stringify({ url: s.urlFor("dev"), instance: "dev", docId: doc.documentId, repo, fronts: wts, tmp }) + "\n");
-if (fake) fake.live({ manyHelpers: args.has("--many-helpers"), reload: args.has("--reload") });
+if (fake)
+    fake.live({ manyHelpers: args.has("--many-helpers"), reload: args.has("--reload") }).then(async () => {
+        if (!args.has("--stages")) return;
+        // P2 through review to complete, so its card shows each stage with its todo counts.
+        await new Promise((r) => setTimeout(r, 2500));
+        await call("command_plan", { op: "phase", phaseId: "p2", status: "review" });
+        await new Promise((r) => setTimeout(r, 5000));
+        await call("command_plan", { op: "phase", phaseId: "p2", status: "complete" });
+    });
 
 if (args.has("--edits")) {
     let i = 0;

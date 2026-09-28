@@ -143,21 +143,19 @@ export function renderLanes(host, helpers, { from, now, open, onToggle }) {
         // Concurrency over time: how many helpers were running in each slice.
         const N = 72;
         const counts = new Array(N).fill(0);
-        const failed = new Array(N).fill(false);
         for (const x of list) {
             const s = Math.max(from, Date.parse(x.startedAt));
             const e = x.endedAt ? Date.parse(x.endedAt) : now;
             for (let i = Math.floor(((s - from) / span) * N); i <= Math.min(N - 1, Math.floor(((e - from) / span) * N)); i++) {
                 if (i < 0) continue;
                 counts[i]++;
-                if (x.status === "failed") failed[i] = true;
             }
         }
         const mx = Math.max(1, ...counts);
         put(
             host,
             h("button", { class: "lanes-h", title: "Show one lane per helper", "aria-expanded": "false", onclick: onToggle }, "▸ ", label, h("span", { class: "muted" }, ` · at most ${mx} at once`)),
-            h("div", { class: "lanes-sum", role: "img", "aria-label": `${label}; at most ${mx} at once` }, counts.map((c, i) => h("i", c ? { title: `${c} running`, class: failed[i] ? "f" : "" } : {}, c ? h("b", { style: `height:${(c / mx) * 12}px` }) : null))),
+            h("div", { class: "lanes-sum", role: "img", "aria-label": `${label}; at most ${mx} at once` }, counts.map((c, i) => h("i", c ? { title: `${c} running` } : {}, c ? h("b", { style: `height:${(c / mx) * 12}px` }) : null))),
         );
         return;
     }

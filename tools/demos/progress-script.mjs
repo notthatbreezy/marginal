@@ -8,7 +8,7 @@ const { onCommand } = await import("../../extensions/marginal/lib/command/state.
 const sqlNow = () => new Date().toISOString().replace("T", " ").slice(0, 19);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function createProgressSession({ sessionId, logFile = null, flushMs = 1000 }) {
+export async function createProgressSession({ sessionId, logFile = null, flushMs = 1000, bare = false }) {
     const handlers = new Set();
     const rows = [];
     const tasks = new Map(); // toolCallId -> TaskInfo (what tasks.list returns)
@@ -34,7 +34,9 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
     let collector = attachProgress(session, { flushMs });
     if (logFile) onCommand((e) => e.kind === "progress" && e.progress && appendFileSync(logFile, JSON.stringify({ at: new Date().toISOString(), running: e.progress.helpers?.running ?? 0, todos: e.progress.todos ? `${e.progress.todos.done}/${e.progress.todos.total}` : null, now: e.progress.now?.text ?? null }) + "\n"));
 
+    // bare: a session that keeps no todo list and says no intent (only helpers).
     const setTodos = (list) => {
+        if (bare) return;
         for (const [id, title, status] of list) {
             const r = rows.find((x) => x.id === id);
             if (r) Object.assign(r, { title, status });
@@ -43,10 +45,11 @@ export async function createProgressSession({ sessionId, logFile = null, flushMs
         emit("session.todos_changed");
     };
     const status = (id, s) => {
+        if (bare) return;
         rows.find((x) => x.id === id).status = s;
         emit("session.todos_changed");
     };
-    const intent = (text) => emit("assistant.intent", { intent: text });
+    const intent = (text) => bare || emit("assistant.intent", { intent: text });
     let n = 0;
     const start = (name, description, { type = "task", mode = "background", model = "gpt-5.6-terra" } = {}) => {
         const toolCallId = `toolu_${++n}`;
