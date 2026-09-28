@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-28
+
 ### Changed
 
 - **Phases are the unit of the Command center.** A phase is a deliverable (what it builds, and the files it touches) with a stage: planned, implementing, in review, blocked (with what it waits on) or complete. The right-hand rail lists phases, with what each delivers, what it has changed so far and its pace; click one to show only its files on the map. Fronts become plumbing: `command_plan set {worktree}` watches the checkout the phases are built in, which is all the usual case needs, and worktrees are listed only when there are several (parallel sessions, stacked PRs).
