@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-30
+
 ### Added
 
 - **One chat, like the Copilot app's.** The chat shows the session's whole conversation, including messages typed in the app's main chat and from other sessions, with replies streaming in and what Copilot did between them folded into one line. It's the same on every tab, doc, panel and browser window. On a doc a message carries what it's about (and Discuss/Edit); on the Command tab, the focus chips.

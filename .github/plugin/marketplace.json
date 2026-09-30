@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Marginal: code-linked docs and a live Command center for the GitHub Copilot app.",
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "plugins": [
     {
       "name": "marginal",
       "description": "Code-linked docs and a live Command center for the GitHub Copilot app.",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "source": "."
     }
   ]
