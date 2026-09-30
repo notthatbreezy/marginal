@@ -2633,6 +2633,15 @@ function inCorridor(x, y) {
 
 // The hover zone of a unit extends right through the margin to the far edge of the icons.
 const GUTTER_REACH = 22 + 26 + 6; // gap + button + slack
+/** Moving right, on a line that meets the icons' column: the pointer is on its way to them. */
+function headingForGutter(prev, e) {
+    if (!prev || gutter.hidden) return false;
+    const dx = e.clientX - prev.x;
+    if (dx <= 0) return false;
+    const g = gutter.getBoundingClientRect();
+    const y = e.clientY + ((e.clientY - prev.y) / dx) * (g.left - e.clientX);
+    return y >= g.top - 6 && y <= g.bottom + 6;
+}
 function unitNearMargin(x, y) {
     const columns = document.querySelectorAll("#main .md, #main .md table.tw-out, #main .block[data-id]:not(.b-markdown):not(.b-section):not(.b-divider) > :first-child, #peek .insp-main");
     for (const col of columns) {
@@ -2648,11 +2657,16 @@ function unitNearMargin(x, y) {
 document.addEventListener(
     "pointermove",
     (e) => {
+        const prev = lastPointer;
         lastPointer = { x: e.clientX, y: e.clientY };
         if (gutterState.selection || e.buttons) return; // hold still while selecting or dragging
         if (prose?.active()) return; // the edit toolbar owns the margin
         if (tables?.isGrip(e.target) || tables?.menuOpen()) return; // a column border or the width menu keeps its table
-        const el = unitAt(e.target) ?? (e.target.closest?.("#gutter") ? null : unitNearMargin(e.clientX, e.clientY));
+        let el = unitAt(e.target) ?? (e.target.closest?.("#gutter") ? null : unitNearMargin(e.clientX, e.clientY));
+        // On the way to the icons the pointer crosses the enclosing block (a callout's padding and margin), or, when
+        // the icons stand taller than a short unit, the unit next to it: either way it keeps the unit it came from.
+        const u = gutterState.unit;
+        if (el && u && el !== u && inCorridor(e.clientX, e.clientY) && ((el.contains(u) && e.clientX > u.getBoundingClientRect().right) || headingForGutter(prev, e))) el = u;
         if (el) setUnit(el);
         else if (!e.target.closest?.("#gutter") && !inCorridor(e.clientX, e.clientY)) {
             setUnit(null);

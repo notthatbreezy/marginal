@@ -4,6 +4,10 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Fixed
+
+- Comment, Copy and Edit for a paragraph or list item inside a callout: moving the pointer to their icons crossed the callout's padding and switched them to the whole callout. They now stay on the item while the pointer heads for them, including when the icons stand taller than a short item and reach over its neighbour. The callout as a whole is still one hover away, on its title or edges.
+
 ## [0.8.0] - 2026-09-30
 
 ### Added

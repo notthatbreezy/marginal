@@ -68,6 +68,11 @@ const call = async (name, input) => {
     return r;
 };
 
+if (args.has("--callout")) {
+    // A callout holding several paragraphs and list items: for hovering one of them on the way to its margin icons.
+    await store.applyEdit(doc.documentId, { type: "insert", content: { type: "callout", tone: "warning", title: "Open decisions and blockers", children: [{ type: "markdown", markdown: "- **Landing** waits for the rest of the retry work: the backoff cap, the jitter PR and one more run of the queue's end-to-end tests.\n- **Config keys were renamed.** While this was in flight, main renamed `retry.max` to `retry.maxAttempts`; the docs still use the old name.\n- **Follow-up to decide:** the scheduler treats an unset cap as `5`, but the runner treats it as unlimited.\n- **Child issues** for metrics and alerts are drafted but not filed; they need review first." }] } });
+    await store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "**Companion docs:** each stack layer has its own Marginal doc, pinned to the layer below it." } });
+}
 if (args.has("--empty")) {
     // No plan yet: the empty state with "Initialize command center". The stub chat records what would be sent.
     const instances = new Map([["dev", { documentId: doc.documentId }]]);
