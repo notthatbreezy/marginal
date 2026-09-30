@@ -13,6 +13,7 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 ### Changed
 
 - The chat reopens where it was, at its size: one place for every tab and doc, remembered across reloads and restarts, and a panel that had it open opens it again after a reload. The round floating chat button and minimize are gone. Closing the chat keeps the conversation.
+- **Enter sends** and **Shift+Enter** starts a new line, as in the Copilot app (it was the other way round). **Ctrl/⌘+Enter** sends one message the other way from the **When Copilot is busy** setting: it interrupts Copilot when that chat normally waits, and queues when it normally interrupts. A queued message says so and waits at the bottom until Copilot takes it up. Ctrl/⌘+Shift+Enter still sends one message as the other of Discuss and Edit.
 
 - The Command tab no longer marks off-plan edits: the off-plan chip and its filter, the map's yellow hatch, the legend entry and the per-worktree off-plan counts are gone. Off-plan files are still reported by `command_read` and a view can still filter on them.
 - The Worktrees list under the phases is hidden unless **Show worktrees** is on in Settings (Command center). Worktrees are tracked either way.

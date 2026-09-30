@@ -153,7 +153,7 @@ function render() {
                 toggle(shortcut(s.key), s.label, (v) => change({ shortcuts: { [s.key]: v } })),
             ),
         ),
-        h("p", { class: "set-note" }, "Always on: ", h("kbd", {}, "Shift"), "+", h("kbd", {}, "Enter"), " sends or saves, ", h("kbd", {}, "Esc"), " closes or cancels."),
+        h("p", { class: "set-note" }, "Always on: in the chat ", h("kbd", {}, "Enter"), " sends and ", h("kbd", {}, "Shift"), "+", h("kbd", {}, "Enter"), " starts a new line; while editing the doc ", h("kbd", {}, "Shift"), "+", h("kbd", {}, "Enter"), " saves; ", h("kbd", {}, "Esc"), " closes or cancels."),
         h("div", { class: "set-h" }, "When Copilot is busy"),
         INTERRUPTS.map((s) =>
             h(
@@ -163,7 +163,7 @@ function render() {
                 toggle(settings.interrupt[s.key] !== false, s.label, (v) => change({ interrupt: { [s.key]: v } })),
             ),
         ),
-        h("p", { class: "set-note" }, "Off, a message waits until Copilot finishes what it's doing, which can be a long time while it waits on helper agents."),
+        h("p", { class: "set-note" }, "Off, a message waits until Copilot finishes what it's doing, which can be a long time while it waits on helper agents. Either way, ", h("kbd", {}, /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"), "+", h("kbd", {}, "Enter"), " sends one message the other way."),
         h("div", { class: "set-h" }, "Command center"),
         h(
             "div",

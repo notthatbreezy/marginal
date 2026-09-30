@@ -234,7 +234,7 @@ export async function startServer({ chat, transcript = null, instances, getSessi
     }
 
     /** Command chat: always to the orchestrator (this panel's session must hold the lease), with a structured focus block. */
-    async function askCommand({ doc, instanceId, quote, message, threadId, focus, context }) {
+    async function askCommand({ doc, instanceId, quote, message, threadId, focus, context, immediate }) {
         const lease = readLease(doc.id);
         if (lease?.live && lease.sessionId !== getSessionId?.()) throw new InputError(`Command chat talks to the orchestrator (session ${lease.sessionId}): open this doc in that session.`);
         const f = parseFocus(focus);
@@ -248,7 +248,7 @@ export async function startServer({ chat, transcript = null, instances, getSessi
         if (f.items.length) lines.push("Focus (what the user is pointing at on the Command map):\n```json\n" + JSON.stringify(f, null, 1).slice(0, 6000) + "\n```");
         lines.push('(The user reads your reply in the Command chat popup: keep it short. For "walk me through…" use command_diff then command_walkthrough {op:"show"}; for questions about a stop prefer command_walkthrough {op:"edit"}. Views: command_view.)');
         const chips = f.items.length ? ` · ${f.items.length} focused` : "";
-        return chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\nCommand chat on “${doc.title}”${chips}`, immediate: readSettings().interrupt.command });
+        return chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\nCommand chat on “${doc.title}”${chips}`, immediate });
     }
 
     async function route(req, res, url) {
@@ -382,11 +382,13 @@ export async function startServer({ chat, transcript = null, instances, getSessi
         }
 
         if (parts[1] === "ask" && method === "POST") {
-            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind, discuss, regions } = await readBody(req);
+            const { documentId, blockId, quote, message, threadId, tab, focus, context, kind, discuss, regions, immediate } = await readBody(req);
+            // Ctrl/⌘+Enter sends one message the other way from the setting (interrupt, or wait for Copilot).
+            const now = (key) => (typeof immediate === "boolean" ? immediate : readSettings().interrupt[key]);
             if (typeof message !== "string" || !message.trim()) throw new InputError("message is required.");
             const instanceId = url.searchParams.get("instance") ?? "";
             const doc = documentId ? store.getDoc(documentId) : null;
-            if (tab === "command" && doc?.target) return send(res, 200, await askCommand({ doc, instanceId, quote, message, threadId, focus, context }));
+            if (tab === "command" && doc?.target) return send(res, 200, await askCommand({ doc, instanceId, quote, message, threadId, focus, context, immediate: now("command") }));
             const lines = [];
             const quoted = typeof quote === "string" && quote.trim();
             // A follow-up that carries a quote has moved to something else in the doc: say so, and quote it like a first message.
@@ -424,7 +426,7 @@ export async function startServer({ chat, transcript = null, instances, getSessi
                 );
             else lines.push("(The user reads your reply in a small chat popup on the doc: keep it short and conversational. Make any changes with the Marginal canvas actions; they appear live.)");
             const where = doc ? `On doc “${doc.title}”${kind === "inspect" ? ` · inspecting${blockId ? ` ${blockId}` : ""}` : blockId ? ` (${blockId})` : ""}` : "From the doc";
-            const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}${discuss ? " · discuss only" : ""}`, docId: doc?.id ?? null, discuss: !!discuss && !!doc, immediate: readSettings().interrupt.doc });
+            const result = await chat.send({ instanceId, threadId, prompt: lines.join("\n\n"), displayPrompt: `${message.trim().slice(0, 2000)}\n\n${where}${discuss ? " · discuss only" : ""}`, docId: doc?.id ?? null, discuss: !!discuss && !!doc, immediate: now("doc") });
             return send(res, 200, result);
         }
 

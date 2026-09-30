@@ -5,7 +5,7 @@ import { activeSelection, createSelection, flashBar, withModifier, multibar } fr
 import { createToc } from "./toc.js";
 import { createTables } from "./tables.js";
 import { createProseEditor, editableKind } from "./edit.js";
-import { loadSettings, onSettings, settingsChanged, shortcut } from "./settings.js";
+import { loadSettings, onSettings, settings, settingsChanged, shortcut } from "./settings.js";
 import { captureGone, decorate as decorateSuggestion } from "./suggest.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
@@ -1012,6 +1012,7 @@ function updateCenter() {
     const typing = document.activeElement === chatText && !chatText.disabled && !$("#chat").hidden;
     $("#multibar").hidden = !multi;
     $("#chat-hint").hidden = multi || !typing;
+    if (typing && !multi) renderChatHint();
     $("#hint").hidden = multi || typing || !hintOn;
     $("#activity").hidden = multi || typing || hintOn || !activityOn;
     $("#idle-hint").hidden = multi || typing || hintOn || activityOn || state.tab !== "board" || !state.doc || state.viewVersion !== null || !toc?.entries?.length;
@@ -2267,6 +2268,14 @@ function renderChatMode() {
     );
 }
 
+/** The header's keys while typing in the chat; Ctrl/⌘+Enter does the other thing from the interrupt setting. */
+function renderChatHint() {
+    const k = (...keys) => keys.flatMap((x, i) => (i ? ["+", h("kbd", {}, x)] : [h("kbd", {}, x)]));
+    const other = interrupts() ? "queue" : "interrupt";
+    put($("#chat-hint"), k("Enter"), " send · ", k(MAC_KEYS ? "⌘" : "Ctrl", "Enter"), ` ${other} · `, k("Shift", "Enter"), " new line · ", k("Esc"), " close");
+    $("#chat-send").title = `Send (Enter). ${MAC_KEYS ? "⌘" : "Ctrl"}+Enter ${interrupts() ? "queues it until Copilot finishes" : "interrupts Copilot if it's busy"}.`;
+}
+
 /** A change Copilot suggested in a Discuss turn: held until you apply it. */
 function showSuggestion(ev) {
     // The suggestion belongs to the message that asked (its id is the proposal's).
@@ -2332,14 +2341,24 @@ function chatRegions() {
     return out.slice(0, 20);
 }
 
-async function sendChat({ flip = false } = {}) {
+/** Whether a message goes to Copilot mid-turn (true) or waits for it to finish, from the setting for this chat. */
+const interrupts = () => settings.interrupt[chat.mode === "command" ? "command" : "doc"] !== false;
+async function sendChat({ flip = false, other = false } = {}) {
     const message = chatText.value.trim();
     if (!message || chat.awaiting) return;
+    const immediate = interrupts() !== other;
+    const busy = !!chat.trStatus && chat.trStatus !== "idle";
     const discuss = chat.mode === "board" && chatDiscuss() !== flip;
     const board = chat.mode === "board" && !chat.docked;
     // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
     if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), chat.statusEl);
-    const mine = h("div", { class: `chat-u src-marginal pending${chat.trStatus && chat.trStatus !== "idle" ? " queued" : ""}`, "data-text": message.slice(0, 2000).trim() }, h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message));
+    const queued = busy && !immediate; // waits below until Copilot takes it up
+    const mine = h(
+        "div",
+        { class: `chat-u src-marginal pending${queued ? " queued" : ""}`, "data-text": message.slice(0, 2000).trim() },
+        h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message),
+        queued ? h("div", { class: "chat-meta" }, "Queued: Copilot takes it up when it finishes") : null,
+    );
     chatLog.insertBefore(mine, chat.statusEl);
     chatText.value = "";
     autosize();
@@ -2359,8 +2378,8 @@ async function sendChat({ flip = false } = {}) {
         const res = await api(`/ask?instance=${encodeURIComponent(INSTANCE)}`, {
             method: "POST",
             body: cmd
-                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: chat.nextContext ?? docked?.context?.() }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss },
+                ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: chat.nextContext ?? docked?.context?.(), immediate }
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss, immediate },
         });
         chat.threadId = res.threadId;
         if (turn) (chat.turns ??= new Map()).set(res.messageId, turn);
@@ -2447,11 +2466,14 @@ $("#chat-close").onclick = closeChat;
 chatText.addEventListener("input", autosize);
 for (const ev of ["focus", "blur"]) chatText.addEventListener(ev, () => updateCenter()); // the send hint in the header
 chatText.addEventListener("keydown", (e) => {
-    // Shift+Enter sends; plain Enter inserts a newline; Ctrl/⌘+Shift+Enter sends one message in the other mode.
-    if (e.key === "Enter" && e.shiftKey) {
-        e.preventDefault();
-        sendChat({ flip: chat.mode === "board" && (e.ctrlKey || e.metaKey) });
-    }
+    // As in the Copilot app: Enter sends, Shift+Enter is a new line. Ctrl/⌘+Enter sends the other way from the
+    // setting (interrupt Copilot, or wait for it); Ctrl/⌘+Shift+Enter sends one message as Discuss/Edit, the other mode.
+    if (e.key !== "Enter" || e.isComposing || e.altKey) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (e.shiftKey && !mod) return;
+    e.preventDefault();
+    if (e.shiftKey) return void sendChat({ flip: chat.mode === "board" });
+    sendChat({ other: mod });
 });
 // ---------------- paragraph controls in the margin ----------------
 // Hovering a prose unit (paragraph, list item, heading, quote, table, code) shows Comment and Copy
