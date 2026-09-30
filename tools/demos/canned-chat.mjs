@@ -126,6 +126,11 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
             const messageId = `msg-${++n}`;
             // Sent while Copilot is busy, a message waits; it is logged (as queued) when Copilot takes it up.
             const queued = inFlight > 0;
+            if (queued && m.immediate) {
+                // Steering: it reaches the running turn at once and is answered within it.
+                fire(ev("user.message", { messageId, content: m.displayPrompt ?? m.prompt, transformedContent: m.prompt, delivery: "steering" }));
+                return { threadId, messageId };
+            }
             inFlight++;
             const run = async () => {
                 fire(ev("user.message", { messageId, content: m.displayPrompt ?? m.prompt, transformedContent: m.prompt, delivery: queued ? "queued" : "idle" }));

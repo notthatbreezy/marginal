@@ -244,7 +244,9 @@ const transcriptOn = args.has("--transcript");
 const chat = args.has("--canned-chat") || transcriptOn
     ? createCannedChat({
           reply: (m) =>
-              /write it/i.test(m.prompt)
+              /carefully/i.test(m.displayPrompt ?? m.prompt)
+                  ? { statuses: ["Reading the plan", "Reading src/runner/queue.ts", "Reading src/runner/policy.ts", "Reading src/runner/executor.ts", "Thinking", "Reading test/runner/retry.test.ts", "Reading src/runner/backoff.ts", "Thinking", "Reading docs/runner.md", "Reading src/runner/jobs.ts", "Thinking", "Reading src/runner/config.ts", "Reading src/runner/errors.ts", "Thinking"], text: "Added a Retry cap section to the doc.", after: () => store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "## Retry cap\n\nA job is retried at most **5** times; the delay doubles each time, up to 30 s." } }) }
+              : /write it/i.test(m.prompt)
                   ? { statuses: ["Reading the plan"], text: "Added a Retry cap section to the doc.", after: () => store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "## Retry cap\n\nA job is retried at most **5** times; the delay doubles each time, up to 30 s." } }) }
                   : /suggest/i.test(m.displayPrompt ?? m.prompt)
                   ? { text: "I'd add a short note on the cap. It's held below as a suggestion: preview it, then apply or dismiss.", suggestFirst: /first/i.test(m.displayPrompt ?? m.prompt), suggest: [{ type: "insert", content: { type: "markdown", markdown: "> The cap applies per job, not per step." } }] }

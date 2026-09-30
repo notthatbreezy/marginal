@@ -2350,16 +2350,17 @@ async function sendChat({ flip = false, other = false } = {}) {
     const busy = !!chat.trStatus && chat.trStatus !== "idle";
     const discuss = chat.mode === "board" && chatDiscuss() !== flip;
     const board = chat.mode === "board" && !chat.docked;
-    // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
-    if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), chat.statusEl);
     const queued = busy && !immediate; // waits below until Copilot takes it up
+    const at = queued ? chat.statusEl : logEnd(); // one reaching Copilot now goes above any still waiting
+    // In a conversation that moves around the doc, each change of focus is labelled on the message that starts it.
+    if (board && chat.quoteFresh && chat.ref) chatLog.insertBefore(aboutLabel(), at);
     const mine = h(
         "div",
         { class: `chat-u src-marginal pending${queued ? " queued" : ""}`, "data-text": message.slice(0, 2000).trim() },
         h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss ? "Sent as Discuss: Copilot answers without changing the doc" : null }, message),
         queued ? h("div", { class: "chat-meta" }, "Queued: Copilot takes it up when it finishes") : null,
     );
-    chatLog.insertBefore(mine, chat.statusEl);
+    chatLog.insertBefore(mine, at);
     chatText.value = "";
     autosize();
     scrollChat();
