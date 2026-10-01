@@ -90,7 +90,8 @@ export async function run({ p, check, eq, shot, prompts }) {
     check("P9 the message names the thread (prId, threadId)", ask?.prThread?.prId && /^aT\d+$/.test(ask?.prThread?.threadId ?? ""), JSON.stringify(ask?.prThread));
     const reply = await p.evaluate(() => [...document.querySelectorAll("#chat-log .chat-msg.bot")].at(-1)?.innerText ?? "");
     check("P9 Copilot answered about that thread from the message alone (path and comment were in it)", /About src\/runner\/policy\.ts: maria-k asked "An unset maxAttempts now means unlimited retries\. Sh/.test(reply), reply);
-    const shown = await p.evaluate(() => [...document.querySelectorAll("#chat-log .chat-u")].at(-1)?.innerText.replace(/\s+/g, " ") ?? "");
+    // The dev scenario may deliver a handling batch meanwhile, so find the asked message rather than the last one.
+    const shown = await p.evaluate(() => [...document.querySelectorAll("#chat-log .chat-u")].map((e) => e.innerText.replace(/\s+/g, " ")).filter((t) => /Is this right\?/.test(t)).at(-1) ?? "");
     check("P9 the chat shows where it was asked", /PR thread #41 src\/runner\/policy\.ts:39/.test(shown), shown);
     const sent = prompts().filter((x) => /<<<PR-THREAD/.test(x.prompt)).at(-1)?.prompt ?? "";
     const inside = /<<<PR-THREAD\n([\s\S]*?)\nPR-THREAD>>>/.exec(sent)?.[1] ?? "";
