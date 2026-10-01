@@ -14,7 +14,7 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 const here = dirname(fileURLToPath(import.meta.url));
 const store = await import("../extensions/marginal/lib/store.mjs");
 const { normalize } = await import("../extensions/marginal/lib/prs/snapshot.mjs");
-const { composeBatch, readText, trimHunk, LIMITS } = await import("../extensions/marginal/lib/prs/message.mjs");
+const { composeBatch, readText, trimHunk, LIMITS, repeatNote } = await import("../extensions/marginal/lib/prs/message.mjs");
 const { createGitHub } = await import("../extensions/marginal/lib/prs/github.mjs");
 const { createPrService } = await import("../extensions/marginal/lib/prs/index.mjs");
 const { prActions, DESCRIPTION } = await import("../extensions/marginal/lib/prs/actions.mjs");
@@ -95,6 +95,14 @@ test("limits: a long comment is shortened with where to read it whole; a long th
     r13.threads = Array.from({ length: 13 }, (_, i) => ({ ...snap.threads[0], id: `Q${i}`, comments: [{ ...snap.threads[0].comments[0], id: `q${i}`, body: "w".repeat(3640) }] }));
     const m13 = composeBatch({ entry, snapshot: r13, units: r13.threads.map((x) => `thread:${x.id}`), batchId: "b", level: "pushResolve", docTitle: "A long doc title", docId: "doc-1" });
     assert.ok(Buffer.byteLength(m13.text) <= LIMITS.batch, `got ${Buffer.byteLength(m13.text)}`);
+    // a resend carries a note in front: still within the limit
+    for (const len of [3600, 3628, 3640, 3700]) {
+        const t = structuredClone(snap);
+        t.threads = Array.from({ length: 14 }, (_, i) => ({ ...snap.threads[0], id: `R${i}`, comments: [{ ...snap.threads[0].comments[0], id: `r${i}`, body: "v".repeat(len) }] }));
+        const id = "marginal-sandbox-1-abcd-b123";
+        const mr = composeBatch({ entry, snapshot: t, units: t.threads.map((x) => `thread:${x.id}`), batchId: id, level: "pushResolve", docTitle: "A long doc title", docId: "doc-1" });
+        assert.ok(Buffer.byteLength(repeatNote(id) + mr.text) <= LIMITS.batch, `resend of ${len}-byte comments: ${Buffer.byteLength(repeatNote(id) + mr.text)}`);
+    }
     assert.deepEqual(m.units, many.threads.slice(0, m.units.length).map((x) => `thread:${x.id}`), "whole threads, in order");
 });
 

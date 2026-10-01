@@ -7,6 +7,10 @@ import { displayState } from "./snapshot.mjs";
 
 export const LIMITS = Object.freeze({ comment: 4 * 1024, thread: 12 * 1024, batch: 48 * 1024, hunkLines: 12 });
 
+/** What a resend puts in front of a batch; composeBatch keeps room for it. */
+export const repeatNote = (batchId) => `[This batch (${batchId}) may have reached you already: if you've handled it, skip it.]\n\n`;
+const REPEAT_NOTE_MAX = 200;
+
 const OUTCOME = {
     assess: "Assess each thread below: is the reviewer right? Decide whether it's valid, one to decline (with the reason), a question for the user, or already done. Don't change any code, and don't post anything on GitHub.",
     remediate: "Assess each thread below, then fix the valid ones in the PR's checkout and commit them locally. Don't push, reply or resolve anything yet.",
@@ -85,9 +89,10 @@ export function composeBatch({ entry, snapshot: snap, units, batchId, level, new
     const ctx = { prId: entry.id, newIds: new Set(newIds), n: 0 };
     const parts = [];
     const included = [];
-    // The whole message stays within LIMITS.batch: the envelope (header, ask, fence, tail) is measured first.
+    // The whole message stays within LIMITS.batch: the envelope (header, ask, fence, tail) is measured first, and room
+    // is kept for the note a resend carries ("may have reached you already").
     const envelope = (ps) => frame(ps).text;
-    let size = bytes(envelope([]));
+    let size = bytes(envelope([])) + REPEAT_NOTE_MAX;
     for (const u of units) {
         ctx.n = included.length + 1;
         let t = unitText(u, snap, ctx);

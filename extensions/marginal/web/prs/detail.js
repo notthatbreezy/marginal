@@ -233,7 +233,10 @@ export async function mountDetail(el, c) {
     filter = "unresolved";
     confirmRemove = false;
     host.replaceChildren(h("div", { class: "pr-wrap pr-muted" }, "Loading…"));
+    data = null;
     await load();
+    // Unmounted, or another PR opened, while it loaded: that mount owns the view now.
+    if (ctx !== c || !host || !data) return;
     // What's new is marked for this visit; after it, this panel has seen it.
     newIds = new Set(newOf(data).map((i) => i.id));
     markSeen(data);

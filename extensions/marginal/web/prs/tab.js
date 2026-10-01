@@ -220,6 +220,7 @@ async function backToList() {
     detailMod?.unmountDetail();
     view = { kind: "list" };
     await load().catch(() => {});
+    if (!host || view.kind !== "list") return;
     renderList();
 }
 
@@ -231,9 +232,10 @@ export async function mountPrs(el, { documentId: id, prId = null }) {
     try {
         await load();
     } catch (e) {
-        put(host, h("div", { class: "doc error" }, e.message));
+        if (host === el && documentId === id) put(host, h("div", { class: "doc error" }, e.message));
         return;
     }
+    if (host !== el || documentId !== id || !data) return; // unmounted, or another doc shown, meanwhile
     if (prId && data.prs.some((p) => p.id === prId)) return open(prId);
     renderList();
     clearInterval(ticker);

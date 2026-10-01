@@ -10,6 +10,7 @@
 //     until it completes.
 // New comments from anyone but you wait in `pending`. What happens to them depends on the PR's handling level:
 // Do nothing (shown only), Read (a line in the chat, no agent turn), or a batch for Copilot through the outbox.
+import { repeatNote } from "./message.mjs";
 import { needsAgent } from "./model.mjs";
 import { complete as completeBatch, expire, markSeen, outstanding, prepare, admit } from "./outbox.mjs";
 import { diffSnapshots, itemsOf, normalize } from "./snapshot.mjs";
@@ -361,7 +362,7 @@ export function createWatcher({
         if (b?.state === "prepared" && !r.sending && needsAgent(b.level)) {
             r.sending = true;
             try {
-                const res = await send({ docId, entry, batch: b, text: b.repeat ? `[This batch (${b.id}) may have reached you already: if you've handled it, skip it.]\n\n${b.text}` : b.text, displayPrompt: b.display, mode: b.deliver === "interrupt" ? "immediate" : "enqueue" });
+                const res = await send({ docId, entry, batch: b, text: b.repeat ? `${repeatNote(b.id)}${b.text}` : b.text, displayPrompt: b.display, mode: b.deliver === "interrupt" ? "immediate" : "enqueue" });
                 writePr(docId, entry.id, (s) => {
                     const x = s.batches.find((y) => y.id === b.id);
                     admit(x, res.messageId, clock.now());
