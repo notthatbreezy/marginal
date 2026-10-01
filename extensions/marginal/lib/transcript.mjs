@@ -38,9 +38,9 @@ export function activitySummary(tools) {
     return parts.map((p, i) => (i ? p[0].toLowerCase() + p.slice(1) : p)).join(" · ");
 }
 
-const MARGINAL_TAG = /^(?:<current_datetime>[^<]*<\/current_datetime>\s*)?\[(?:Marginal side-chat|Command center chat|Command center: initialize)/;
+const MARGINAL_TAG = /^(?:<current_datetime>[^<]*<\/current_datetime>\s*)?\[(?:Marginal side-chat|Marginal PR review|Command center chat|Command center: initialize)/;
 // The last paragraph of a Marginal message's display text says where it was asked from.
-const CONTEXT_LINE = /^(?:On doc “|From the doc|Command chat on “|Command center on “)/;
+const CONTEXT_LINE = /^(?:On doc “|From the doc|From Marginal · Pull requests|Command chat on “|Command center on “)/;
 
 function parseArgs(a) {
     if (a && typeof a === "object") return a;
@@ -371,7 +371,7 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
                 if (have.has(it.id)) {
                     const i = items.findIndex((x) => x.id === it.id);
                     items[i] = it; // the live copy knows more (streaming, answerable questions)
-                } else if (["question", "plan", "changes"].includes(it.kind) || (it.kind === "reply" && it.streaming) || Date.parse(it.at) >= Date.parse(items.at(-1)?.at ?? 0)) {
+                } else if (["question", "plan", "changes", "notice"].includes(it.kind) || (it.kind === "reply" && it.streaming) || Date.parse(it.at) >= Date.parse(items.at(-1)?.at ?? 0)) {
                     // Live-only items (not in the log) go where they happened, by time.
                     const t = Date.parse(it.at);
                     const after = it.afterId ? items.findIndex((x) => x.id === it.afterId) : -1;
@@ -398,6 +398,14 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
         emit({ op: "upsert", item: it });
     }
 
+    /** A line from Marginal itself (no agent turn), e.g. new review comments on a watched PR at Read. */
+    function notice({ id, text, docId = null, prId = null, url = null }) {
+        const changed = new Set();
+        const it = put(s, { kind: "notice", id: id ?? `notice-${now()}`, at: new Date(now()).toISOString(), text: String(text).slice(0, 600), docId, prId, url }, changed);
+        emit({ op: "upsert", item: it });
+        return it;
+    }
+
     /** Answer a pending question or plan approval from Marginal. */
     async function answer({ id, answer, wasFreeform = false, approved, selectedAction, feedback }) {
         const session = getSession();
@@ -419,5 +427,5 @@ export function createTranscript(getSession, { now = () => Date.now() } = {}) {
         return { ok: true, item: it };
     }
 
-    return { onEvent, history, answer, noteDocEdit, status: () => s.status, subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)), _state: s };
+    return { onEvent, history, answer, noteDocEdit, notice, status: () => s.status, subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)), _state: s };
 }

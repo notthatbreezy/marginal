@@ -367,13 +367,14 @@ export function createWatcher({
     function onSessionEvent(ev) {
         const now = clock.now();
         if (ev.type === "user.message" || ev.type === "assistant.turn_start") session.idleSince = null;
-        if (ev.type === "user.message" && ev.data?.messageId) {
+        const ids = ev.type === "user.message" ? [ev.id, ev.data?.messageId].filter(Boolean) : [];
+        if (ids.length) {
             for (const docId of docs.keys())
                 for (const entry of readIndex(docId).prs) {
                     const st = readPr(docId, entry.id);
-                    if (st.batches.some((b) => b.state === "admitted" && b.messageId === ev.data.messageId))
+                    if (st.batches.some((b) => b.state === "admitted" && ids.includes(b.messageId)))
                         writePr(docId, entry.id, (s) => {
-                            const b = s.batches.find((x) => x.messageId === ev.data.messageId);
+                            const b = s.batches.find((x) => ids.includes(x.messageId));
                             if (markSeen(b, now)) log(s, `Copilot took up batch ${b.id}.`, { kind: "seen", batchId: b.id });
                         });
                 }

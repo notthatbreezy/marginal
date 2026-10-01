@@ -13,6 +13,8 @@ import { InputError } from "./lib/errors.mjs";
 import * as git from "./lib/git.mjs";
 import { getInstructions } from "./lib/instructions.mjs";
 import { atomicWriteJson, paths } from "./lib/paths.mjs";
+import { prActions } from "./lib/prs/actions.mjs";
+import { createPrService } from "./lib/prs/index.mjs";
 import { startServer } from "./lib/server.mjs";
 import * as store from "./lib/store.mjs";
 
@@ -34,7 +36,10 @@ let serverPromise;
 // The panel can open while the extension is still joining the session, so resolve it lazily.
 const chat = createChat(() => session);
 const transcript = createTranscript(() => session);
-const server = () => (serverPromise ??= startServer({ chat, transcript, instances, getSessionId: () => session?.sessionId }));
+// A doc's pull requests: watched from this process while it holds the doc's lease (see lib/prs).
+const prs = createPrService({ getSession: () => session, getSessionId: () => session?.sessionId, transcript });
+store.beforeRemove.push(async (docId) => prs.watcher.unwatch(docId));
+const server = () => (serverPromise ??= startServer({ chat, transcript, prs, instances, getSessionId: () => session?.sessionId }));
 
 /** Run a handler, translating validation errors into CanvasErrors the agent can act on. */
 const wrap = (fn) => async (ctx) => {
@@ -104,8 +109,8 @@ async function pinsFor(i, ctx) {
 const actions = [
     {
         name: "instructions",
-        description: "Read how to author docs. Call this first. Topics: authoring (explain a change/branch/PR), scratchpad (sketch an explanation), blocks (block reference), file-lenses, command (Command center protocol for multi-worktree implementation plans, checkpoint walkthroughs).",
-        inputSchema: { type: "object", properties: { topic: { type: "string", enum: ["authoring", "scratchpad", "blocks", "file-lenses", "command"] } } },
+        description: "Read how to author docs. Call this first. Topics: authoring (explain a change/branch/PR), scratchpad (sketch an explanation), blocks (block reference), file-lenses, command (Command center protocol for multi-worktree implementation plans, checkpoint walkthroughs), prs (a doc's pull requests, watched by Marginal).",
+        inputSchema: { type: "object", properties: { topic: { type: "string", enum: ["authoring", "scratchpad", "blocks", "file-lenses", "command", "prs"] } } },
         handler: wrap((i) => getInstructions(i.topic ?? "authoring")),
     },
     {
@@ -346,6 +351,7 @@ const actions = [
         handler: wrap((i) => store.remove(notDiscussing(i.documentId))),
     },
     ...commandActions({ resolveDoc: docIdFor, getSessionId: () => session?.sessionId }),
+    ...prActions({ resolveDoc: docIdFor, service: prs }).map((a) => ({ ...a, handler: wrap((input, ctx) => a.handler({ ...ctx, input })) })),
 ];
 
 /**
@@ -421,6 +427,11 @@ session.on((event) => {
     } catch (e) {
         session.log(`marginal transcript: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
     }
+    try {
+        prs.onSessionEvent(event);
+    } catch (e) {
+        session.log(`marginal pull requests: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
+    }
 });
 
 // Re-adopt Command leases this session held before a reload, so polling resumes without a new plan "set".
@@ -429,4 +440,10 @@ try {
     attachMission(session);
 } catch (e) {
     session.log(`marginal command: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
+}
+// Pull requests this session was watching before a reload carry on.
+try {
+    prs.adopt();
+} catch (e) {
+    session.log(`marginal pull requests: ${e?.message ?? e}`, { level: "warning", ephemeral: true });
 }
