@@ -2,7 +2,7 @@
 // GitHub shows them; and a rail with what Marginal does about new comments (watching, the handling ladder, how a
 // batch is delivered), the checkout, and the activity log.
 import { h, put, api, toast, svc } from "../core.js";
-import { ago, checksEl, markSeen, newOf, reviewLabel, stateLabel } from "./tab.js";
+import { ago, checksEl, clock, markSeen, newOf, reviewLabel, stateLabel } from "./tab.js";
 import { noteEl, threadEl } from "./thread.js";
 
 const STEPS = [
@@ -92,7 +92,8 @@ function railEl(d) {
         "aside",
         { class: "pr-rail" },
         own && !own.here ? h("div", { class: "pr-note" }, own.watcher ? `Session ${own.watcher} watches this PR. Settings you change here apply there.` : "No session is watching this PR right now.") : null,
-        d.error ? h("div", { class: "pr-note warn", role: "status" }, d.error.message) : null,
+        // With nothing fetched yet the main area says why; once there's a snapshot, it's stale, and this says so.
+        d.error && d.snapshot ? h("div", { class: "pr-note warn", role: "status" }, d.error.kind === "cap" ? d.error.message : `Showing what Marginal fetched ${ago(d.fetchedAt)}. ${d.error.message}`) : null,
         h(
             "section",
             {},
@@ -101,7 +102,7 @@ function railEl(d) {
                 "label",
                 { class: "pr-switch" },
                 h("input", { type: "checkbox", role: "switch", checked: s.watch, onchange: (e) => save({ watch: e.target.checked }) }),
-                h("span", {}, s.watch ? "Watching for new comments" : "Not watching", h("span", { class: "pr-sub" }, d.stopped && !s.watch ? "" : d.stopped ? `stopped: ${d.stopped}` : s.watch ? `checked ${d.checkedAt ? ago(d.checkedAt) : "soon"}, every minute while this session runs` : "Marginal won't check GitHub for it")),
+                h("span", {}, s.watch ? "Watching for new comments" : "Not watching", h("span", { class: "pr-sub" }, d.stopped && !s.watch ? "" : d.stopped ? `stopped: ${d.stopped}` : !s.watch ? "Marginal won't check GitHub for it" : d.error && d.error.kind !== "cap" ? `can't check GitHub${d.error.retryAt ? `; next try ${clock(d.error.retryAt)}` : ""}` : `checked ${d.checkedAt ? ago(d.checkedAt) : "soon"}, every minute while this session runs`)),
             ),
         ),
         h("section", {}, ladderEl(s.handle)),
@@ -184,7 +185,16 @@ function render() {
     const seg = (key, label, n) => h("button", { class: `pr-seg${filter === key ? " on" : ""}`, "aria-pressed": String(filter === key), onclick: () => ((filter = key), render()) }, `${label} · ${n}`);
     const state = d.state;
     const body = !snap
-        ? h("div", { class: "pr-muted pr-loading" }, d.error ? d.error.message : "Fetching it from GitHub…")
+        ? d.error
+            ? h(
+                  "div",
+                  { class: "pr-fail", role: "status" },
+                  h("h3", {}, d.error.kind === "cap" ? "Paused" : "Marginal can't check this PR on GitHub"),
+                  h("p", {}, d.error.message),
+                  d.error.kind === "cap" ? null : h("p", { class: "pr-muted" }, `It tries again ${d.error.retryAt ? `at ${clock(d.error.retryAt)}` : "soon"}, and backs off up to every 10 minutes.`),
+                  d.error.kind === "cap" ? null : h("button", { class: "pr-btn", onclick: () => refresh() }, "Try again now"),
+              )
+            : h("div", { class: "pr-muted pr-loading" }, "Fetching it from GitHub…")
         : [
               h(
                   "div",
@@ -210,7 +220,7 @@ function render() {
                 "div",
                 { class: "pr-head" },
                 h("button", { class: "pr-btn", onclick: () => ctx.back() }, "← All pull requests"),
-                h("h2", { class: "pr-h" }, h("span", { class: "pr-num" }, `#${d.number}`), " ", d.title ?? "…"),
+                h("h2", { class: "pr-h" }, h("span", { class: "pr-num" }, `#${d.number}`), " ", d.title ?? h("span", { class: "pr-muted" }, `${d.owner}/${d.repo}${d.host === "github.com" ? "" : ` on ${d.host}`}`)),
             ),
             h(
                 "div",
@@ -221,7 +231,7 @@ function render() {
                 d.author ? h("span", { class: "pr-muted" }, `by ${d.author}${d.updatedAt ? ` · updated ${ago(d.updatedAt)}` : ""}`) : null,
                 h("a", { class: "pr-btn pr-gh", href: d.url, target: "_blank", rel: "noopener noreferrer" }, "Open on GitHub ↗"),
             ),
-            h("div", { class: "pr-checksline" }, "Checks: ", checksEl(d.checks), d.checks?.failing?.length ? h("span", { class: "pr-failing" }, ` failing: ${d.checks.failing.join(", ")}`) : null),
+            !d.checks ? null : h("div", { class: "pr-checksline" }, "Checks: ", checksEl(d.checks), d.checks?.failing?.length ? h("span", { class: "pr-failing" }, ` failing: ${d.checks.failing.join(", ")}`) : null),
             h("div", { class: "pr-grid" }, h("div", { class: "pr-main" }, body), railEl(d)),
         ),
     );

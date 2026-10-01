@@ -32,6 +32,11 @@ export const realClock = { now: () => Date.now(), setTimeout: (fn, ms) => setTim
 
 const short = (sha) => (sha ? sha.slice(0, 7) : "?");
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+// Failures only you can fix (a login, access, installing gh): the chat hears about them. Rate limits and
+// transient errors pass by themselves, and the tab shows them.
+const NEEDS_YOU = new Set(["auth", "not_found", "missing_gh"]);
+const prName = (entry, st) => `#${entry.number}${st?.snapshot ? ` "${st.snapshot.pr.title}"` : ` (${entry.owner}/${entry.repo})`}`;
+
 const unitOf = (i) => (i.kind === "review_comment" ? `thread:${i.threadId}` : i.kind === "review" ? `review:${i.id}` : `comment:${i.id}`);
 
 export function createWatcher({
@@ -148,14 +153,19 @@ export function createWatcher({
             if (now >= (st.nextAt ?? 0)) {
                 try {
                     await network(docId, entry, st, r, now);
+                    let recovered = false;
                     writePr(docId, entry.id, (s) => {
                         if (s.error && s.error.kind !== "cap") log(s, "GitHub is answering again.");
+                        recovered = !!s.errorNoted;
+                        s.errorNoted = false;
                         s.error = null;
                         s.backoffMs = 0;
                         s.retryAt = null;
                         s.nextAt = now + (s.staging ? L.tickMs : L.checkMs); // a big fetch carries on at the next tick
                     });
+                    if (recovered) note(docId, entry, `Marginal can check ${prName(entry, readPr(docId, entry.id))} on GitHub again.`);
                 } catch (e) {
+                    let tell = null;
                     writePr(docId, entry.id, (s) => {
                         s.backoffMs = Math.min(L.maxBackoffMs, Math.max(L.checkMs, (s.backoffMs || L.checkMs / 2) * 2));
                         s.retryAt = e.retryAt && e.retryAt > now ? e.retryAt : null;
@@ -163,7 +173,12 @@ export function createWatcher({
                         const message = e.kind === "rate_limit" ? `GitHub's rate limit: waiting until ${new Date(s.nextAt).toLocaleTimeString()}.` : e.message;
                         if (s.error?.message !== message) log(s, message, { kind: "error" });
                         s.error = { kind: e.kind ?? "error", message, at: new Date(now).toISOString(), retryAt: s.nextAt };
+                        if (NEEDS_YOU.has(s.error.kind) && !s.errorNoted && entry.settings.handle !== "none") {
+                            s.errorNoted = true;
+                            tell = message;
+                        }
                     });
+                    if (tell) note(docId, entry, `Marginal can't check ${prName(entry, readPr(docId, entry.id))} on GitHub, so new review comments on it won't be handled until it can. ${tell}`);
                 }
             }
         }

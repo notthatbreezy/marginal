@@ -9,21 +9,23 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 const MAX_BUFFER = 64 * 1024 * 1024;
+export const MISSING_GH = "The GitHub CLI (gh) isn't installed, or isn't on PATH. Install it from https://cli.github.com, then run: gh auth login";
 const TOKEN_VARS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST"];
 
 /** The real process boundary. */
 export function execGh(args, { env } = {}) {
     return new Promise((resolve) => {
-        execFile("gh", args, { env, maxBuffer: MAX_BUFFER, windowsHide: true, encoding: "utf8" }, (error, stdout, stderr) =>
-            resolve({ code: error ? (typeof error.code === "number" ? error.code : 1) : 0, stdout: stdout ?? "", stderr: (stderr ?? "").trim() || (error && !stdout ? error.message : "") }),
-        );
+        execFile("gh", args, { env, maxBuffer: MAX_BUFFER, windowsHide: true, encoding: "utf8" }, (error, stdout, stderr) => {
+            if (error?.code === "ENOENT") return resolve({ code: 127, missing: true, stdout: "", stderr: MISSING_GH });
+            resolve({ code: error ? (typeof error.code === "number" ? error.code : 1) : 0, stdout: stdout ?? "", stderr: (stderr ?? "").trim() || (error && !stdout ? error.message : "") });
+        });
     });
 }
 
 export class GitHubError extends Error {
     constructor(message, { kind = "error", retryAt = null, status = null } = {}) {
         super(message);
-        this.kind = kind; // "auth" | "not_found" | "rate_limit" | "error"
+        this.kind = kind; // "auth" | "not_found" | "rate_limit" | "missing_gh" | "error"
         this.retryAt = retryAt;
         this.status = status;
     }
@@ -86,21 +88,27 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
     const accountCache = new Map(); // host -> Promise<[{login, active}]>
     const tokens = new Map(); // host\0login -> token
     const remembered = new Map(); // host/owner -> login
+    const broken = new Map(); // host -> logins gh lists whose token no longer works
     const base = cleanEnv(env);
     const calls = { rest: 0, graphql: 0 };
 
     function accounts(host) {
         if (!accountCache.has(host)) {
             const p = exec(["auth", "status", "--json", "hosts", "--hostname", host], { env: base }).then((out) => {
+                if (out.missing) throw new GitHubError(MISSING_GH, { kind: "missing_gh" });
                 try {
                     const list = JSON.parse(out.stdout || "{}").hosts?.[host] ?? [];
+                    broken.set(host, list.filter((a) => a.state !== "success" && a.login).map((a) => a.login));
                     return list.filter((a) => a.state === "success" && a.login).map((a) => ({ login: a.login, active: !!a.active }));
                 } catch {
                     return [];
                 }
             });
             accountCache.set(host, p);
-            p.then((l) => !l.length && setTimeout(() => accountCache.delete(host), 60_000).unref?.());
+            p.then(
+                (l) => !l.length && setTimeout(() => accountCache.delete(host), 60_000).unref?.(),
+                () => accountCache.delete(host),
+            );
         }
         return accountCache.get(host);
     }
@@ -109,6 +117,7 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
         const k = `${host}\0${login}`;
         if (!tokens.has(k)) {
             const out = await exec(["auth", "token", "--hostname", host, "--user", login], { env: base });
+            if (out.missing) throw new GitHubError(MISSING_GH, { kind: "missing_gh" });
             if (out.code !== 0 || !out.stdout.trim()) throw new GitHubError(`gh has no token for ${login} on ${host}: ${out.stderr}`, { kind: "auth" });
             tokens.set(k, out.stdout.trim());
         }
@@ -122,32 +131,53 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
 
     /**
      * Run gh for a repository, trying accounts in order (the one that worked last for this owner, the active one,
-     * then the others). `attempt(out)` returns {retry:true} to try the next account, or a result.
+     * then the others). `attempt(out)` returns {retry:true} to try the next account, or a result. A token GitHub
+     * refuses is dropped and fetched from gh again once (it may have been refreshed since). When no account works,
+     * the host's account list is forgotten, so the next try sees a `gh auth login` made meanwhile.
      */
-    async function withAccount(host, owner, args, attempt) {
+    async function withAccount(host, owner, args, attempt, subject = owner) {
         const list = await accounts(host);
-        if (!list.length) throw new GitHubError(`gh isn't logged in to ${host}. Run: gh auth login --hostname ${host}`, { kind: "auth" });
+        if (!list.length) {
+            accountCache.delete(host); // a `gh auth login` made meanwhile counts on the next try
+            const stale = broken.get(host) ?? [];
+            throw new GitHubError(
+                stale.length ? `gh's login for ${stale.join(", ")} on ${host} has expired or been revoked. Run: gh auth login --hostname ${host}` : `gh isn't logged in to ${host}. Run: gh auth login --hostname ${host}`,
+                { kind: "auth" },
+            );
+        }
         const key = `${host}/${owner}`.toLowerCase();
         const order = [...list].sort((a, b) => (b.login === remembered.get(key)) - (a.login === remembered.get(key)) || b.active - a.active);
-        let last = null;
+        const failed = []; // {login, error}
         for (const acct of order) {
-            let token;
-            try {
-                token = await tokenFor(host, acct.login);
-            } catch (e) {
-                last = e;
-                continue;
+            const k = `${host}\0${acct.login}`;
+            let r = null;
+            for (let round = 0; round < 2; round++) {
+                const cached = tokens.has(k);
+                let token;
+                try {
+                    token = await tokenFor(host, acct.login);
+                } catch (e) {
+                    if (e.kind === "missing_gh") throw e;
+                    r = { retry: true, error: e };
+                    break;
+                }
+                const out = await exec(args, { env: { ...base, GH_TOKEN: token, GH_ENTERPRISE_TOKEN: token } });
+                if (out.missing) throw new GitHubError(MISSING_GH, { kind: "missing_gh" });
+                r = attempt(out, acct.login);
+                if (!(r?.retry && r.error?.kind === "auth")) break;
+                tokens.delete(k); // refused: never reuse it
+                if (!cached) break; // it was fresh from gh already
             }
-            const out = await exec(args, { env: { ...base, GH_TOKEN: token, GH_ENTERPRISE_TOKEN: token } });
-            const r = attempt(out, acct.login);
             if (r?.retry) {
-                last = r.error;
+                failed.push({ login: acct.login, error: r.error });
                 continue;
             }
             remembered.set(key, acct.login);
             return r;
         }
-        throw last ?? new GitHubError(`No gh account on ${host} can see ${owner}.`, { kind: "not_found" });
+        accountCache.delete(host);
+        remembered.delete(key);
+        throw accessError(host, subject, failed);
     }
 
     /**
@@ -158,34 +188,46 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
         calls.rest++;
         const args = ["api", "--hostname", pr.host, "-i", `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`];
         if (lastModified) args.push("-H", `If-Modified-Since: ${lastModified}`);
-        return withAccount(pr.host, pr.owner, args, (out, login) => {
-            const { status, headers } = parseIncluded(out.stdout);
-            if (status === 304) return { changed: false, lastModified, remaining: num(headers["x-ratelimit-remaining"]), login };
-            if (status === 200) return { changed: true, lastModified: headers["last-modified"] ?? null, remaining: num(headers["x-ratelimit-remaining"]), login };
-            const kind = classify(out, status);
-            const err = new GitHubError(`GitHub said ${status ?? "no response"} for ${pr.owner}/${pr.repo}#${pr.number}: ${out.stderr || "(no detail)"}`.slice(0, 300), { kind, status, retryAt: retryAtOf(headers) });
-            if (kind === "auth" || kind === "not_found") return { retry: true, error: err };
-            throw err;
-        });
+        return withAccount(
+            pr.host,
+            pr.owner,
+            args,
+            (out, login) => {
+                const { status, headers } = parseIncluded(out.stdout);
+                if (status === 304) return { changed: false, lastModified, remaining: num(headers["x-ratelimit-remaining"]), login };
+                if (status === 200) return { changed: true, lastModified: headers["last-modified"] ?? null, remaining: num(headers["x-ratelimit-remaining"]), login };
+                const kind = classify(out, status);
+                const err = new GitHubError(`GitHub said ${status ?? "no response"} for ${pr.owner}/${pr.repo}#${pr.number}: ${out.stderr || "(no detail)"}`.slice(0, 300), { kind, status, retryAt: retryAtOf(headers) });
+                if (kind === "auth" || kind === "not_found") return { retry: true, error: err };
+                throw err;
+            },
+            `${pr.owner}/${pr.repo}#${pr.number}`,
+        );
     }
 
     async function graphql(pr, query, vars) {
         calls.graphql++;
         const args = ["api", "graphql", "--hostname", pr.host, "-f", `query=${query}`];
         for (const [k, v] of Object.entries(vars)) args.push(typeof v === "number" ? "-F" : "-f", `${k}=${v}`);
-        return withAccount(pr.host, pr.owner, args, (out) => {
-            let json = null;
-            try {
-                json = JSON.parse(out.stdout || "null");
-            } catch {}
-            const errors = json?.errors ?? [];
-            if (out.code === 0 && json?.data && !errors.length) return json.data;
-            const text = errors.map((e) => `${e.type ?? ""} ${e.message}`).join("; ") || out.stderr;
-            const kind = errors.some((e) => e.type === "NOT_FOUND") ? "not_found" : errors.some((e) => e.type === "RATE_LIMITED") ? "rate_limit" : classify({ stdout: "", stderr: text }, null);
-            const err = new GitHubError(`GitHub GraphQL failed for ${pr.owner}/${pr.repo}#${pr.number}: ${text}`.slice(0, 300), { kind });
-            if (kind === "auth" || kind === "not_found") return { retry: true, error: err };
-            throw err;
-        });
+        return withAccount(
+            pr.host,
+            pr.owner,
+            args,
+            (out) => {
+                let json = null;
+                try {
+                    json = JSON.parse(out.stdout || "null");
+                } catch {}
+                const errors = json?.errors ?? [];
+                if (out.code === 0 && json?.data && !errors.length) return json.data;
+                const text = errors.map((e) => `${e.type ?? ""} ${e.message}`).join("; ") || out.stderr;
+                const kind = errors.some((e) => e.type === "NOT_FOUND") ? "not_found" : errors.some((e) => e.type === "RATE_LIMITED") ? "rate_limit" : classify({ stdout: "", stderr: text }, null);
+                const err = new GitHubError(`GitHub GraphQL failed for ${pr.owner}/${pr.repo}#${pr.number}: ${text}`.slice(0, 300), { kind });
+                if (kind === "auth" || kind === "not_found") return { retry: true, error: err };
+                throw err;
+            },
+            `${pr.owner}/${pr.repo}#${pr.number}`,
+        );
     }
 
     const vars = (pr) => ({ owner: pr.owner, repo: pr.repo, number: pr.number });
@@ -263,16 +305,35 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
 
     /** Any gh command against this PR's repository, with the account fallback. Returns stdout. */
     function run(pr, args) {
-        return withAccount(pr.host, pr.owner, args, (out) => {
-            if (out.code === 0) return out.stdout;
-            const kind = classify(out, null);
-            const err = new GitHubError(`gh ${args[0]} ${args[1] ?? ""} failed: ${out.stderr || "(no detail)"}`.slice(0, 300), { kind });
-            if (kind === "auth" || kind === "not_found") return { retry: true, error: err };
-            throw err;
-        });
+        return withAccount(
+            pr.host,
+            pr.owner,
+            args,
+            (out) => {
+                if (out.code === 0) return out.stdout;
+                const kind = classify(out, null);
+                const err = new GitHubError(`gh ${args[0]} ${args[1] ?? ""} failed: ${out.stderr || "(no detail)"}`.slice(0, 300), { kind });
+                if (kind === "auth" || kind === "not_found") return { retry: true, error: err };
+                throw err;
+            },
+            `${pr.owner}/${pr.repo}#${pr.number}`,
+        );
     }
 
     return { accounts, selfLogins, check, graphql, fetchPullRequest, fetchChecks, run, calls };
+}
+
+/** What to tell the user when no account could reach a repository. */
+function accessError(host, subject, failed) {
+    const names = failed.map((f) => f.login).join(", ");
+    const refused = failed.filter((f) => f.error?.kind === "auth");
+    const hidden = failed.filter((f) => f.error?.kind === "not_found");
+    const detail = (f) => (f.error?.message ?? "").replace(/^GitHub (said|GraphQL failed)[^:]*: /, "").slice(0, 120);
+    if (refused.length && !hidden.length)
+        return new GitHubError(`GitHub refused gh's credentials for ${names} on ${host} (${detail(refused[0])}). Run: gh auth login --hostname ${host}`, { kind: "auth", status: refused[0].error?.status ?? null });
+    if (hidden.length === failed.length)
+        return new GitHubError(`None of your gh accounts on ${host} (${names}) can see ${subject}: the repository is private to them, or the PR doesn't exist. To add an account that can: gh auth login --hostname ${host}`, { kind: "not_found", status: 404 });
+    return new GitHubError(`No gh account on ${host} could reach ${subject}: ${failed.map((f) => `${f.login}: ${detail(f)}`).join("; ")}. Run: gh auth login --hostname ${host}`, { kind: "auth" });
 }
 
 const num = (v) => (v == null || v === "" ? null : Number(v));

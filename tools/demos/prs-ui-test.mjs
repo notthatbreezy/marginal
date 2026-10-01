@@ -110,6 +110,41 @@ try {
     const done = (await rows())[0];
     check("live: Copilot's replies and resolutions observed (2 of the 3 open threads resolved)", /1 unresolved \/ 10/.test(done.comments), done.comments);
 
+    // ---- a PR Marginal can't check (the dev gh isn't logged in to acme.ghe.com): row, tab label, chat note, detail
+    await p.waitForFunction(() => [...document.querySelectorAll(".pr-list tbody tr")].some((r) => /^#77/.test(r.innerText) && /Can't check GitHub/.test(r.innerText)), null, { timeout: 10000 }).catch(() => {});
+    const r77 = (await rows()).find((x) => x.num === "#77");
+    // #77 (acme.ghe.com: not logged in) and #44 (github.com: no repo behind it, a 404 for every account)
+    check("auth: the row says Marginal can't check it, why, what to run, and when it tries again", /^Can't check GitHub gh isn't logged in to acme\.ghe\.com\. Run: gh auth login --hostname acme\.ghe\.com Next try \d{1,2}:\d{2}/.test(r77?.watching ?? ""), r77?.watching);
+    await p.waitForFunction(() => document.querySelector('#tabs [data-tab="prs"] .tab-n')?.classList.contains("warn"), null, { timeout: 5000 }).catch(() => {});
+    eq("auth: the tab label is marked, and says why on hover", await p.evaluate(() => { const n = document.querySelector('#tabs [data-tab="prs"] .tab-n'); return [n.classList.contains("warn"), n.title]; }), [true, "Marginal can't check 2 pull requests on GitHub"]);
+    const r44b = (await rows()).find((x) => x.num === "#44");
+    check("auth: a repo no account can see says so (not a bare 404), naming the accounts tried", /^Can't check GitHub None of your gh accounts on github\.com \(you\) can see acme\/relay#44: the repository is private to them, or the PR doesn't exist\. To add an account that can: gh auth login --hostname github\.com Next try \d{1,2}:\d{2}/.test(r44b?.watching ?? ""), r44b?.watching);
+    await p.keyboard.press("Control+i");
+    await p.waitForSelector("#chat:not([hidden])", { timeout: 5000 });
+    await p.waitForFunction(() => /Marginal can't check #77/.test(document.querySelector("#chat-log")?.textContent ?? ""), null, { timeout: 8000 }).catch(() => {});
+    await p.evaluate(() => document.querySelector("#chat-log .chat-notice:last-of-type")?.scrollIntoView({ block: "end" }));
+    const notes = await p.evaluate(() => [...document.querySelectorAll("#chat-log .chat-notice")].map((n) => n.innerText.replace(/\s+/g, " ")));
+    const n77 = notes.filter((t) => /#77/.test(t));
+    check("auth: the chat hears once, from Marginal (no agent turn)", n77.length === 1 && /^Marginal can't check #77 \(acme\/relay\) on GitHub, so new review comments on it won't be handled until it can\. gh isn't logged in to acme\.ghe\.com\. Run: gh auth login --hostname acme\.ghe\.com From Marginal · Pull requests Show the PR$/.test(n77[0]), JSON.stringify(notes));
+    check("auth: no prompt went to Copilot for it", !prompts().some((x) => /#77|acme\/relay\/pull\/77/.test(x.prompt)), "a prompt mentioned #77");
+    await shot("auth-chat-note");
+    await p.locator("#chat-log .chat-notice", { hasText: "#77" }).locator(".cn-open").click();
+    await p.waitForSelector(".pr-detail .pr-fail", { timeout: 8000 }).catch(() => {});
+    await p.keyboard.press("Escape");
+    await p.waitForTimeout(300);
+    await shot("auth-detail");
+    const fail = await p.evaluate(() => ({
+        head: document.querySelector(".pr-detail")?.innerText.replace(/\s+/g, " ").slice(0, 40),
+        box: document.querySelector(".pr-fail")?.innerText.replace(/\s+/g, " "),
+        railNote: document.querySelectorAll(".pr-rail .pr-note.warn").length,
+        sub: document.querySelector(".pr-switch .pr-sub")?.innerText,
+    }));
+    check("auth: Show the PR opens #77's detail", /#77/.test(fail.head ?? ""), JSON.stringify(fail));
+    check("auth: the detail says what's wrong once, with when it retries and Try again now", /^Marginal can't check this PR on GitHub gh isn't logged in to acme\.ghe\.com\. Run: gh auth login --hostname acme\.ghe\.com It tries again at \d{1,2}:\d{2}.*, and backs off up to every 10 minutes\. Try again now$/.test(fail.box ?? "") && fail.railNote === 0, JSON.stringify(fail));
+    check("auth: the rail doesn't claim it checks every minute", /^can't check GitHub; next try \d{1,2}:\d{2}/.test(fail.sub ?? ""), fail.sub);
+    await p.locator("button", { hasText: "All pull requests" }).click();
+    await p.waitForSelector(".pr-list tbody tr");
+
     if (argv.includes("--detail")) {
         const detail = await import("./prs-ui-detail.mjs");
         await detail.run({ p, rows, check, eq, shot, url: d.info.url, prompts });

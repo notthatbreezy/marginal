@@ -14,6 +14,16 @@ A PR is identified by host, owner, repository and number, so the same PR is neve
 
 Marginal reaches GitHub through the `gh` CLI with the accounts it's logged in to (`gh auth status`), and stores no tokens. For each PR it uses the host's active account. If that account can't see the repository (an Enterprise Managed User account and a personal repository, say), it tries the host's other accounts and remembers which one worked for that owner. Comments from any of your accounts on that host count as yours: they never trigger handling.
 
+### When Marginal can't check a PR
+
+If gh isn't installed, isn't logged in to the PR's host, its token has expired, or none of its accounts can see the repository (GitHub answers 404 for a private repository you can't access), Marginal can't check that PR:
+
+- Its row says **Can't check GitHub**, why (naming the accounts it tried, and the command to run), and when it tries again. The tab's label gets an amber dot.
+- Its detail says the same, with **Try again now**. If it was fetched before, the threads shown are that last copy, and the panel says when it was fetched.
+- If the PR's handling isn't Do nothing, the chat gets one note from Marginal (not an agent turn) saying new review comments on it won't be handled until it can be checked, and another when it can again. Retries don't repeat the note.
+
+Marginal keeps trying, backing off from every minute to every 10. Each try asks gh again: after `gh auth login` (or `gh auth refresh`), the next try uses the new login. A token GitHub refuses is fetched from gh again once before giving up. A rate limit only waits: the row says **Waiting for GitHub** until it lifts, and the chat isn't told. Comments that arrived meanwhile count as new once a check succeeds.
+
 ## Watching
 
 While the Copilot session that holds the doc's lease is running (the same lease as the Command center: the first session to watch a doc's PRs takes it), Marginal checks each watched PR:
@@ -60,7 +70,8 @@ Copilot does the work with its usual tools (git, `gh`, GitHub's own tools) and n
 
 - **List**: one row per PR with its state, review decision, checks (passed, failed, pending; hover for the failing ones), unresolved and total threads, how many comments are new since this panel last showed the PR, and what Marginal is doing with it now.
 - **Detail**: the PR's header and checks, then its threads, filtered by Unresolved, All or Conversation (review summaries and general comments). Each thread shows its file and line, the diff hunk with the commented lines marked, the conversation (Markdown, with suggested changes as diffs), and a row of what's happened to it. That row combines what GitHub shows (the batch it went in, replied with a commit, resolved, outdated) and what Copilot reported, marked *reported*. **Ask in chat** asks Copilot about that one thread: the message carries it, from Marginal's copy.
-- **Rail**: watching on or off, the handling steps, queue or interrupt, the checkout, and the activity log.
+- **Rail**: watching on or off, the handling steps, queue or interrupt, the checkout, the activity log, **Check now** and **Remove from this doc**.
+- **Chat**: Marginal's own notes (new comments at Read, a PR it can't check) show in the chat marked *From Marginal · Pull requests*, with **Show the PR**.
 
 ## For agents
 

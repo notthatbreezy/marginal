@@ -161,6 +161,7 @@ export const emptyPrState = () => ({
     nextAt: null, // when the next network check is due (cadence, backoff, rate limits)
     retryAt: null,
     error: null, // {kind, message, at, retryAt}
+    errorNoted: false, // the chat was told this PR can't be checked (once per outage)
     backoffMs: 0,
 });
 

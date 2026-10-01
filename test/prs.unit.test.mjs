@@ -24,26 +24,8 @@ const SANDBOX = { host: "github.com", owner: "notthatbreezy", repo: "marginal-sa
 /** A raw (assembled) PR from the recorded GraphQL response. */
 const rawFromFixture = (p = sandbox) => ({ pr: p, threads: p.reviewThreads.nodes, reviews: p.reviews.nodes, comments: p.comments.nodes, checks: p.commits.nodes[0].commit.statusCheckRollup?.contexts?.nodes ?? [], complete: true });
 
-// ---------- a recorded fake gh ----------
-/**
- * accounts: {host: [{login, active}]}; reply(args, login) -> {code, stdout, stderr}. Records every call with the
- * login whose token it carried.
- */
-function fakeGh({ accounts = { "github.com": [{ login: "me", active: true }] }, reply }) {
-    const calls = [];
-    const exec = async (args, { env }) => {
-        if (args[0] === "auth" && args[1] === "status") {
-            const host = args[args.indexOf("--hostname") + 1];
-            const list = (accounts[host] ?? []).map((a) => ({ state: "success", host, ...a }));
-            return { code: 0, stdout: JSON.stringify({ hosts: { [host]: list } }), stderr: "" };
-        }
-        if (args[0] === "auth" && args[1] === "token") return { code: 0, stdout: `tok-${args[args.indexOf("--user") + 1]}\n`, stderr: "" };
-        const login = env.GH_TOKEN?.replace(/^tok-/, "") ?? null;
-        calls.push({ args, login, envHasAppToken: "GITHUB_TOKEN" in env });
-        return reply(args, login);
-    };
-    return { exec, calls };
-}
+// ---------- a recorded fake gh (tools/demos/fake-github.mjs: accounts, rotating tokens, a missing gh) ----------
+const { fakeGh } = await import("../tools/demos/fake-github.mjs");
 const http = (status, headers = {}, body = "{}") => ({ code: status === 200 ? 0 : 1, stdout: `HTTP/2.0 ${status} X\n${Object.entries(headers).map(([k, v]) => `${k}: ${v}\n`).join("")}\n${body}`, stderr: status === 200 ? "" : `gh: HTTP ${status}` });
 const varsOf = (args) => {
     const v = {};
@@ -231,6 +213,51 @@ test("accounts: a repo the active account can't see is tried with the others, an
     assert.deepEqual(await gh.selfLogins("github.com"), ["work-emu", "personal"], "every account counts as you");
     const none = createGitHub({ exec: fakeGh({ accounts: {}, reply: () => http(200) }).exec, env: {} });
     await assert.rejects(() => none.check({ ...pr, host: "ghe.example.com" }, null), /isn't logged in to ghe.example.com/);
+});
+
+test("no account can see the repo: the error names the accounts tried, and the next try asks gh again", async () => {
+    const accounts = { "github.com": [{ login: "work-emu", active: true }, { login: "personal" }] };
+    const g = fakeGh({ accounts, reply: (args, login) => (login === "new-login" ? http(200, { "last-modified": "L" }) : http(404, {}, '{"message":"Not Found"}')) });
+    const gh = createGitHub({ exec: g.exec, env: {} });
+    const pr = { host: "github.com", owner: "notthatbreezy", repo: "private-thing", number: 3 };
+    await assert.rejects(
+        () => gh.check(pr, null),
+        (e) => e.kind === "not_found" && /None of your gh accounts on github\.com \(work-emu, personal\) can see notthatbreezy\/private-thing#3/.test(e.message) && /gh auth login --hostname github\.com/.test(e.message),
+    );
+    assert.equal(g.auth.status, 1);
+    accounts["github.com"].push({ login: "new-login" }); // you ran gh auth login meanwhile
+    assert.equal((await gh.check(pr, null)).login, "new-login", "the account list was read again");
+    assert.equal(g.auth.status, 2);
+});
+
+test("a token GitHub refuses is fetched from gh again once; one refused for good says so", async () => {
+    const tokens = {};
+    const g = fakeGh({ tokens, reply: (args, login, token) => (token === (tokens.me ?? "tok-me") ? http(200, { "last-modified": "L" }) : http(401, {}, '{"message":"Bad credentials"}')) });
+    const gh = createGitHub({ exec: g.exec, env: {} });
+    await gh.check(SANDBOX, null);
+    tokens.me = "tok-me-v2"; // gh refreshed it (gh auth refresh, a new login)
+    assert.equal((await gh.check(SANDBOX, "L")).changed, true);
+    assert.deepEqual(g.calls.map((c) => c.token), ["tok-me", "tok-me", "tok-me-v2"], "the cached token was refused, dropped and fetched again");
+    const dead = fakeGh({ reply: () => http(401, {}, '{"message":"Bad credentials"}') });
+    await assert.rejects(
+        () => createGitHub({ exec: dead.exec, env: {} }).check(SANDBOX, null),
+        (e) => e.kind === "auth" && /GitHub refused gh's credentials for me on github\.com/.test(e.message) && /gh auth login --hostname github\.com/.test(e.message),
+    );
+    assert.equal(dead.calls.length, 1, "a token straight from gh isn't fetched twice");
+});
+
+test("gh's own state: a login whose token died, nobody logged in (then logged in), and no gh at all", async () => {
+    const accounts = { "github.com": [{ login: "me", state: "error" }] };
+    const g = fakeGh({ accounts, reply: () => http(200, { "last-modified": "L" }) });
+    const gh = createGitHub({ exec: g.exec, env: {} });
+    await assert.rejects(() => gh.check(SANDBOX, null), /gh's login for me on github\.com has expired or been revoked\. Run: gh auth login --hostname github\.com/);
+    accounts["github.com"] = [{ login: "me", active: true }];
+    assert.equal((await gh.check(SANDBOX, null)).changed, true, "logging in again works on the next try, not after a restart");
+    const none = createGitHub({ exec: fakeGh({ missing: true, reply: () => http(200) }).exec, env: {} });
+    await assert.rejects(
+        () => none.check(SANDBOX, null),
+        (e) => e.kind === "missing_gh" && /isn't installed, or isn't on PATH/.test(e.message),
+    );
 });
 
 test("a rate limit is an error with a retry time, not a reason to try another account", async () => {

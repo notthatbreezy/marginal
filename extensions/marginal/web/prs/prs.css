@@ -599,3 +599,31 @@
     background: var(--red);
     border-color: var(--red);
 }
+.pr-fail {
+    border: 1px solid var(--yellow);
+    background: var(--yellow-muted);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 8px;
+}
+.pr-fail h3 {
+    margin: 0 0 6px;
+    font-size: 14px;
+}
+.pr-fail p {
+    margin: 0 0 8px;
+}
+/* The tab's label when Marginal can't check some of the doc's PRs: an amber dot after the count. */
+#tabs .tab-n.warn::after {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-left: 5px;
+    border-radius: 50%;
+    background: var(--yellow);
+    vertical-align: 1px;
+}
+.pr-watch.warn .pr-sub.pr-next {
+    color: var(--muted);
+}

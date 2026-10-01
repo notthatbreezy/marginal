@@ -17,21 +17,34 @@ export function varsOf(args) {
 }
 export const queryName = (args) => Object.entries(QUERIES).find(([, q]) => q === varsOf(args).query)?.[0] ?? null;
 
-/** accounts: {host: [{login, active}]}; reply(args, login) -> {code, stdout, stderr}. Records calls. */
-export function fakeGh({ accounts = { "github.com": [{ login: "me", active: true }] }, reply }) {
+/**
+ * accounts: {host: [{login, active, state?}]} (state "error": gh lists the login but its token is dead).
+ * tokens: {login: "tok-<login>-v2"} for what `gh auth token` hands out now (default "tok-<login>"); change it to model
+ * a refreshed token. missing: gh isn't installed. reply(args, login, token) -> {code, stdout, stderr}. Records calls;
+ * `auth` counts the gh auth commands.
+ */
+export function fakeGh({ accounts = { "github.com": [{ login: "me", active: true }] }, tokens = {}, missing = false, reply }) {
     const calls = [];
+    const auth = { status: 0, token: 0 };
     const exec = async (args, { env } = {}) => {
+        if (missing) return { code: 127, missing: true, stdout: "", stderr: "The GitHub CLI (gh) isn't installed, or isn't on PATH." };
         if (args[0] === "auth" && args[1] === "status") {
+            auth.status++;
             const host = args[args.indexOf("--hostname") + 1];
             const list = (accounts[host] ?? []).map((a) => ({ state: "success", host, ...a }));
             return { code: 0, stdout: JSON.stringify({ hosts: { [host]: list } }), stderr: "" };
         }
-        if (args[0] === "auth" && args[1] === "token") return { code: 0, stdout: `tok-${args[args.indexOf("--user") + 1]}\n`, stderr: "" };
-        const login = env?.GH_TOKEN?.replace(/^tok-/, "") ?? null;
-        calls.push({ args, login, envHasAppToken: !!env && "GITHUB_TOKEN" in env, kind: args[1] === "graphql" ? `graphql:${queryName(args)}` : "rest" });
-        return reply(args, login);
+        if (args[0] === "auth" && args[1] === "token") {
+            auth.token++;
+            const user = args[args.indexOf("--user") + 1];
+            return { code: 0, stdout: `${tokens[user] ?? `tok-${user}`}\n`, stderr: "" };
+        }
+        const token = env?.GH_TOKEN ?? null;
+        const login = token?.replace(/^tok-/, "").replace(/-v\d+$/, "") ?? null;
+        calls.push({ args, login, token, envHasAppToken: !!env && "GITHUB_TOKEN" in env, kind: args[1] === "graphql" ? `graphql:${queryName(args)}` : "rest" });
+        return reply(args, login, token);
     };
-    return { exec, calls };
+    return { exec, calls, auth };
 }
 
 /** GraphQL served from an in-memory PR: lists paged 50 at a time with cursors "c:<offset>". */

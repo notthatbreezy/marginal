@@ -23,6 +23,12 @@ export function ago(iso) {
     return `${Math.round(s / 86400)} day${s >= 172800 ? "s" : ""} ago`;
 }
 
+/** "1:42 PM": when Marginal tries GitHub again. */
+export const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/** A PR Marginal can't check right now (not the watch cap, which is a pause, not a failure). */
+export const failing = (p) => !!p.error && p.error.kind !== "cap" && p.settings.watch && !p.stopped;
+
 // "New since you looked" is this panel's own: the newest comment it has shown for each PR, in localStorage.
 const seenKey = (pr) => `mg-prs-seen:${INSTANCE}:${documentId}:${pr.id}`; // panels share an origin
 export function seenAt(pr) {
@@ -58,11 +64,12 @@ export function checksEl(c) {
 
 /** The Watching column: what Marginal does with this PR, and what's happening now. */
 export function watchingEl(p) {
-    const line = (dot, text, sub, cls = "") => h("div", { class: `pr-watch ${cls}` }, h("div", {}, dot ? h("span", { class: `pr-dot ${dot}` }) : null, text), sub ? h("div", { class: "pr-sub" }, sub) : null);
+    const line = (dot, text, sub, cls = "", more = null) => h("div", { class: `pr-watch ${cls}` }, h("div", {}, dot ? h("span", { class: `pr-dot ${dot}` }) : null, text), sub ? h("div", { class: "pr-sub" }, sub) : null, more ? h("div", { class: "pr-sub pr-next" }, more) : null);
     if (p.error?.kind === "cap") return line("warn", "Paused", p.error.message, "warn");
     if (!p.settings.watch) return line(null, "Off", null, "off");
     if (p.stopped) return line(null, `Stopped: ${p.stopped}`, "Turn watching on to start again", "off");
-    if (p.error) return line("warn", p.settings.handle === "none" ? "Watching" : `Handling: ${STEP[p.settings.handle] ?? "…"}`, p.error.message, "warn");
+    if (p.error?.kind === "rate_limit") return line("warn", "Waiting for GitHub", p.error.message, "warn");
+    if (p.error) return line("warn", "Can't check GitHub", p.error.message, "warn", p.error.retryAt ? `Next try ${clock(p.error.retryAt)}` : null);
     if (p.settings.handle === "none") return line("hollow", "Watching", "just shows new comments");
     if (p.settings.handle === "read") return line("hollow", "Watching", "notes new comments in the chat");
     const b = p.batch;
@@ -216,6 +223,15 @@ async function open(prId) {
     await detailMod.mountDetail(host, { documentId, prId, back: () => backToList() });
 }
 
+/** Open one PR's detail (from a chat note). */
+export async function showPr(prId) {
+    if (!host || (view.kind === "detail" && view.prId === prId)) return;
+    await loading?.p?.catch(() => {});
+    if (!data?.prs.some((p) => p.id === prId)) return;
+    detailMod?.unmountDetail();
+    return open(prId);
+}
+
 async function backToList() {
     detailMod?.unmountDetail();
     view = { kind: "list" };
@@ -262,8 +278,8 @@ export async function onPrsEvent(ev) {
     renderList();
 }
 
-/** The number of PRs on a doc, for the tab's label. */
+/** For the tab's label: how many PRs a doc has, and how many Marginal can't check right now. */
 export async function countFor(docId) {
     const d = await api(`/prs?doc=${encodeURIComponent(docId)}`).catch(() => null);
-    return d?.prs?.length ?? 0;
+    return { n: d?.prs?.length ?? 0, failing: (d?.prs ?? []).filter(failing).length };
 }

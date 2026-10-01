@@ -19,7 +19,7 @@ const MIN = 60_000;
 let docN = 0;
 
 /** A doc with one PR at the given level, a world, a clock, a send spy and a watcher. */
-function setup({ handle = "assess", deliver = "queue", me = "me", world: wopts = {}, limits = {}, compose, messageInLog, docId = `doc-${++docN}`, existing } = {}) {
+function setup({ handle = "assess", deliver = "queue", me = "me", world: wopts = {}, limits = {}, compose, messageInLog, wrap, docId = `doc-${++docN}`, existing } = {}) {
     const clock = existing?.clock ?? fakeClock();
     const world = existing?.world ?? fakeWorld({ me, clock: clock.now, ...wopts });
     if (!existing) St.addPr(docId, { url: world.ident.url, settings: { watch: true, handle, deliver } });
@@ -27,7 +27,7 @@ function setup({ handle = "assess", deliver = "queue", me = "me", world: wopts =
     const sent = [];
     const notes = [];
     let n = 0;
-    const gh = createGitHub({ exec: world.exec, env: {} });
+    const gh = createGitHub({ exec: wrap ? wrap(world.exec) : world.exec, env: {} });
     const watcher = createWatcher({
         gh,
         clock,
@@ -433,4 +433,53 @@ test("overflow: threads that don't fit a batch go in the next one, whole and in 
     assert.equal(new Set(s.st().batches.flatMap((b) => b.units)).size, 5, "every thread exactly once");
     assert.deepEqual(s.st().batches.map((b) => b.state), ["done", "done", "done"]);
     s.watcher.stopAll();
+});
+
+/** A gh whose GitHub answers `down()` for PR calls while it returns a response; gh's own auth commands still work. */
+const outage = (down) => (exec) => async (args, o) => (args[0] === "api" && down() ? down() : exec(args, o));
+const HTTP401 = { code: 1, stdout: "HTTP/2.0 401 Unauthorized\n\n{}", stderr: "gh: Bad credentials (HTTP 401)" };
+
+test("a handled PR Marginal can't check: the chat hears once (not every retry), and once more when it can again", async () => {
+    let fail = null;
+    const s = setup({ handle: "assess", wrap: outage(() => fail) });
+    await s.start();
+    fail = HTTP401;
+    await s.advance(30 * MIN); // many retries, backing off
+    assert.equal(s.notes.length, 1, "one note for the outage, not one per retry");
+    assert.match(s.notes[0], /^Marginal can't check #7 "Add jitter and an onRetry hook" on GitHub, so new review comments on it won't be handled until it can\. GitHub refused gh's credentials for me on github\.com/);
+    assert.equal(s.st().error.kind, "auth");
+    assert.ok(s.st().error.retryAt > s.clock.now(), "the next try is ahead");
+    assert.ok(s.st().backoffMs <= 10 * MIN);
+    s.world.review("reviewer", { comments: [{ body: "Meanwhile" }] });
+    fail = null; // you logged in again
+    await s.advance(11 * MIN);
+    assert.equal(s.st().error, null);
+    assert.equal(s.notes[1], 'Marginal can check #7 "Add jitter and an onRetry hook" on GitHub again.');
+    assert.equal(s.sent.length, 1, "what arrived during the outage is handled now");
+    assert.match(s.sent[0].text, /T\d+/);
+    s.watcher.stopAll();
+});
+
+test("no chat note for a PR at Do nothing or a rate limit; a PR never fetched is named by its repository", async () => {
+    let fail = HTTP401;
+    const quiet = setup({ handle: "none", wrap: outage(() => fail) });
+    await quiet.start();
+    await quiet.advance(5 * MIN);
+    assert.equal(quiet.notes.length, 0, "Do nothing: the tab shows it, the chat doesn't");
+    assert.equal(quiet.st().error.kind, "auth");
+    quiet.watcher.stopAll();
+    let limited = null;
+    const rl = setup({ handle: "assess", wrap: outage(() => limited) });
+    await rl.start();
+    limited = { code: 1, stdout: "HTTP/2.0 403 Forbidden\nx-ratelimit-remaining: 0\nx-ratelimit-reset: 9999999999\n\n{}", stderr: "gh: API rate limit exceeded (HTTP 403)" };
+    await rl.advance(3 * MIN);
+    assert.equal(rl.st().error.kind, "rate_limit");
+    assert.equal(rl.notes.length, 0, "a rate limit passes by itself");
+    rl.watcher.stopAll();
+    // never fetched: the note names the repository instead of a title
+    const fresh = setup({ handle: "read", wrap: outage(() => HTTP401) });
+    await fresh.start();
+    assert.equal(fresh.notes.length, 1);
+    assert.match(fresh.notes[0], /^Marginal can't check #7 \(acme\/app\) on GitHub/);
+    fresh.watcher.stopAll();
 });

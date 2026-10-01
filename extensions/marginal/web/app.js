@@ -976,6 +976,9 @@ function setHeader() {
     if (prN) {
         prN.hidden = !state.prCount;
         prN.textContent = state.prCount ? ` · ${state.prCount}` : "";
+        const failing = state.prFailing ?? 0;
+        prN.classList.toggle("warn", failing > 0);
+        prN.title = failing ? `Marginal can't check ${failing === 1 ? "1 pull request" : `${failing} pull requests`} on GitHub` : "";
     }
     const banner = $("#banner");
     document.body.classList.toggle("previewing", !!state.preview);
@@ -1333,16 +1336,33 @@ const prsTab = {
         this.mod?.unmountPrs();
         this.docId = null;
     },
-    /** The tab's count: how many PRs this doc tracks. */
+    /** The tab's label: how many PRs this doc tracks, marked when Marginal can't check some of them. */
     async count() {
-        if (!state.documentId || state.doc?.kind === "scratchpad") return (state.prCount = 0);
+        if (!state.documentId || state.doc?.kind === "scratchpad") return ((state.prCount = 0), (state.prFailing = 0));
         this.mod ??= await import("./prs/tab.js");
         const docId = state.documentId;
-        const n = await this.mod.countFor(docId);
-        if (docId === state.documentId && n !== state.prCount) {
+        const { n, failing } = await this.mod.countFor(docId);
+        if (docId === state.documentId && (n !== state.prCount || failing !== state.prFailing)) {
             state.prCount = n;
+            state.prFailing = failing;
             setHeader();
         }
+    },
+    /** Switch to the tab, on one PR's detail. */
+    async show(prId) {
+        if (finishEditingFirst()) return;
+        state.preview = null;
+        state.tab = "prs";
+        await render();
+        await this.mod?.showPr(prId);
+    },
+    /** A PR changed: recount at most every 2 s (a tick writes each PR's state). */
+    recount() {
+        if (this.timer) return;
+        this.timer = setTimeout(() => {
+            this.timer = null;
+            this.count().catch(() => {});
+        }, 2000);
     },
 };
 
@@ -1457,6 +1477,7 @@ function connect() {
         else if (ev.type === "command") bus.emit("command", ev);
         else if (ev.type === "prs" && ev.documentId === state.documentId) {
             if (ev.prIds.includes("*")) prsTab.count().catch(() => {});
+            else prsTab.recount();
             prsTab.mod?.onPrsEvent(ev);
         }
         else if (ev.type === "activity" && ev.documentId === state.documentId) setActivity(ev.activity);
@@ -2035,7 +2056,20 @@ function itemEl(it, reuse) {
     if (it.kind === "changes") return changesItemEl(it);
     if (it.kind === "question") return questionEl(it);
     if (it.kind === "plan") return planEl(it);
+    if (it.kind === "notice") return noticeEl(it);
     return h("div", { "data-id": it.id });
+}
+/** A note from Marginal itself (the Pull requests tab: new comments at Read, a PR it can't check). No agent turn. */
+function noticeEl(it) {
+    const [body, ...rest] = String(it.text).split(/\n\nFrom Marginal · /);
+    const from = rest.length ? `From Marginal · ${rest.join("")}` : "From Marginal";
+    const here = it.docId && it.docId === state.documentId && it.prId;
+    return h(
+        "div",
+        { class: `chat-notice${/can't check/.test(body) ? " warn" : ""}`, "data-id": it.id, role: "status" },
+        h("div", { class: "cn-text" }, body),
+        h("div", { class: "chat-meta" }, from, here ? h("button", { class: "cn-open", onclick: () => prsTab.show(it.prId) }, "Show the PR") : null),
+    );
 }
 const ACT_KIND = { read: ["Read", "file", "files"], search: ["Searched", "time", "times"], edit: ["Edited", "file", "files"], run: ["Ran", "command", "commands"], web: ["Looked up", "page", "pages"], canvas: ["Updated", "canvas", "canvases"], todo: ["Updated the todo list"], other: ["Used", "tool", "tools"] };
 /** What Copilot changed in a doc during a turn: on that doc, each change one click away; elsewhere, a count. */
