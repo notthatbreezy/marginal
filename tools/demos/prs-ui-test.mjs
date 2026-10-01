@@ -61,7 +61,7 @@ try {
     eq("P1 review decisions", r.map((x) => x.review), ["Changes requested", "Approved", "No decision", "Approved"]);
     eq("P1 checks", r.map((x) => x.checks), ["✓ 11 ✗ 1", "✓ 12 ● 1", "✓ 9 ● 3", "✓ 14"]);
     check("P1 failing check names on hover", r[0].checksTitle.startsWith("Failing: lint (eslint)"), r[0].checksTitle);
-    eq("P1 unresolved / total", r.map((x) => x.comments), ["1 unresolved / 7", "0 unresolved / 1", "0 unresolved / 0", "0 unresolved / 9"]);
+    eq("P1 unresolved / total", r.map((x) => x.comments), ["1 unresolved / 8", "0 unresolved / 1", "0 unresolved / 0", "0 unresolved / 9"]);
     eq("P1 watching", r.map((x) => x.watching), ["Handling: up to Push & resolve", "Watching notes new comments in the chat", "Watching just shows new comments", "Stopped: merged Turn watching on to start again"]);
     eq("P1 tab label", await p.locator('#tabs [data-tab="prs"]').innerText(), "Pull requests · 4");
 
@@ -88,13 +88,13 @@ try {
     await p.waitForFunction(() => /queued for Copilot|Copilot is on|sending/.test(document.querySelector(".pr-list tbody tr")?.innerText ?? ""), null, { timeout: 30000 });
     await shot("list-handling");
     const during = (await rows())[0];
-    check("live: new comments badge", /^3 new ?3 unresolved \/ 9$/.test(during.comments), during.comments);
+    check("live: new comments badge", /^3 new ?3 unresolved \/ 10$/.test(during.comments), during.comments);
     check("live: the batch is shown", /Handling: up to Push & resolve 3 new comments (queued for Copilot|…)|Copilot is on 3 new comments/.test(during.watching), during.watching);
     await p.waitForFunction(() => /last batch done/.test(document.querySelector(".pr-list tbody tr")?.innerText ?? ""), null, { timeout: 45000 });
-    await p.waitForFunction(() => /1 unresolved \/ 9/.test(document.querySelector(".pr-list tbody tr")?.innerText ?? ""), null, { timeout: 20000 }).catch(() => {});
+    await p.waitForFunction(() => /1 unresolved \/ 10/.test(document.querySelector(".pr-list tbody tr")?.innerText ?? ""), null, { timeout: 20000 }).catch(() => {});
     await shot("list-after");
     const done = (await rows())[0];
-    check("live: Copilot's replies and resolutions observed (2 of the 3 open threads resolved)", /1 unresolved \/ 9/.test(done.comments), done.comments);
+    check("live: Copilot's replies and resolutions observed (2 of the 3 open threads resolved)", /1 unresolved \/ 10/.test(done.comments), done.comments);
 
     if (argv.includes("--detail")) {
         const detail = await import("./prs-ui-detail.mjs");

@@ -1574,7 +1574,7 @@ function openChat(ctx) {
         return;
     }
     const open = !$("#chat").hidden && !chat.docked;
-    const sameTarget = open && ctx.blockId === chat.blockId && ctx.quote === chat.quote && (ctx.unit ?? null) === chat.unit && (ctx.picks ?? []).join() === (chat.picks ?? []).join() && (ctx.range ?? null) === chat.askRange;
+    const sameTarget = open && (ctx.prThread?.threadId ?? null) === (chat.prThread?.threadId ?? null) && ctx.blockId === chat.blockId && ctx.quote === chat.quote && (ctx.unit ?? null) === chat.unit && (ctx.picks ?? []).join() === (chat.picks ?? []).join() && (ctx.range ?? null) === chat.askRange;
     if (!sameTarget) {
         // Commenting on something else moves what the next message is about; the conversation goes on.
         chat.quoteFresh = true; // the next message carries the new target's quote (and says what it's about)
@@ -1586,6 +1586,7 @@ function openChat(ctx) {
         chat.ref = ctx.ref ?? null;
         chat.askRows = ctx.askRows ?? null;
         chat.askRange = ctx.range ?? null;
+        chat.prThread = ctx.prThread ?? null; // a review thread from the Pull requests tab
     }
     showChatBox(wasHidden);
     if (!peekEl.hidden) keepChatClear(peekEl.getBoundingClientRect().width);
@@ -2419,7 +2420,7 @@ async function sendChat({ flip = false, other = false } = {}) {
             method: "POST",
             body: cmd
                 ? { documentId: state.documentId, tab: "command", quote: chat.quote ?? undefined, message, threadId: chat.threadId ?? undefined, focus: svc.commandFocusPayload?.(chat.focus) ?? { items: chat.focus.map((f) => f.item) }, context: chat.nextContext ?? docked?.context?.(), immediate }
-                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss, immediate },
+                : { documentId: state.documentId, blockId: chat.blockId, quote: first || chat.quoteFresh ? chat.quote : undefined, regions: first || chat.quoteFresh ? chatRegions() : undefined, message, threadId: chat.threadId ?? undefined, context: chat.docked?.context?.() ?? inspContext(), kind: chat.docked?.kind ?? (inspecting() ? "inspect" : undefined), discuss, immediate, prThread: first || chat.quoteFresh ? (chat.prThread ?? undefined) : undefined },
         });
         chat.threadId = res.threadId;
         if (turn) (chat.turns ??= new Map()).set(res.messageId, turn);

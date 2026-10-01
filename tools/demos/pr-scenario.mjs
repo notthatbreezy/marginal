@@ -13,7 +13,8 @@ export const DEV_LIMITS = { tickMs: 1000, checkMs: 2000, quietMs: 3000, reconcil
 const hunk = (header, lines) => `${header}\n${lines.join("\n")}`;
 const H = {
     policy: hunk("@@ -36,9 +36,12 @@ export function retryPolicy(opts: RetryOptions): Policy {", [" export function retryPolicy(opts: RetryOptions): Policy {", "-  const max = opts.maxAttempts;", "+  const max = opts.maxAttempts ?? Infinity;", "+  if (max < 1) throw new RangeError(\"maxAttempts must be at least 1\");", "   return { max, delay: nextDelay };"]),
-    backoff: hunk("@@ -12,8 +12,14 @@ import type { Policy } from \"./policy\";", [" export function nextDelay(attempt: number, base = 100): number {", "-  return base * 2 ** attempt;", "+  const d = Math.min(base * 2 ** attempt, MAX_DELAY_MS);", "+  return d + Math.random() * d * JITTER;", " }"]),
+    // GitHub's diffHunk for a comment ends at the commented line.
+    backoff: hunk("@@ -12,8 +12,14 @@ import type { Policy } from \"./policy\";", [" export function nextDelay(attempt: number, base = 100): number {", "-  return base * 2 ** attempt;", "+  const d = Math.min(base * 2 ** attempt, MAX_DELAY_MS);", "+  return d + Math.random() * d * JITTER;"]),
     executor: hunk("@@ -80,10 +80,15 @@ export class Executor {", ["     try {", "       return await job.run(ctx);", "-    } catch (e) {", "-      throw e;", "+    } catch (e) {", "+      this.log.warn(\"job failed\", { job: job.id });", "+      throw new JobError(\"job failed\", job.id);"]),
     jitter: hunk("@@ -4,6 +4,9 @@ export const JITTER = 0.2;", [" export const MAX_DELAY_MS = 30_000;", "+export function jittered(d: number, rand = Math.random): number {", "+  return d + rand() * d * JITTER;", "+}"]),
     queue: hunk("@@ -51,7 +51,9 @@ export class Queue {", ["   async requeue(job: Job, delayMs: number) {", "-    this.pending.push(job);", "+    job.runAfter = Date.now() + delayMs;", "+    await this.store.save(job);"]),
@@ -45,6 +46,9 @@ export function seedWorlds({ me = "you" } = {}) {
         const [t] = w41.review("sam-o", { comments: [{ path: "src/runner/policy.ts", line: 10 + i, body: ["Typo: *recieve*.", "Could this be `const`?", "Nit: blank line.", "Name this `maxDelayMs` for consistency.", "Add a doc comment?"][i], diffHunk: H.policy }] });
         w41.resolve(t);
     }
+    // A comment that tries to inject markup: it must render inert (P3).
+    const [tx] = w41.review("sam-o", { comments: [{ path: "src/runner/policy.ts", line: 30, body: 'Odd input: <img src=x onerror="window.__xss=1"> <script>window.__xss=2</script> [click me](javascript:window.__xss=3)', diffHunk: H.policy }] });
+    w41.resolve(tx);
     w41.checks([...Array.from({ length: 11 }, (_, i) => ({ name: ["build", "unit (node 20)", "unit (node 22)", "types", "integration", "docs", "coverage", "license", "bundle size", "e2e (chromium)", "e2e (firefox)"][i], status: "COMPLETED", conclusion: "SUCCESS" })), { name: "lint (eslint)", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "https://example.com/lint" }]);
     void t1;
 

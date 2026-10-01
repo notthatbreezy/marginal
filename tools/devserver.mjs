@@ -254,6 +254,8 @@ const chat = args.has("--canned-chat") || transcriptOn || args.has("--prs")
           reply: (m) =>
               prReply && /^\[Marginal PR review/.test(m.prompt)
                   ? prReply(m)
+                  : /<<<PR-THREAD/.test(m.prompt)
+                  ? { statuses: ["Thinking"], text: `About ${/── 1\. (\S+?)(?::\d+[-\d]*)? ·/.exec(m.prompt)?.[1] ?? "that thread"}: ${/\n(\S+?), [^\n]*:\n([^\n]{0,60})/.exec(m.prompt)?.[1] ?? "the reviewer"} asked "${/\n(\S+?), [^\n]*:\n([^\n]{0,60})/.exec(m.prompt)?.[2] ?? ""}…". It's right: an unset maxAttempts should default to 5.` }
                   : /carefully/i.test(m.displayPrompt ?? m.prompt)
                   ? { statuses: ["Reading the plan", "Reading src/runner/queue.ts", "Reading src/runner/policy.ts", "Reading src/runner/executor.ts", "Thinking", "Reading test/runner/retry.test.ts", "Reading src/runner/backoff.ts", "Thinking", "Reading docs/runner.md", "Reading src/runner/jobs.ts", "Thinking", "Reading src/runner/config.ts", "Reading src/runner/errors.ts", "Thinking"], text: "Added a Retry cap section to the doc.", after: () => store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "## Retry cap\n\nA job is retried at most **5** times; the delay doubles each time, up to 30 s." } }) }
               : /write it/i.test(m.prompt)
