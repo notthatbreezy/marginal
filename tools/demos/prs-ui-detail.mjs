@@ -33,7 +33,7 @@ export async function run({ p, check, eq, shot }) {
     check("P3 Copilot's thread is there", !!copilot, "not found");
     eq("P3 a suggested change shows as a diff", copilot?.sugg, ["-  return d + Math.random() * d * JITTER;", "+  return d + rand() * d * JITTER;"]);
     eq("P3 conversation in order", copilot?.order, ["copilot-pull-request-reviewer", "you"]);
-    check("P8 steps: handled, replied with the commit, resolved (observed, nothing reported)", ["Copilot handled it", "Replied: fixed in 9c1e0d2", "Resolved"].every((s) => copilot?.steps.includes(s)) && !copilot?.steps.some((s) => /reported/.test(s)), JSON.stringify(copilot?.steps));
+    check("P8 steps: sent first, then replied with the commit, resolved (observed, nothing reported)", ["Sent to Copilot (up to Push & resolve)", "Replied: fixed in 9c1e0d2", "Resolved"].every((s) => copilot?.steps.includes(s)) && copilot?.steps[0] === "Sent to Copilot (up to Push & resolve)" && !copilot?.steps.some((s) => /reported/.test(s)), JSON.stringify(copilot?.steps));
     check("P3 resolved threads are marked", copilot?.resolved, "not marked resolved");
     await shot("detail-all");
     // markup in a comment is inert

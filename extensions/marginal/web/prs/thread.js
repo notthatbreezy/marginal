@@ -67,15 +67,17 @@ export function commentEl(c, { isNew = false, removed = [] } = {}) {
 }
 
 const STATUS = { assessed: "Assessed", fixed: "Fixed", reviewed: "Reviewed", declined: "Declined", question: "Question for you" };
+const LEVEL_LABEL = { assess: "Assess", remediate: "Remediate", localReview: "Local review", pushResolve: "Push & resolve" };
 
 /** What's happened to a thread: the batch it went in, what GitHub shows, and what Copilot reported. */
 export function stepsOf(thread, { facts, batches }) {
     const steps = [];
     for (const b of batches ?? [])
         if (b.units?.includes(`thread:${thread.id}`)) {
-            const at = b.doneAt ?? b.seenAt ?? b.admittedAt ?? b.createdAt;
-            const label = b.state === "done" ? "Copilot handled it" : b.state === "seen" ? "Copilot is on it" : b.state === "admitted" ? "Queued for Copilot" : "Sending to Copilot";
-            steps.push({ at, label, title: `Batch ${b.id}, up to ${b.level}`, kind: b.state === "done" ? "done" : "now" });
+            // When it went to Copilot (what Copilot then did is reported, or seen on GitHub, after it).
+            const at = b.admittedAt ?? b.createdAt;
+            const label = b.state === "done" ? `Sent to Copilot (up to ${LEVEL_LABEL[b.level] ?? b.level})` : b.state === "seen" ? "Copilot is on it" : b.state === "admitted" ? "Queued for Copilot" : "Sending to Copilot";
+            steps.push({ at, label, title: `Batch ${b.id}${b.doneAt ? `, finished ${new Date(b.doneAt).toLocaleString()}` : ""}`, kind: b.state === "done" ? "done" : "now" });
         }
     for (const r of facts?.reported ?? []) steps.push({ at: r.at, label: `${STATUS[r.status] ?? r.status}${r.commit ? ` ${r.commit.slice(0, 7)}` : ""}`, title: r.note ?? "", kind: "reported", note: r.note });
     for (const o of facts?.observed ?? []) {
