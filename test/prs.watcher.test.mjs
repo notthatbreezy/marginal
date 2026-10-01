@@ -339,6 +339,26 @@ test("rate limits back off until the reset; merged PRs stop; the cap pauses extr
     w.stopAll();
 });
 
+test("in a session that never goes idle (autopilot), the next request after a batch ends it", async () => {
+    const s = setup({ handle: "assess" });
+    await s.start();
+    s.world.review("reviewer", { comments: [{ body: "One" }] });
+    await s.advance(MIN);
+    const b1 = s.st().batches[0];
+    s.watcher.onSessionEvent({ type: "user.message", id: "x1", data: { messageId: b1.messageId } });
+    assert.equal(s.st().batches[0].state, "seen");
+    s.world.review("reviewer", { comments: [{ body: "Two" }] });
+    await s.advance(2 * MIN);
+    assert.equal(s.sent.length, 1, "b1 still with Copilot");
+    s.watcher.onSessionEvent({ type: "user.message", id: "x2", data: { messageId: "steer", delivery: "steering" } });
+    assert.equal(s.st().batches[0].state, "seen", "a steering message doesn't end the turn");
+    s.watcher.onSessionEvent({ type: "user.message", id: "x3", data: { messageId: "autopilot-continue" } });
+    await s.settle();
+    assert.equal(s.st().batches[0].state, "done");
+    assert.equal(s.sent.length, 2, "the next batch went without the session ever going idle");
+    s.watcher.stopAll();
+});
+
 test("overflow: threads that don't fit a batch go in the next one, whole and in order", async () => {
     const s = setup({ handle: "assess", compose: ({ units, batchId }) => ({ text: `[Marginal PR review] ${batchId}: ${units.slice(0, 2).join(", ")}`, displayPrompt: "x", units: units.slice(0, 2) }) });
     await s.start();

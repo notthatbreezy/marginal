@@ -368,6 +368,9 @@ export function createWatcher({
         const now = clock.now();
         if (ev.type === "user.message" || ev.type === "assistant.turn_start") session.idleSince = null;
         const ids = ev.type === "user.message" ? [ev.id, ev.data?.messageId].filter(Boolean) : [];
+        // A new request after a batch's own means Copilot has moved on from it: in a busy or autopilot session the
+        // session may never go idle between requests, so this, not idle, is what usually ends a batch.
+        if (ids.length && ev.data?.delivery !== "steering") completeSeen((b) => !ids.includes(b.messageId), now);
         if (ids.length) {
             for (const docId of docs.keys())
                 for (const entry of readIndex(docId).prs) {
@@ -379,21 +382,29 @@ export function createWatcher({
                         });
                 }
         }
-        if (ev.type === "session.idle") {
+        if (ev.type === "session.idle" || ev.type === "session.task_complete") {
             session.idleSince = now;
-            for (const docId of docs.keys())
-                for (const entry of readIndex(docId).prs) {
-                    const st = readPr(docId, entry.id);
-                    if (st.batches.some((b) => b.state === "seen"))
-                        writePr(docId, entry.id, (s) => {
-                            for (const b of s.batches.filter((x) => x.state === "seen")) {
-                                completeBatch(s, b, now);
-                                log(s, `Copilot finished batch ${b.id}.`, { kind: "done", batchId: b.id });
-                            }
-                        });
-                }
+            completeSeen(() => true, now);
             for (const docId of docs.keys()) tick(docId); // the next batch can go now
         }
+    }
+
+    /** Batches Copilot had taken up and has now finished: their comments are handled, and the next batch can go. */
+    function completeSeen(which, now) {
+        let any = false;
+        for (const docId of docs.keys())
+            for (const entry of readIndex(docId).prs) {
+                const st = readPr(docId, entry.id);
+                if (!st.batches.some((b) => b.state === "seen" && which(b))) continue;
+                any = true;
+                writePr(docId, entry.id, (s) => {
+                    for (const b of s.batches.filter((x) => x.state === "seen" && which(x))) {
+                        completeBatch(s, b, now);
+                        log(s, `Copilot finished batch ${b.id}.`, { kind: "done", batchId: b.id });
+                    }
+                });
+            }
+        if (any) for (const docId of docs.keys()) tick(docId);
     }
 
     return {
