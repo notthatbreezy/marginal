@@ -33,7 +33,7 @@ export function prActions({ resolveDoc, service }) {
                     }
                     case "list":
                         return {
-                            prs: service.list(docId).prs.map((p) => ({ prId: p.id, url: p.url, title: p.title, state: p.state, reviewDecision: p.reviewDecision, checks: p.checks, threads: p.threads, stacksOn: p.stacksOn, label: p.label, settings: p.settings, batch: p.batch, stopped: p.stopped, error: p.error?.message ?? null })),
+                            prs: (await service.list(docId)).prs.map((p) => ({ prId: p.id, url: p.url, title: p.title, state: p.state, reviewDecision: p.reviewDecision, checks: p.checks, threads: p.threads, stacksOn: p.stacksOn, label: p.label, settings: p.settings, batch: p.batch, stopped: p.stopped, error: p.error?.message ?? null })),
                         };
                     case "read":
                         return service.read(docId, need(i, "prId"), { threadId: i.threadId ?? null, threads: i.threads ?? "unresolved" });

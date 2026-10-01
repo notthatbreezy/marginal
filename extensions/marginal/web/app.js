@@ -9,6 +9,7 @@ import { loadSettings, onSettings, settings, settingsChanged, shortcut } from ".
 import { captureGone, decorate as decorateSuggestion } from "./suggest.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
+const INITIAL_PR = new URLSearchParams(location.search).get("pr"); // with tab=prs: open that PR
 
 // ---------------- state ----------------
 const state = {
@@ -968,8 +969,13 @@ function setHeader() {
     $("#open-external").hidden = INSTANCE.startsWith("browser-");
     for (const btn of document.querySelectorAll("#tabs button")) {
         const tab = btn.dataset.tab;
-        btn.hidden = !doc || (!doc.target && (tab === "diff" || tab === "commits" || tab === "command"));
+        btn.hidden = !doc || (!doc.target && (tab === "diff" || tab === "commits" || tab === "command")) || (tab === "prs" && doc.kind === "scratchpad");
         btn.classList.toggle("on", tab === state.tab);
+    }
+    const prN = $("#tabs [data-tab=\"prs\"] .tab-n");
+    if (prN) {
+        prN.hidden = !state.prCount;
+        prN.textContent = state.prCount ? ` · ${state.prCount}` : "";
     }
     const banner = $("#banner");
     document.body.classList.toggle("previewing", !!state.preview);
@@ -1279,8 +1285,10 @@ async function render() {
     setHeader();
     try {
         if (state.tab !== "command") command.unmount();
+        if (state.tab !== "prs") prsTab.unmount();
         if (state.tab === "board") renderBoard();
         else if (state.tab === "command") await command.mount();
+        else if (state.tab === "prs") await prsTab.mount();
         else if (state.tab === "diff") await renderDiff();
         else if (state.tab === "commits") await renderCommits();
         else if (state.tab === "history") await renderHistory();
@@ -1312,6 +1320,32 @@ const command = {
     },
 };
 
+/** The Pull requests tab lives in web/prs/ and loads on first use. */
+const prsTab = {
+    mod: null,
+    async mount() {
+        this.mod ??= await import("./prs/tab.js");
+        if (this.mod.isMounted() && this.docId === state.documentId) return;
+        this.docId = state.documentId;
+        await this.mod.mountPrs($("#main"), { documentId: state.documentId, prId: INITIAL_PR });
+    },
+    unmount() {
+        this.mod?.unmountPrs();
+        this.docId = null;
+    },
+    /** The tab's count: how many PRs this doc tracks. */
+    async count() {
+        if (!state.documentId || state.doc?.kind === "scratchpad") return (state.prCount = 0);
+        this.mod ??= await import("./prs/tab.js");
+        const docId = state.documentId;
+        const n = await this.mod.countFor(docId);
+        if (docId === state.documentId && n !== state.prCount) {
+            state.prCount = n;
+            setHeader();
+        }
+    },
+};
+
 async function loadDoc(lastEdit) {
     if (!state.documentId) return render();
     try {
@@ -1325,6 +1359,7 @@ async function loadDoc(lastEdit) {
             if (lastEdit && state.lastSeenVersion !== null && data.doc.version > state.lastSeenVersion) animate = { lastEdit: data.doc.lastEdit };
             state.lastSeenVersion = data.doc.version;
         }
+        prsTab.count().catch(() => {});
         await render();
         refreshInspect();
     } catch (e) {
@@ -1400,7 +1435,7 @@ function connect() {
                 state.documentId = ev.documentId;
                 state.viewVersion = null;
                 // ?tab= deep-links the first render (e.g. headless screenshots of the Command tab).
-                state.tab = first && ["command", "diff", "commits", "history"].includes(INITIAL_TAB) ? INITIAL_TAB : "board";
+                state.tab = first && ["command", "prs", "diff", "commits", "history"].includes(INITIAL_TAB) ? INITIAL_TAB : "board";
                 state.lastSeenVersion = null;
                 await loadDoc();
                 // This panel had the chat open before it reloaded: open it again, where it was.
@@ -1420,6 +1455,10 @@ function connect() {
         else if (ev.type === "transcript") onTranscript(ev);
         else if (ev.type === "settings") settingsChanged(ev.settings);
         else if (ev.type === "command") bus.emit("command", ev);
+        else if (ev.type === "prs" && ev.documentId === state.documentId) {
+            if (ev.prIds.includes("*")) prsTab.count().catch(() => {});
+            prsTab.mod?.onPrsEvent(ev);
+        }
         else if (ev.type === "activity" && ev.documentId === state.documentId) setActivity(ev.activity);
         else if (ev.type === "deleted" && ev.documentId === state.documentId) {
             state.catalog = await api("/catalog");

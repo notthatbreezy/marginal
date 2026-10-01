@@ -46,9 +46,11 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         },
     };
     const transcript = createTranscript(() => session);
+    const raw = new Set(); // onSessionEvent listeners: what the extension's session.on would see
     const fire = (e, { ephemeral = false } = {}) => {
         if (!ephemeral && e.type !== "assistant.message_delta") log.push(e);
         transcript.onEvent(e);
+        for (const fn of raw) fn(e);
     };
     const TOOL = { "Reading the plan": "view", Thinking: null };
     let line = Promise.resolve(); // one turn at a time, as in a session
@@ -106,8 +108,12 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         emit(m.instanceId, threadId, { kind: "done" });
         fire(ev("session.idle", {}), { ephemeral: true });
     }
-    return {
+    const api = {
         transcript,
+        /** Every session event, as the extension's session.on sees them (the PR watcher listens). */
+        onSessionEvent: (fn) => (raw.add(fn), () => raw.delete(fn)),
+        /** The session's send(), for code that talks to the session directly (the PR service). */
+        session: (sessionId) => ({ sessionId, rpc: session.rpc, send: async ({ prompt, displayPrompt, mode }) => (await api.send({ instanceId: "", prompt, displayPrompt, immediate: mode === "immediate" })).messageId }),
         /** Earlier conversation, as persisted events (e.g. test/fixtures/transcript-events.jsonl). */
         seed(events) {
             log.unshift(...events);
@@ -152,4 +158,5 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         pendingProposals: () => [...proposals].map(([k, p]) => ({ threadId: k.split("\0")[0], proposalId: k.split("\0")[1], count: p.edits.length, docId: p.docId })),
         activeThread: () => null,
     };
+    return api;
 }

@@ -177,9 +177,9 @@ test("pr register/list/read/report/settings/remove, end to end; reading never ca
 test("a doc made from a PR lists it without registering", async () => {
     const { documentId } = await store.create({ title: "From a PR", pullRequest: { url: "https://acme.ghe.com/acme/app/pull/12" } });
     const s = await serviceFor();
-    const l = s.service.list(documentId);
+    const l = await s.service.list(documentId);
     assert.deepEqual(l.prs.map((x) => [x.host, x.number, x.addedBy]), [["acme.ghe.com", 12, "doc"]]);
-    assert.equal(s.service.list(documentId).prs.length, 1, "once");
+    assert.equal((await s.service.list(documentId)).prs.length, 1, "once");
 });
 
 test("P12: a handling turn that never calls pr still completes, and the tab shows what was observed", async () => {
@@ -201,7 +201,7 @@ test("P12: a handling turn that never calls pr still completes, and the tab show
     s.world.resolve(t1);
     s.service.onSessionEvent({ type: "session.idle", data: {} });
     await s.advance(60_000);
-    const d = s.service.detail(documentId, prId);
+    const d = await s.service.detail(documentId, prId);
     assert.equal(d.batches[0].state, "done");
     assert.deepEqual(d.facts[t1].observed.map((x) => [x.kind, x.commit ?? null]), [["resolved", null], ["replied", "d".repeat(7)]]);
     assert.deepEqual(d.facts[t1].reported, []);

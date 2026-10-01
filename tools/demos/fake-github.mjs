@@ -66,11 +66,11 @@ export function graphqlModel(model) {
  * A PR you can change: world.review(...), world.reply(...), world.resolve(...), world.push(...), world.merge().
  * world.exec is the fake gh; world.calls records what Marginal asked. `clock()` gives "now" for timestamps.
  */
-export function fakeWorld({ host = "github.com", owner = "acme", repo = "app", number = 7, me = "me", accounts, clock = () => Date.now(), title = "Add jitter and an onRetry hook" } = {}) {
+export function fakeWorld({ host = "github.com", owner = "acme", repo = "app", number = 7, me = "me", accounts, clock = () => Date.now(), title = "Add jitter and an onRetry hook", prefix = "" } = {}) {
     let n = 0;
     const iso = () => new Date(clock()).toISOString();
     const model = {
-        pr: { id: "PR_1", number, title, url: `https://${host}/${owner}/${repo}/pull/${number}`, state: "OPEN", isDraft: false, merged: false, closed: false, updatedAt: iso(), author: { login: me }, baseRefName: "main", headRefName: "feature/x", headRefOid: "a".repeat(40), reviewDecision: null },
+        pr: { id: `${prefix}PR_1`, number, title, url: `https://${host}/${owner}/${repo}/pull/${number}`, state: "OPEN", isDraft: false, merged: false, closed: false, updatedAt: iso(), author: { login: me }, baseRefName: "main", headRefName: "feature/x", headRefOid: "a".repeat(40), reviewDecision: null },
         threads: [],
         reviews: [],
         comments: [],
@@ -94,7 +94,7 @@ export function fakeWorld({ host = "github.com", owner = "acme", repo = "app", n
             return http(200, { "last-modified": lm, "x-ratelimit-remaining": "4998" }, JSON.stringify({ number, updated_at: model.pr.updatedAt }));
         },
     });
-    const comment = (author, body, extra = {}) => ({ id: `C${++n}`, databaseId: n, author: author ? { login: author } : null, body, createdAt: iso(), lastEditedAt: null, url: `${model.pr.url}#c${n}`, diffHunk: "@@ -1,4 +1,5 @@\n const a = 1;\n-const b = 2;\n+const b = 3;\n+const c = 4;", replyTo: null, pullRequestReview: null, ...extra });
+    const comment = (author, body, extra = {}) => ({ id: `${prefix}C${++n}`, databaseId: n, author: author ? { login: author } : null, body, createdAt: iso(), lastEditedAt: null, url: `${model.pr.url}#c${n}`, diffHunk: "@@ -1,4 +1,5 @@\n const a = 1;\n-const b = 2;\n+const b = 3;\n+const c = 4;", replyTo: null, pullRequestReview: null, ...extra });
     const world = {
         model,
         exec,
@@ -103,10 +103,10 @@ export function fakeWorld({ host = "github.com", owner = "acme", repo = "app", n
         failNext: (status, headers = {}, body = "{}") => (failNext = { status, headers, body }),
         /** A submitted review: line comments (each a new thread) and an optional summary. Returns thread ids. */
         review(author, { body = "", comments = [], state = "COMMENTED" } = {}) {
-            const rid = `R${++n}`;
+            const rid = `${prefix}R${++n}`;
             model.reviews.push({ id: rid, databaseId: n, author: author ? { login: author } : null, state, body, submittedAt: iso(), url: `${model.pr.url}#r${n}` });
             const ids = comments.map((c) => {
-                const t = { id: `T${++n}`, isResolved: false, isOutdated: false, path: c.path ?? "src/retry.mjs", line: c.line ?? 4, originalLine: c.line ?? 4, startLine: null, diffSide: "RIGHT", resolvedBy: null, comments: [comment(author, c.body, { pullRequestReview: { id: rid }, ...(c.diffHunk ? { diffHunk: c.diffHunk } : {}) })] };
+                const t = { id: `${prefix}T${++n}`, isResolved: false, isOutdated: false, path: c.path ?? "src/retry.mjs", line: c.line ?? 4, originalLine: c.line ?? 4, startLine: null, diffSide: "RIGHT", resolvedBy: null, comments: [comment(author, c.body, { pullRequestReview: { id: rid }, ...(c.diffHunk ? { diffHunk: c.diffHunk } : {}) })] };
                 model.threads.push(t);
                 return t.id;
             });
@@ -116,7 +116,7 @@ export function fakeWorld({ host = "github.com", owner = "acme", repo = "app", n
         },
         reply(threadId, author, body) {
             const t = model.threads.find((x) => x.id === threadId);
-            const rid = `R${++n}`;
+            const rid = `${prefix}R${++n}`;
             model.reviews.push({ id: rid, databaseId: n, author: { login: author }, state: "COMMENTED", body: "", submittedAt: iso(), url: null });
             const c = comment(author, body, { replyTo: { id: t.comments[0].id }, pullRequestReview: { id: rid }, diffHunk: t.comments[0].diffHunk });
             t.comments.push(c);
@@ -156,11 +156,37 @@ export function fakeWorld({ host = "github.com", owner = "acme", repo = "app", n
             model.checks = list.map((c) => ({ __typename: "CheckRun", detailsUrl: null, ...c })); // doesn't touch the PR
         },
         bigPr(threads) {
-            for (let i = 0; i < threads; i++) model.threads.push({ id: `T${++n}`, isResolved: false, isOutdated: false, path: "src/a.js", line: i + 1, originalLine: i + 1, startLine: null, diffSide: "RIGHT", resolvedBy: null, comments: [comment("old-reviewer", `old ${i}`)] });
+            for (let i = 0; i < threads; i++) model.threads.push({ id: `${prefix}T${++n}`, isResolved: false, isOutdated: false, path: "src/a.js", line: i + 1, originalLine: i + 1, startLine: null, diffSide: "RIGHT", resolvedBy: null, comments: [comment("old-reviewer", `old ${i}`)] });
             touch();
         },
     };
     return world;
+}
+
+/**
+ * Several fake PRs behind one gh: REST and GraphQL calls go to the world whose host/owner/repo/number they name
+ * (a thread-comments page, to the world that has that thread). Give each world its own prefix.
+ */
+export function fakeGitHub(worlds, { accounts } = {}) {
+    const find = (host, owner, repo, number) => worlds.find((w) => w.ident.host === host && w.ident.owner.toLowerCase() === String(owner).toLowerCase() && w.ident.repo.toLowerCase() === String(repo).toLowerCase() && w.ident.number === Number(number));
+    const hosts = [...new Set(worlds.map((w) => w.ident.host))];
+    const { exec, calls } = fakeGh({
+        accounts: accounts ?? Object.fromEntries(hosts.map((h) => [h, [{ login: "me", active: true }]])),
+        reply: async (args, login) => {
+            const host = args[args.indexOf("--hostname") + 1];
+            let w;
+            if (args[1] === "graphql") {
+                const v = varsOf(args);
+                w = v.id ? worlds.find((x) => x.model.threads.some((t) => t.id === v.id)) : find(host, v.owner, v.repo, v.number);
+            } else {
+                const m = /^repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)$/.exec(args.find((a) => a.startsWith("repos/")) ?? "");
+                w = m && find(host, m[1], m[2], m[3]);
+            }
+            if (!w) return args[1] === "graphql" ? { code: 1, stdout: JSON.stringify({ data: { repository: null }, errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }] }), stderr: "" } : http(404, {}, '{"message":"Not Found"}');
+            return w.exec(args, { env: { GH_TOKEN: `tok-${login}` } }).then((r) => (w.calls.pop(), r));
+        },
+    });
+    return { exec, calls };
 }
 
 /** A virtual clock for watcher tests: advance() runs due timers in order and waits for the watcher to settle. */

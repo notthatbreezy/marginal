@@ -11,6 +11,8 @@
 //   --walk      show a P1 → live(runner) checkpoint walkthrough (realistic code in the runner worktree)
 //   --revising  send one malformed walkthrough (the panel shows "Agent is revising…")
 //   --canned-chat  the Command chat answers with scripted, streamed replies (demos)
+//   --prs       the Pull requests tab on a fake GitHub (tools/demos/pr-scenario.mjs): a stack of PRs, a scripted
+//               reviewer, and a canned Copilot that handles the batch it's sent; implies --canned-chat
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -246,10 +248,13 @@ const { createCannedChat } = await import("./demos/canned-chat.mjs");
 // --transcript: the chat opens on a real recorded conversation (test/fixtures/transcript-events.jsonl), with a
 // message typed "in the app" a few seconds in, and a reply that asks a question first when the message says "ask".
 const transcriptOn = args.has("--transcript");
-const chat = args.has("--canned-chat") || transcriptOn
+let prReply = null; // --prs: Copilot's scripted answer to a batch of review comments
+const chat = args.has("--canned-chat") || transcriptOn || args.has("--prs")
     ? createCannedChat({
           reply: (m) =>
-              /carefully/i.test(m.displayPrompt ?? m.prompt)
+              prReply && /^\[Marginal PR review/.test(m.prompt)
+                  ? prReply(m)
+                  : /carefully/i.test(m.displayPrompt ?? m.prompt)
                   ? { statuses: ["Reading the plan", "Reading src/runner/queue.ts", "Reading src/runner/policy.ts", "Reading src/runner/executor.ts", "Thinking", "Reading test/runner/retry.test.ts", "Reading src/runner/backoff.ts", "Thinking", "Reading docs/runner.md", "Reading src/runner/jobs.ts", "Thinking", "Reading src/runner/config.ts", "Reading src/runner/errors.ts", "Thinking"], text: "Added a Retry cap section to the doc.", after: () => store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "## Retry cap\n\nA job is retried at most **5** times; the delay doubles each time, up to 30 s." } }) }
               : /write it/i.test(m.prompt)
                   ? { statuses: ["Reading the plan"], text: "Added a Retry cap section to the doc.", after: () => store.applyEdit(doc.documentId, { type: "insert", content: { type: "markdown", markdown: "## Retry cap\n\nA job is retried at most **5** times; the delay doubles each time, up to 30 s." } }) }
@@ -270,7 +275,13 @@ if (transcriptOn) {
     chat.seed(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "transcript-events.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)));
     setTimeout(() => chat.appMessage("Is the queue's delay kept across a restart?"), Number(process.env.APP_MESSAGE_MS ?? 6000));
 }
-const s = await startServer({ chat, transcript: chat.transcript ?? null, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
+let prs = null;
+if (args.has("--prs")) {
+    const sc = await (await import("./demos/pr-scenario.mjs")).setupPrs({ docId: doc.documentId, chat });
+    prs = sc.service;
+    prReply = sc.reply;
+}
+const s = await startServer({ chat, transcript: chat.transcript ?? null, prs, instances, getSessionId: () => (args.has("--not-owner") ? "some-other-session" : "orchestrator-dev") });
 process.stdout.write(JSON.stringify({ url: s.urlFor("dev"), instance: "dev", docId: doc.documentId, repo, fronts: wts, tmp }) + "\n");
 if (fake)
     fake.live({ manyHelpers: args.has("--many-helpers"), reload: args.has("--reload") }).then(async () => {

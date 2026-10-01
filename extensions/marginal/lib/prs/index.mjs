@@ -85,7 +85,10 @@ export function createPrService({ getSession, getSessionId, transcript = null, g
         if (!readIndex(docId).prs.some((p) => p.host === key.host && p.owner.toLowerCase() === key.owner.toLowerCase() && p.repo.toLowerCase() === key.repo.toLowerCase() && p.number === key.number)) addPr(docId, { url, addedBy: "doc" });
     }
 
-    function summary(docId, entry) {
+    /** The logins that count as you on a host (cached by the client); none if gh can't say. */
+    const selfOn = async (host) => new Set((await client().selfLogins(host).catch(() => [])).map((l) => l.toLowerCase()));
+
+    function summary(docId, entry, self = new Set()) {
         const st = readPr(docId, entry.id);
         const snap = st.snapshot ?? st.partial;
         const ob = outstanding(st);
@@ -103,10 +106,10 @@ export function createPrService({ getSession, getSessionId, transcript = null, g
             threads: snap ? threadCounts(snap) : null,
             counting: !st.snapshot || !!st.staging, // a big first fetch, or a traversal in progress
             // For each panel's own "new since you looked": the newest items, by time.
-            recent: snap ? itemsOf(snap).map((i) => ({ id: i.id, at: i.createdAt, author: i.author, kind: i.kind, threadId: i.threadId ?? null })).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 100) : [],
+            recent: snap ? itemsOf(snap).map((i) => ({ id: i.id, at: i.createdAt, author: i.author, kind: i.kind, threadId: i.threadId ?? null, mine: !!i.author && self.has(i.author.toLowerCase()) })).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 100) : [],
             pending: st.pending.length,
-            batch: ob ? { id: ob.id, state: ob.state, level: ob.level, threads: ob.units.length } : null,
-            lastBatch: lastDone ? { id: lastDone.id, doneAt: lastDone.doneAt, threads: lastDone.units.length } : null,
+            batch: ob ? { id: ob.id, state: ob.state, level: ob.level, threads: ob.units.length, comments: ob.itemIds.length } : null,
+            lastBatch: lastDone ? { id: lastDone.id, doneAt: lastDone.doneAt, threads: lastDone.units.length, comments: lastDone.itemIds.length } : null,
             stopped: st.stopped,
             error: st.error,
             checkedAt: st.checkedAt,
@@ -115,16 +118,21 @@ export function createPrService({ getSession, getSessionId, transcript = null, g
         };
     }
 
-    function list(docId) {
+    async function list(docId) {
         ensureDocPr(docId);
-        return { prs: readIndex(docId).prs.map((e) => summary(docId, e)), ownership: ownership(docId) };
+        const prs = readIndex(docId).prs;
+        const selves = new Map();
+        for (const h of new Set(prs.map((e) => e.host))) selves.set(h, await selfOn(h));
+        return { prs: prs.map((e) => summary(docId, e, selves.get(e.host))), ownership: ownership(docId) };
     }
 
-    function detail(docId, prId) {
+    async function detail(docId, prId) {
         const entry = getEntry(docId, prId);
         const st = readPr(docId, prId);
+        const self = await selfOn(entry.host);
         return {
-            ...summary(docId, entry),
+            ...summary(docId, entry, self),
+            self: [...self],
             snapshot: st.snapshot ?? st.partial,
             facts: st.facts,
             batches: st.batches.slice(-20).map(({ text, ...b }) => b),

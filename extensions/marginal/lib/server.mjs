@@ -14,6 +14,7 @@ import { readLease } from "./command/owner.mjs";
 import { revisingStatus } from "./command/walkthrough.mjs";
 import { eventsSince, lastSeq, onCommand, readPrefs, readState, refreshLog, watchCommand, writePrefs } from "./command/state.mjs";
 import { readProgress, summarizeProgress } from "./command/progress.mjs";
+import { onPrsChange } from "./prs/state.mjs";
 
 import * as store from "./store.mjs";
 import { readSettings, writeSettings } from "./settings.mjs";
@@ -108,7 +109,7 @@ async function sourceSlice(doc, source) {
     return result;
 }
 
-export async function startServer({ chat, transcript = null, instances, getSessionId }) {
+export async function startServer({ chat, transcript = null, prs = null, instances, getSessionId }) {
     const token = randomBytes(18).toString("base64url");
     const userEdits = new Map(); // docId -> Set of block ids the reader edited since the last chat message
     const editedNote = (doc) => {
@@ -167,6 +168,47 @@ export async function startServer({ chat, transcript = null, instances, getSessi
             push(c, { type: "command", ...ev });
         }
     });
+
+    // Pull requests: a doc's PR state changes often while it's watched; panels showing the doc get one coalesced
+    // event per doc (they refetch what they show).
+    const prsDirty = new Map(); // docId -> Set of prIds ("*" for the list)
+    onPrsChange((docId, what) => {
+        if (!prsDirty.has(docId)) {
+            prsDirty.set(docId, new Set());
+            setTimeout(() => {
+                const ids = [...(prsDirty.get(docId) ?? [])];
+                prsDirty.delete(docId);
+                for (const c of clients) if ((instances.get(c.instanceId)?.documentId ?? null) === docId) push(c, { type: "prs", documentId: docId, prIds: ids });
+            }, 150).unref?.();
+        }
+        prsDirty.get(docId).add(what.prId ?? "*");
+    });
+
+    /** /api/prs?doc=… (list), /api/prs/detail?doc=…&pr=…, and POST add | settings | refresh | remove | focus | watch-here. */
+    async function prsRoute(req, res, url, sub) {
+        if (!prs) throw new InputError("Pull requests aren't available here.");
+        const docId = url.searchParams.get("doc") ?? "";
+        store.getDoc(docId);
+        const prId = url.searchParams.get("pr") ?? "";
+        const what = sub[0] ?? "";
+        if (!what && req.method === "GET") return send(res, 200, await prs.list(docId));
+        if (what === "detail" && req.method === "GET") return send(res, 200, await prs.detail(docId, prId));
+        if (req.method !== "POST") return send(res, 404, { error: "not found" });
+        const body = (await readBody(req)) ?? {};
+        if (what === "add") {
+            const r = prs.register(docId, { url: body.url, stacksOn: body.stacksOn || undefined, label: body.label || undefined, by: "user" });
+            return send(res, 200, { prId: r.entry.id, created: r.created, watching: r.watching });
+        }
+        if (what === "settings") return send(res, 200, prs.settings(docId, prId, { watch: body.watch, handle: body.handle, steps: body.steps, deliver: body.deliver }, { by: "user" }));
+        if (what === "refresh") return send(res, 200, await prs.refresh(docId, prId));
+        if (what === "remove") return send(res, 200, prs.remove(docId, prId));
+        if (what === "focus") {
+            prs.setFocus(docId, prId, !!body.on);
+            return send(res, 200, { ok: true });
+        }
+        if (what === "watch-here") return send(res, 200, { watching: prs.own(docId), ownership: prs.ownership(docId) });
+        return send(res, 404, { error: "not found" });
+    }
 
     function notifyShow(instanceId) {
         const documentId = instances.get(instanceId)?.documentId ?? null;
@@ -259,8 +301,8 @@ export async function startServer({ chat, transcript = null, instances, getSessi
             // The browser shares the pattern matcher with the server (single source of truth).
             if (url.pathname === "/command/patterns.js") return send(res, 200, readFileSync(join(dirname(fileURLToPath(import.meta.url)), "command", "patterns.mjs")), MIME[".js"]);
             const name = parts.length === 0 ? "index.html" : parts.join("/");
-            // Flat assets plus exactly one module subdirectory (web/command/).
-            if (!/^(command\/)?[a-z0-9_-]+(\.[a-z0-9]+)+$/i.test(name)) return send(res, 404, { error: "not found" });
+            // Flat assets plus the module subdirectories (web/command/, web/prs/).
+            if (!/^((command|prs)\/)?[a-z0-9_-]+(\.[a-z0-9]+)+$/i.test(name)) return send(res, 404, { error: "not found" });
             const ext = name.slice(name.lastIndexOf("."));
             try {
                 return send(res, 200, readFileSync(join(webDir, name)), MIME[ext] ?? "application/octet-stream");
@@ -296,6 +338,7 @@ export async function startServer({ chat, transcript = null, instances, getSessi
         }
 
         if (parts[1] === "command") return commandRoute(req, res, url, parts.slice(2));
+        if (parts[1] === "prs") return prsRoute(req, res, url, parts.slice(2));
 
         // The chat: the session's transcript, newest first by page, and answering its questions.
         if (parts[1] === "transcript" && !parts[2] && method === "GET") {
