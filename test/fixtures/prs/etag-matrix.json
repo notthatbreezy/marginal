@@ -1,0 +1,66 @@
+[
+ {
+  "event": "nothing (control)",
+  "detail": "no change",
+  "conditional": "304",
+  "etagChanged": false,
+  "updatedAtChanged": false,
+  "updated_at": "2026-10-01T13:46:07Z"
+ },
+ {
+  "event": "bot reply in a thread",
+  "detail": "success",
+  "conditional": "200",
+  "etagChanged": true,
+  "updatedAtChanged": true,
+  "updated_at": "2026-10-01T14:28:46Z"
+ },
+ {
+  "event": "resolve a thread (you)",
+  "detail": "{\"resolveReviewThread\":{\"thread\":{\"isResolved\":true}}}",
+  "conditional": "304",
+  "etagChanged": false,
+  "updatedAtChanged": false,
+  "updated_at": "2026-10-01T14:28:46Z"
+ },
+ {
+  "event": "unresolve the thread (you)",
+  "detail": "{\"unresolveReviewThread\":{\"thread\":{\"isResolved\":false}}}",
+  "conditional": "304",
+  "etagChanged": false,
+  "updatedAtChanged": false,
+  "updated_at": "2026-10-01T14:28:46Z"
+ },
+ {
+  "event": "your reply in a thread",
+  "detail": "id 4156567974",
+  "conditional": "200",
+  "etagChanged": true,
+  "updatedAtChanged": false,
+  "updated_at": "2026-10-01T14:28:46Z"
+ },
+ {
+  "event": "edit your comment",
+  "detail": "edited",
+  "conditional": "200",
+  "etagChanged": true,
+  "updatedAtChanged": true,
+  "updated_at": "2026-10-01T14:29:12Z"
+ },
+ {
+  "event": "conversation comment (you)",
+  "detail": "posted",
+  "conditional": "200",
+  "etagChanged": true,
+  "updatedAtChanged": true,
+  "updated_at": "2026-10-01T14:29:26Z"
+ },
+ {
+  "event": "new bot review",
+  "detail": "success",
+  "conditional": "200",
+  "etagChanged": true,
+  "updatedAtChanged": true,
+  "updated_at": "2026-10-01T14:29:41Z"
+ }
+]
