@@ -365,6 +365,8 @@ export function createWatcher({
 
     /** Session events: a batch's message showing up, and the turn for it ending. */
     function onSessionEvent(ev) {
+        // Helper agents' own events (their prompts arrive as user.message too) say nothing about the main turn.
+        if (ev.agentId || ev.data?.agentId) return;
         const now = clock.now();
         if (ev.type === "user.message" || ev.type === "assistant.turn_start") session.idleSince = null;
         const ids = ev.type === "user.message" ? [ev.id, ev.data?.messageId].filter(Boolean) : [];

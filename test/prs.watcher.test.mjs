@@ -352,6 +352,8 @@ test("in a session that never goes idle (autopilot), the next request after a ba
     assert.equal(s.sent.length, 1, "b1 still with Copilot");
     s.watcher.onSessionEvent({ type: "user.message", id: "x2", data: { messageId: "steer", delivery: "steering" } });
     assert.equal(s.st().batches[0].state, "seen", "a steering message doesn't end the turn");
+    s.watcher.onSessionEvent({ type: "user.message", id: "x2b", agentId: "helper-1", data: { messageId: "helper-prompt" } });
+    assert.equal(s.st().batches[0].state, "seen", "a helper agent's prompt doesn't end the turn");
     s.watcher.onSessionEvent({ type: "user.message", id: "x3", data: { messageId: "autopilot-continue" } });
     await s.settle();
     assert.equal(s.st().batches[0].state, "done");
