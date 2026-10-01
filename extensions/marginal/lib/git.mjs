@@ -6,6 +6,8 @@ import { basename, resolve } from "node:path";
 
 import { InputError } from "./errors.mjs";
 import { atomicWriteJson, paths } from "./paths.mjs";
+import { github } from "./prs/github.mjs";
+import { parsePrUrl } from "./prs/identity.mjs";
 
 const MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -23,14 +25,6 @@ function git(cwd, args, { allowFail = false } = {}) {
                 }
                 resolvePromise(error ? null : stdout);
             },
-        );
-    });
-}
-
-function run(cmd, args, cwd) {
-    return new Promise((resolvePromise) => {
-        execFile(cmd, args, { cwd, maxBuffer: MAX_BUFFER, windowsHide: true, encoding: "utf8" }, (error, stdout, stderr) =>
-            resolvePromise(error ? { ok: false, error: (stderr || error.message).trim() } : { ok: true, stdout }),
         );
     });
 }
@@ -317,13 +311,8 @@ export async function listCommits(repositoryId, base, head) {
 
 // ---------- pull requests ----------
 
-const PR_URL = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)\/?$/i;
-
-export function parsePullRequestUrl(url) {
-    const m = PR_URL.exec(url ?? "");
-    if (!m) throw new InputError("pullRequestUrl must look like https://github.com/owner/repo/pull/123");
-    return { owner: m[1], repo: m[2].replace(/\.git$/, ""), number: Number(m[3]), url: `https://github.com/${m[1]}/${m[2]}/pull/${m[3]}` };
-}
+/** Any host: github.com or GitHub Enterprise. Returns {host, owner, repo, number, url}. */
+export const parsePullRequestUrl = parsePrUrl;
 
 /** Fetch a PR's head and base into private refs (never moving branches) and pin head against its merge-base. */
 export async function resolvePullRequest(repositoryId, url) {
@@ -334,11 +323,14 @@ export async function resolvePullRequest(repositoryId, url) {
     const remote = remotesOut
         .split("\n")
         .map((l) => l.split(/\s+/))
-        .find(([, u]) => u && u.toLowerCase().replace(/\.git$/, "").endsWith(slug))?.[0];
-    if (!remote) throw new InputError(`No remote in ${repo.name} points at github.com/${pr.owner}/${pr.repo}.`);
-    const view = await run("gh", ["pr", "view", String(pr.number), "--repo", `${pr.owner}/${pr.repo}`, "--json", "title,baseRefName,headRefName,state"], repo.path);
-    if (!view.ok) throw new InputError(`gh pr view failed (${view.error}). Pass an explicit target instead.`);
-    const info = JSON.parse(view.stdout);
+        .find(([, u]) => u && u.toLowerCase().includes(pr.host) && u.toLowerCase().replace(/\.git$/, "").endsWith(slug))?.[0];
+    if (!remote) throw new InputError(`No remote in ${repo.name} points at ${pr.host}/${pr.owner}/${pr.repo}.`);
+    let info;
+    try {
+        info = JSON.parse(await github().run(pr, ["pr", "view", String(pr.number), "--repo", `${pr.host}/${pr.owner}/${pr.repo}`, "--json", "title,baseRefName,headRefName,state"]));
+    } catch (e) {
+        throw new InputError(`gh pr view failed (${e.message}). Pass an explicit target instead.`);
+    }
     const refBase = `refs/marginal/github/${pr.owner}/${pr.repo}/pull/${pr.number}`;
     await git(repo.path, ["fetch", "--no-tags", remote, `+refs/pull/${pr.number}/head:${refBase}/head`, `+refs/heads/${info.baseRefName}:${refBase}/base`]);
     const pins = await resolvePins(repositoryId, `${refBase}/base`, `${refBase}/head`, { mergeBase: true });
