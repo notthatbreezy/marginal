@@ -361,6 +361,59 @@ test("in a session that never goes idle (autopilot), the next request after a ba
     s.watcher.stopAll();
 });
 
+test("settings changed while a tick waits on GitHub are what delivery uses; an unwatched or removed PR sends nothing", async () => {
+    const s = setup({ handle: "assess" });
+    await s.start();
+    s.world.reply; // a lone conversation comment waits 90 quiet seconds
+    s.world.converse("reviewer", "One thought");
+    await s.advance(MIN);
+    assert.equal(s.st().pending.length, 1);
+    St.setEntry(s.docId, s.prId, (e) => (e.settings = { ...e.settings, watch: false }));
+    await s.advance(3 * MIN);
+    assert.equal(s.sent.length, 0, "watching off: nothing sent");
+    St.setEntry(s.docId, s.prId, (e) => (e.settings = { ...e.settings, watch: true, handle: "none" }));
+    await s.advance(MIN);
+    assert.equal(s.sent.length, 0, "Do nothing: nothing sent");
+    assert.equal(s.st().pending.length, 0);
+    s.watcher.stopAll();
+});
+
+test("removed PRs free their place under the cap", async () => {
+    const s = setup({ handle: "read", limits: { maxWatched: 1 } });
+    await s.start();
+    St.removePr(s.docId, s.prId);
+    const { entry } = St.addPr(s.docId, { url: "https://github.com/acme/app/pull/8" });
+    await s.advance(MIN);
+    assert.notEqual(St.readPr(s.docId, entry.id).error?.kind, "cap");
+    s.watcher.stopAll();
+});
+
+test("the seen list is never truncated (a long history never looks new again)", () => {
+    const { entry } = St.addPr("doc-long-history", { url: "https://github.com/acme/app/pull/3" });
+    St.writePr("doc-long-history", entry.id, (st) => (st.seen = Array.from({ length: 25_000 }, (_, i) => `c${i}`)));
+    assert.equal(St.readPr("doc-long-history", entry.id).seen.length, 25_000);
+});
+
+test("P13 at the real page budget: a comment past page 20 is delivered once, from saved cursors", async () => {
+    const s = setup({ handle: "assess" }); // the default budget of 20 pages per tick
+    s.world.bigPr(1100); // 22 pages of threads
+    await s.start();
+    assert.ok(s.st().staging, "the first traversal didn't finish in one tick");
+    await s.advance(45_000);
+    assert.equal(s.st().snapshot?.threads.length, 1100);
+    const target = s.world.model.threads[1075].id; // page 22
+    s.world.reply(target, "reviewer", "Far down the list");
+    const mark = s.world.calls.length;
+    await s.advance(4 * MIN);
+    const kinds = s.world.calls.slice(mark).map((c) => c.kind).filter((k) => k.startsWith("graphql"));
+    const first = kinds.indexOf("graphql:main");
+    assert.ok(first >= 0);
+    assert.deepEqual(kinds.slice(first + 1, first + 22), Array(21).fill("graphql:threads"), "the traversal resumed from its cursors, never back to page one");
+    assert.equal(s.sent.length, 1);
+    assert.match(s.sent[0].text, new RegExp(`thread:${target}`));
+    s.watcher.stopAll();
+});
+
 test("overflow: threads that don't fit a batch go in the next one, whole and in order", async () => {
     const s = setup({ handle: "assess", compose: ({ units, batchId }) => ({ text: `[Marginal PR review] ${batchId}: ${units.slice(0, 2).join(", ")}`, displayPrompt: "x", units: units.slice(0, 2) }) });
     await s.start();

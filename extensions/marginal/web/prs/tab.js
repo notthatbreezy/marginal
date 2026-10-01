@@ -1,6 +1,6 @@
 // The Pull requests tab: a doc's PRs (list), and one PR's threads and settings (detail.js). Marginal's server
 // watches GitHub; this only shows what it saw, live over SSE ("prs" events), and changes settings.
-import { $, h, put, api, toast } from "../core.js";
+import { $, h, put, api, toast, INSTANCE } from "../core.js";
 
 let host = null;
 let documentId = null;
@@ -24,7 +24,7 @@ export function ago(iso) {
 }
 
 // "New since you looked" is this panel's own: the newest comment it has shown for each PR, in localStorage.
-const seenKey = (pr) => `mg-prs-seen:${documentId}:${pr.id}`;
+const seenKey = (pr) => `mg-prs-seen:${INSTANCE}:${documentId}:${pr.id}`; // panels share an origin
 export function seenAt(pr) {
     let v = localStorage.getItem(seenKey(pr));
     if (!v) {
@@ -101,11 +101,18 @@ function stacked(prs) {
 }
 
 async function load() {
-    if (loading) return loading;
-    loading = api(`/prs?doc=${encodeURIComponent(documentId)}`)
-        .then((d) => (data = d))
-        .finally(() => (loading = null));
-    return loading;
+    const docId = documentId;
+    if (loading?.docId === docId) return loading.p;
+    const p = api(`/prs?doc=${encodeURIComponent(docId)}`)
+        .then((d) => {
+            if (docId === documentId) data = d; // a response for a doc no longer shown is dropped
+            return d;
+        })
+        .finally(() => {
+            if (loading?.p === p) loading = null;
+        });
+    loading = { docId, p };
+    return p;
 }
 
 function renderList() {
@@ -242,6 +249,7 @@ export function unmountPrs() {
     host = null;
     documentId = null;
     data = null;
+    loading = null;
 }
 
 /** An SSE "prs" event for the doc shown: refetch what's on screen. */

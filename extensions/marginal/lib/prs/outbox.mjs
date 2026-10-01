@@ -44,7 +44,7 @@ export function complete(st, batch, now) {
     batch.doneAt = new Date(now).toISOString();
     const handled = new Set(st.handled ?? []);
     for (const id of batch.itemIds) handled.add(id);
-    st.handled = [...handled].slice(-20_000);
+    st.handled = [...handled];
 }
 
 /** An admitted batch that never showed up in the session goes back to be sent again. Returns true if it did. */

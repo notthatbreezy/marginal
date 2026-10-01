@@ -128,6 +128,7 @@ export function createCannedChat({ reply, wordMs = 35, thinkMs = 700 } = {}) {
         },
         subscribe: (fn) => (listeners.add(fn), () => listeners.delete(fn)),
         async send(m) {
+            if (process.env.PROMPT_LOG) (await import("node:fs")).appendFileSync(process.env.PROMPT_LOG, JSON.stringify({ prompt: m.prompt, displayPrompt: m.displayPrompt }) + "\n");
             const threadId = m.threadId ?? `canned-${++n}`;
             const messageId = `msg-${++n}`;
             // Sent while Copilot is busy, a message waits; it is logged (as queued) when Copilot takes it up.

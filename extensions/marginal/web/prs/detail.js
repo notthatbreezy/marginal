@@ -26,7 +26,9 @@ let confirmRemove = false;
 const q = (path) => `${path}?doc=${encodeURIComponent(ctx.documentId)}&pr=${encodeURIComponent(ctx.prId)}`;
 
 async function load() {
-    data = await api(q("/prs/detail"));
+    const c = ctx;
+    const d = await api(q("/prs/detail"));
+    if (c === ctx) data = d; // the panel moved on meanwhile: drop it
 }
 
 async function save(patch) {

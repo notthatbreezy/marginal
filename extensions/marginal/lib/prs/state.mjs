@@ -172,7 +172,8 @@ export function writePr(docId, prId, mutate) {
     const st = readPr(docId, prId);
     const r = mutate(st);
     if (st.activity.length > ACTIVITY_MAX) st.activity = st.activity.slice(-ACTIVITY_MAX);
-    if (st.seen.length > 20_000) st.seen = st.seen.slice(-20_000);
+    // `seen` is never truncated: it's the dedupe for the PR's whole history (dropping an id would make an old
+    // comment look new). It grows with the PR, one short id per comment.
     atomicWriteJson(prFile(docId, prId), st);
     emit(docId, { what: "pr", prId });
     return r;

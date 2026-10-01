@@ -95,6 +95,7 @@ export function createWatcher({
         d.running = track(
             (async () => {
                 if (!owns(docId)) return;
+                pruneActive();
                 for (const entry of readIndex(docId).prs) {
                     try {
                         await tickPr(docId, entry);
@@ -108,6 +109,16 @@ export function createWatcher({
             }),
         );
         return d.running;
+    }
+
+    /** The cap counts PRs that are still watched: removed, unwatched, stopped or unowned ones free their place. */
+    function pruneActive() {
+        const live = new Set();
+        for (const d of docs.keys()) {
+            if (!owns(d)) continue;
+            for (const e of readIndex(d).prs) if (e.settings.watch && !readPr(d, e.id).stopped) live.add(e.key);
+        }
+        for (const k of [...active]) if (!live.has(k)) active.delete(k);
     }
 
     /** Check GitHub now (an agent's `pr refresh`, or the panel's Refresh). */
@@ -292,7 +303,10 @@ export function createWatcher({
     }
 
     /** What's waiting goes where the handling level says; a prepared batch is sent. */
-    async function deliver(docId, entry, now) {
+    async function deliver(docId, stale, now) {
+        // Settings may have changed (or the PR been removed) while this tick waited on GitHub: use them as they are now.
+        const entry = readIndex(docId).prs.find((p) => p.id === stale.id);
+        if (!entry || !entry.settings.watch) return;
         const level = entry.settings.handle;
         const r = runtime(docId, entry.id);
         let st = readPr(docId, entry.id);
@@ -411,7 +425,7 @@ export function createWatcher({
 
     return {
         watch,
-        unwatch,
+        unwatch: (docId) => (unwatch(docId), pruneActive()),
         tick,
         refresh,
         onSessionEvent,

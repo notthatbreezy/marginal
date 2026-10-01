@@ -89,7 +89,12 @@ test("limits: a long comment is shortened with where to read it whole; a long th
     many.threads = Array.from({ length: 20 }, (_, i) => ({ ...snap.threads[0], id: `T${i}`, comments: [{ ...snap.threads[0].comments[0], id: `k${i}`, body: "z".repeat(3500) }] }));
     const m = composeBatch({ entry, snapshot: many, units: many.threads.map((x) => `thread:${x.id}`), batchId: "b", level: "assess" });
     assert.ok(m.units.length > 1 && m.units.length < 20);
-    assert.ok(Buffer.byteLength(m.text) <= LIMITS.batch + 4096);
+    assert.ok(Buffer.byteLength(m.text) <= LIMITS.batch, `the whole message, framing included, within ${LIMITS.batch} bytes (got ${Buffer.byteLength(m.text)})`);
+    // the reviewer's case: 13 threads of 3,640-byte comments
+    const r13 = structuredClone(snap);
+    r13.threads = Array.from({ length: 13 }, (_, i) => ({ ...snap.threads[0], id: `Q${i}`, comments: [{ ...snap.threads[0].comments[0], id: `q${i}`, body: "w".repeat(3640) }] }));
+    const m13 = composeBatch({ entry, snapshot: r13, units: r13.threads.map((x) => `thread:${x.id}`), batchId: "b", level: "pushResolve", docTitle: "A long doc title", docId: "doc-1" });
+    assert.ok(Buffer.byteLength(m13.text) <= LIMITS.batch, `got ${Buffer.byteLength(m13.text)}`);
     assert.deepEqual(m.units, many.threads.slice(0, m.units.length).map((x) => `thread:${x.id}`), "whole threads, in order");
 });
 
@@ -171,6 +176,22 @@ test("pr register/list/read/report/settings/remove, end to end; reading never ca
     assert.deepEqual(await s.call({ documentId, op: "remove", prId: top.prId }), { removed: top.prId });
     assert.equal((await s.call({ documentId, op: "list" })).prs.length, 1);
     await assert.rejects(() => s.call({ documentId, op: "nope" }), /op must be one of/);
+    s.service.watcher.stopAll();
+});
+
+test("P2: a doc's own PR, a registered stacked PR and a pasted GHE URL make exactly three; a duplicate and a cycle are refused", async () => {
+    const { documentId } = await store.create({ title: "Three PRs", pullRequest: { url: "https://github.com/acme/app/pull/7" } });
+    const s = await serviceFor();
+    const own = (await s.service.list(documentId)).prs[0];
+    assert.equal(own.addedBy, "doc");
+    const stacked = await s.call({ documentId, op: "register", url: "https://github.com/acme/app/pull/8", stacksOn: own.id });
+    const pasted = s.service.register(documentId, { url: "https://acme.ghe.com/acme/app/pull/9", by: "user" });
+    assert.equal(pasted.created, true);
+    const dup = await s.call({ documentId, op: "register", url: "https://github.com/ACME/app/pull/8/files" });
+    assert.equal(dup.created, false);
+    await assert.rejects(() => s.call({ documentId, op: "register", url: "https://github.com/acme/app/pull/7", stacksOn: stacked.prId }), /already builds on it/);
+    const ix = St.readIndex(documentId).prs;
+    assert.deepEqual(ix.map((p) => [p.host, p.number, p.addedBy, p.stacksOn]), [["github.com", 7, "doc", null], ["github.com", 8, "agent", own.id], ["acme.ghe.com", 9, "user", null]]);
     s.service.watcher.stopAll();
 });
 

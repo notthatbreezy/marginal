@@ -2,7 +2,8 @@
 // exact oracles for the list (P1, P2) and, with --detail, the detail view (P3, P5, P9).
 // Usage: node tools/demos/prs-ui-test.mjs [--detail] [--out=dir]
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -16,7 +17,9 @@ const check = (name, ok, detail = "") => results.push({ name, ok: !!ok, detail: 
 const eq = (name, actual, expected) => check(name, JSON.stringify(actual) === JSON.stringify(expected), `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 
 const b = await chromium.launch({ channel: "msedge", headless: true });
-const d = spawn(process.execPath, [join(root, "tools/devserver.mjs"), "--single", "--prs", "--seconds=180"], { windowsHide: true, env: { ...process.env, PR_REVIEW_MS: "7000" } });
+const promptLog = join(mkdtempSync(join(tmpdir(), "mg-prompts-")), "prompts.jsonl");
+const prompts = () => (existsSync(promptLog) ? readFileSync(promptLog, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : []);
+const d = spawn(process.execPath, [join(root, "tools/devserver.mjs"), "--single", "--prs", "--seconds=180"], { windowsHide: true, env: { ...process.env, PR_REVIEW_MS: "7000", PROMPT_LOG: promptLog } });
 let errOut = "";
 d.stderr.on("data", (x) => (errOut += x));
 d.info = await new Promise((res, rej) => {
@@ -84,6 +87,17 @@ try {
     await p.waitForTimeout(400);
     check("P2 a non-PR URL is refused with a reason", /pull request URL looks like/.test(await p.locator("#toast").innerText()), await p.locator("#toast").innerText());
 
+    // a PR registered with stacksOn (the same register the pr action uses) appears live, under its base
+    const docId = d.info.docId;
+    const top = await p.evaluate(() => [...document.querySelectorAll(".pr-list tbody tr")].find((r) => r.querySelector(".pr-num")?.textContent === "#43")?.dataset.pr);
+    await p.evaluate(async ({ docId, top }) => {
+        await fetch(`/api/prs/add?doc=${encodeURIComponent(docId)}`, { method: "POST", headers: { "x-wb-token": new URLSearchParams(location.search).get("t"), "content-type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/relay/pull/44", stacksOn: top }) });
+    }, { docId, top });
+    await p.waitForFunction(() => [...document.querySelectorAll(".pr-list tbody tr .pr-num")].some((n) => n.textContent === "#44"), null, { timeout: 8000 }).catch(() => {});
+    const r44 = (await rows()).find((x) => x.num === "#44");
+    check("P2 a stacked PR registered meanwhile appears live, under its base", r44?.depth === 3, JSON.stringify(await rows()));
+    eq("P2 the index holds exactly the PRs added (4 + pasted + stacked)", (await rows()).length, 6);
+
     // ---- live: the scripted review reaches #41 and Copilot handles it, with no reload
     await p.waitForFunction(() => /queued for Copilot|Copilot is on|sending/.test(document.querySelector(".pr-list tbody tr")?.innerText ?? ""), null, { timeout: 30000 });
     await shot("list-handling");
@@ -98,7 +112,7 @@ try {
 
     if (argv.includes("--detail")) {
         const detail = await import("./prs-ui-detail.mjs");
-        await detail.run({ p, rows, check, eq, shot, url: d.info.url });
+        await detail.run({ p, rows, check, eq, shot, url: d.info.url, prompts });
     }
 } catch (e) {
     check("no exception", false, e.stack);

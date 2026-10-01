@@ -122,6 +122,9 @@ export async function setupPrs({ docId, chat, sessionId = "orchestrator-dev", ti
                 if (ids[1]) {
                     world.reply(ids[1], me, "Declining: the executor rethrows with the original error as `cause` a few lines below, so the stack is kept.");
                     world.resolve(ids[1]);
+                    // What GitHub can't show: the verdict on a thread Copilot didn't change (the optional report).
+                    const prId = /prId: (\S+)/.exec(m.prompt)?.[1];
+                    if (prId) service.report(docId, prId, [{ threadId: ids[1], status: "declined", note: "The executor already keeps the original error as cause." }]);
                 }
             },
         };

@@ -85,17 +85,23 @@ export function composeBatch({ entry, snapshot: snap, units, batchId, level, new
     const ctx = { prId: entry.id, newIds: new Set(newIds), n: 0 };
     const parts = [];
     const included = [];
-    let size = 0;
+    // The whole message stays within LIMITS.batch: the envelope (header, ask, fence, tail) is measured first.
+    const envelope = (ps) => frame(ps).text;
+    let size = bytes(envelope([]));
     for (const u of units) {
         ctx.n = included.length + 1;
         let t = unitText(u, snap, ctx);
         if (t == null) continue;
         t = t.split(fence).join("REVIEW-EVIDENCE"); // review text can't close the fence early
-        if (included.length && size + bytes(t) > LIMITS.batch) break;
+        const add = bytes(t) + 2; // the blank line between units
+        if (included.length && size + add > LIMITS.batch) break;
         parts.push(t);
         included.push(u);
-        size += bytes(t);
+        size += add;
     }
+    return { ...frame(parts), units: included };
+
+    function frame(parts) {
     const count = included.length;
     const idsOf = (u) => {
         const [k, id] = [u.slice(0, u.indexOf(":")), u.slice(u.indexOf(":") + 1)];
@@ -116,7 +122,8 @@ export function composeBatch({ entry, snapshot: snap, units, batchId, level, new
     const tailNote = `If you've already handled batch ${batchId}, skip it. Marginal sees commits, replies and resolved threads on GitHub by itself; pr {op:"report", ${docId ? `documentId:"${docId}", ` : ""}prId:"${entry.id}", threads:[{threadId, status:"assessed"|"fixed"|"reviewed"|"declined"|"question", note?, commit?}]} can record what it can't see, such as a verdict on a thread you didn't change.`;
     const text = [header, ask, evidence, `<<<${fence}\n\n${parts.join("\n\n")}\n\n${fence}>>>`, tailNote].join("\n\n");
     const displayPrompt = `Handle ${fresh === 1 ? "1 new review comment" : `${fresh} new review comments`} on #${pr.number} (up to ${STEP_LABEL[level]})\n\nFrom Marginal · Pull requests${docTitle ? ` · “${docTitle}”` : ""}`;
-    return { text, displayPrompt, units: included };
+    return { text, displayPrompt };
+    }
 }
 
 /** A PR (or one thread) as the agent reads it with pr {op:"read"}: the same format, from the snapshot. */

@@ -57,7 +57,7 @@ export function commentEl(c, { isNew = false, removed = [] } = {}) {
                 { class: "pr-cmt-h" },
                 h("b", {}, c.author ?? "a deleted account"),
                 " ",
-                h("span", { class: "pr-muted", title: when(c.createdAt) }, ago(c.createdAt)),
+                h("time", { class: "pr-muted", datetime: c.createdAt, title: when(c.createdAt) }, ago(c.createdAt)),
                 c.editedAt ? h("span", { class: "pr-muted" }, " · edited") : null,
                 isNew ? h("span", { class: "pr-pill new" }, "New") : null,
             ),
@@ -110,7 +110,7 @@ export function threadEl(t, { url, newIds, facts, batches, onAsk }) {
     const replies = t.comments.length - 1;
     return h(
         "article",
-        { class: `pr-thread${isNew ? " is-new" : ""}${t.resolved ? " is-resolved" : ""}`, "data-thread": t.id },
+        { class: `pr-thread${isNew ? " is-new" : ""}${t.resolved ? " is-resolved" : ""}`, "data-thread": t.id, "data-side": t.side },
         h(
             "header",
             { class: "pr-thread-h" },

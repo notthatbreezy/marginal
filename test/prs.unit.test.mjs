@@ -287,6 +287,28 @@ test("GraphQL errors: NOT_FOUND tries the next account; anything else surfaces",
     assert.equal(bad.calls.length, 1);
 });
 
+test("P10: every call for a GHE PR carries its host, and a GHE response normalizes to the same shape", async () => {
+    const ghe = JSON.parse(readFileSync(join(here, "fixtures", "prs", "ghe-shape.graphql.json"), "utf8")).data.repository.pullRequest;
+    const g = fakeGh({
+        accounts: { "acme.ghe.com": [{ login: "me", active: true }] },
+        reply: (args) => (args[1] === "graphql" ? { code: 0, stdout: JSON.stringify({ data: queryName(args) === "checksOnly" ? { repository: { pullRequest: { headRefOid: ghe.headRefOid, commits: ghe.commits } } } : { repository: { pullRequest: ghe } } }), stderr: "" } : http(200, { "last-modified": "L" })),
+    });
+    const gh = createGitHub({ exec: g.exec, env: {} });
+    const pr = parsePrUrl("https://acme.ghe.com/acme/app/pull/1419");
+    await gh.check(pr, null);
+    const f = await gh.fetchPullRequest(pr);
+    await gh.fetchChecks(pr);
+    assert.ok(g.calls.length >= 3);
+    for (const c of g.calls) assert.equal(c.args[c.args.indexOf("--hostname") + 1], "acme.ghe.com", c.args.slice(0, 3).join(" "));
+    const a = S.normalize(f.raw, pr);
+    const b = S.normalize(rawFromFixture(), SANDBOX);
+    const shape = (o) => (Array.isArray(o) ? (o.length ? [shape(o[0])] : []) : o && typeof o === "object" ? Object.fromEntries(Object.keys(o).sort().map((k) => [k, shape(o[k])])) : "value");
+    const keys = (s) => ({ top: Object.keys(s).sort(), pr: Object.keys(s.pr).sort(), thread: shape(s.threads[0]), review: shape(s.reviews[0]), checks: Object.keys(s.checks).sort() });
+    assert.deepEqual(keys(a), keys(b));
+    assert.equal(a.threads.length, 9);
+    assert.ok(a.checks.total === 6 && a.checks.items.every((c) => ["passed", "failed", "pending"].includes(c.result)));
+});
+
 // ---------- the doc's list of PRs ----------
 
 test("registering: one entry per PR whatever the URL form, stacking by id or URL, cycles refused", () => {
