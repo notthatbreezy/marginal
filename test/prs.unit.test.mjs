@@ -253,6 +253,12 @@ test("gh's own state: a login whose token died, nobody logged in (then logged in
     await assert.rejects(() => gh.check(SANDBOX, null), /gh's login for me on github\.com has expired or been revoked\. Run: gh auth login --hostname github\.com/);
     accounts["github.com"] = [{ login: "me", active: true }];
     assert.equal((await gh.check(SANDBOX, null)).changed, true, "logging in again works on the next try, not after a restart");
+    const mixed = fakeGh({ accounts: { "github.com": [{ login: "work", active: true }, { login: "personal", state: "error" }] }, reply: () => http(404, {}, '{"message":"Not Found"}') });
+    await assert.rejects(
+        () => createGitHub({ exec: mixed.exec, env: {} }).check(SANDBOX, null),
+        (e) => /None of your gh accounts on github\.com \(work\) can see/.test(e.message) && /gh's login for personal on github\.com has expired or been revoked/.test(e.message),
+        "an expired login is named even when another account was tried",
+    );
     const none = createGitHub({ exec: fakeGh({ missing: true, reply: () => http(200) }).exec, env: {} });
     await assert.rejects(
         () => none.check(SANDBOX, null),

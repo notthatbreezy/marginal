@@ -59,7 +59,9 @@ export function createWatcher({
 
     const runtime = (docId, prId) => {
         const k = `${docId}/${prId}`;
-        if (!rt.has(k)) rt.set(k, { fresh: true, sending: false, looked: new Set() });
+        // errorNoted: this process told the chat the PR can't be checked. Not saved: chat notes don't outlive the
+        // process, so after a reload an outage still going on is told again (and a recovery only follows a told one).
+        if (!rt.has(k)) rt.set(k, { fresh: true, sending: false, looked: new Set(), errorNoted: false });
         return rt.get(k);
     };
     const track = (p) => {
@@ -139,6 +141,9 @@ export function createWatcher({
         await tick(docId);
     }
 
+    /** The PR's index entry as it is now (null once removed). */
+    const currentEntry = (docId, prId) => readIndex(docId).prs.find((p) => p.id === prId) ?? null;
+
     async function tickPr(docId, entry) {
         const now = clock.now();
         const r = runtime(docId, entry.id);
@@ -153,19 +158,16 @@ export function createWatcher({
             if (now >= (st.nextAt ?? 0)) {
                 try {
                     await network(docId, entry, st, r, now);
-                    let recovered = false;
+                    if (!currentEntry(docId, entry.id)) return; // removed while GitHub answered: don't bring its state back
                     writePr(docId, entry.id, (s) => {
                         if (s.error && s.error.kind !== "cap") log(s, "GitHub is answering again.");
-                        recovered = !!s.errorNoted;
-                        s.errorNoted = false;
                         s.error = null;
                         s.backoffMs = 0;
                         s.retryAt = null;
                         s.nextAt = now + (s.staging ? L.tickMs : L.checkMs); // a big fetch carries on at the next tick
                     });
-                    if (recovered) note(docId, entry, `Marginal can check ${prName(entry, readPr(docId, entry.id))} on GitHub again.`);
                 } catch (e) {
-                    let tell = null;
+                    if (!currentEntry(docId, entry.id)) return;
                     writePr(docId, entry.id, (s) => {
                         s.backoffMs = Math.min(L.maxBackoffMs, Math.max(L.checkMs, (s.backoffMs || L.checkMs / 2) * 2));
                         s.retryAt = e.retryAt && e.retryAt > now ? e.retryAt : null;
@@ -173,16 +175,32 @@ export function createWatcher({
                         const message = e.kind === "rate_limit" ? `GitHub's rate limit: waiting until ${new Date(s.nextAt).toLocaleTimeString()}.` : e.message;
                         if (s.error?.message !== message) log(s, message, { kind: "error" });
                         s.error = { kind: e.kind ?? "error", message, at: new Date(now).toISOString(), retryAt: s.nextAt };
-                        if (NEEDS_YOU.has(s.error.kind) && !s.errorNoted && entry.settings.handle !== "none") {
-                            s.errorNoted = true;
-                            tell = message;
-                        }
                     });
-                    if (tell) note(docId, entry, `Marginal can't check ${prName(entry, readPr(docId, entry.id))} on GitHub, so new review comments on it won't be handled until it can. ${tell}`);
                 }
             }
+            tellChat(docId, entry.id, r);
         }
         await deliver(docId, entry, now);
+    }
+
+    /**
+     * The chat hears once when a handled PR can't be checked for a reason only the user can fix, and once when it can
+     * again. Judged from the saved state and the settings as they are now (they may have changed while gh ran), after
+     * every tick: a new process (after a reload, whose chat lost its notes) tells it again without waiting for a retry.
+     */
+    function tellChat(docId, prId, r) {
+        const cur = currentEntry(docId, prId);
+        if (!cur) return;
+        const st = readPr(docId, prId);
+        const err = st.error;
+        if (err && NEEDS_YOU.has(err.kind)) {
+            if (r.errorNoted || !cur.settings.watch || cur.settings.handle === "none") return;
+            r.errorNoted = true;
+            note(docId, cur, `Marginal can't check ${prName(cur, st)} on GitHub, so new review comments on it won't be handled until it can. ${err.message}`);
+        } else if (!err && r.errorNoted) {
+            r.errorNoted = false;
+            note(docId, cur, `Marginal can check ${prName(cur, st)} on GitHub again.`);
+        }
     }
 
     async function network(docId, entry, st0, r, now) {

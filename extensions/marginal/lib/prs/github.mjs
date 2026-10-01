@@ -177,7 +177,7 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
         }
         accountCache.delete(host);
         remembered.delete(key);
-        throw accessError(host, subject, failed);
+        throw accessError(host, subject, failed, broken.get(host) ?? []);
     }
 
     /**
@@ -324,7 +324,12 @@ export function createGitHub({ exec = execGh, env = process.env } = {}) {
 }
 
 /** What to tell the user when no account could reach a repository. */
-function accessError(host, subject, failed) {
+function accessError(host, subject, failed, stale = []) {
+    const e = accessErrorOf(host, subject, failed);
+    if (stale.length) e.message += ` (gh's login for ${stale.join(", ")} on ${host} has expired or been revoked: gh auth login --hostname ${host} renews it.)`;
+    return e;
+}
+function accessErrorOf(host, subject, failed) {
     const names = failed.map((f) => f.login).join(", ");
     const refused = failed.filter((f) => f.error?.kind === "auth");
     const hidden = failed.filter((f) => f.error?.kind === "not_found");

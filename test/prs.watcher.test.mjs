@@ -1,7 +1,7 @@
 // Pull requests tab, phase pr2: the watcher over virtual time against a fake GitHub (the gh command lines Marginal
 // really runs), with a spy for chat.send. Oracles from the plan's P4, P8, P11 and P13.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -467,6 +467,10 @@ test("no chat note for a PR at Do nothing or a rate limit; a PR never fetched is
     await quiet.advance(5 * MIN);
     assert.equal(quiet.notes.length, 0, "Do nothing: the tab shows it, the chat doesn't");
     assert.equal(quiet.st().error.kind, "auth");
+    fail = null;
+    await quiet.advance(11 * MIN);
+    assert.equal(quiet.st().error, null);
+    assert.equal(quiet.notes.length, 0, "and no recovery note for an outage the chat was never told about");
     quiet.watcher.stopAll();
     let limited = null;
     const rl = setup({ handle: "assess", wrap: outage(() => limited) });
@@ -482,4 +486,49 @@ test("no chat note for a PR at Do nothing or a rate limit; a PR never fetched is
     assert.equal(fresh.notes.length, 1);
     assert.match(fresh.notes[0], /^Marginal can't check #7 \(acme\/app\) on GitHub/);
     fresh.watcher.stopAll();
+});
+
+test("after a reload during an outage the new chat is told again; a recovery note only follows one this process gave", async () => {
+    let fail = HTTP401;
+    const s = setup({ handle: "assess", wrap: outage(() => fail) });
+    await s.start();
+    assert.equal(s.notes.length, 1);
+    s.watcher.stopAll(); // the extension reloads: its chat notes are gone
+    const r = setup({ docId: s.docId, existing: s, wrap: outage(() => fail) });
+    await r.start();
+    assert.equal(r.notes.length, 1, "the new process tells its chat the outage is still on");
+    fail = null;
+    await r.advance(11 * MIN);
+    assert.match(r.notes.at(-1), /can check #7 .* on GitHub again\.$/);
+    r.watcher.stopAll();
+    // at Do nothing the chat isn't told; switched to a handled level mid-outage, it's told then, once
+    fail = HTTP401;
+    St.setEntry(s.docId, s.prId, (e) => (e.settings = { ...e.settings, handle: "none" }));
+    let tries = 0;
+    const q = setup({ docId: s.docId, existing: s, wrap: (exec) => { const w = outage(() => fail)(exec); return (args, o) => (args[0] === "api" && tries++, w(args, o)); } });
+    await q.start();
+    await q.advance(3 * MIN);
+    assert.equal(q.st().error?.kind, "auth");
+    assert.equal(q.notes.length, 0);
+    St.setEntry(s.docId, s.prId, (e) => (e.settings = { ...e.settings, handle: "assess" }));
+    const before = tries;
+    await q.advance(30_000);
+    assert.ok(before > 0);
+    assert.equal(tries, before, "no retry yet: still backing off");
+    assert.equal(q.notes.length, 1, "told once it matters, at the next tick, not the next retry");
+    q.watcher.stopAll();
+});
+
+test("settings changed, or the PR removed, while gh runs: no note from the old settings, no state brought back", async () => {
+    let s;
+    const switched = setup({ handle: "assess", wrap: (exec) => async (args, o) => (args[0] === "api" ? (St.setEntry(switched.docId, switched.prId, (e) => (e.settings = { ...e.settings, handle: "none" })), HTTP401) : exec(args, o)) });
+    await switched.start();
+    assert.equal(switched.notes.length, 0, "switched to Do nothing mid-call: no chat note");
+    assert.equal(switched.st().error.kind, "auth", "the tab still shows it");
+    switched.watcher.stopAll();
+    const removed = setup({ handle: "assess", wrap: (exec) => async (args, o) => (args[0] === "api" ? (St.removePr(removed.docId, removed.prId), HTTP401) : exec(args, o)) });
+    await removed.start();
+    assert.equal(removed.notes.length, 0);
+    assert.ok(!existsSync(join(St.prsDir(removed.docId), `${removed.prId}.json`)), "the removed PR's state file isn't recreated");
+    removed.watcher.stopAll();
 });
