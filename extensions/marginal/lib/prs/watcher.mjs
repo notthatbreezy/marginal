@@ -14,7 +14,7 @@ import { repeatNote } from "./message.mjs";
 import { needsAgent, STEP_LABEL } from "./model.mjs";
 import { complete as completeBatch, expire, markSeen, outstanding, prepare, admit } from "./outbox.mjs";
 import { diffSnapshots, itemsOf, normalize } from "./snapshot.mjs";
-import { log, readIndex, readPr, writePr } from "./state.mjs";
+import { log, PrRemoved, readIndex, readPr, writePr } from "./state.mjs";
 
 export const LIMITS = Object.freeze({
     tickMs: 15_000,
@@ -108,8 +108,11 @@ export function createWatcher({
                     try {
                         await tickPr(docId, entry);
                     } catch (e) {
+                        if (e instanceof PrRemoved) continue; // removed while it was being checked: nothing to record
                         if (process.env.MARGINAL_DEBUG_PRS) process.stderr.write(`PRS-ERR ${docId}/${entry.id}: ${e.stack}\n`);
-                        writePr(docId, entry.id, (st) => log(st, `Unexpected error: ${e.message}`, { kind: "error" }));
+                        try {
+                            writePr(docId, entry.id, (st) => log(st, `Unexpected error: ${e.message}`, { kind: "error" }));
+                        } catch {}
                     }
                 }
             })().finally(() => {

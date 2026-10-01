@@ -531,4 +531,11 @@ test("settings changed, or the PR removed, while gh runs: no note from the old s
     assert.equal(removed.notes.length, 0);
     assert.ok(!existsSync(join(St.prsDir(removed.docId), `${removed.prId}.json`)), "the removed PR's state file isn't recreated");
     removed.watcher.stopAll();
+    // removed while a check that succeeds is in flight: the writes inside the fetch are refused too
+    const ok = setup({ handle: "assess", wrap: (exec) => async (args, o) => (args[0] === "api" && !args.includes("graphql") ? (St.removePr(ok.docId, ok.prId), exec(args, o)) : exec(args, o)) });
+    await ok.start();
+    assert.equal(St.readIndex(ok.docId).prs.length, 0);
+    assert.ok(!existsSync(join(St.prsDir(ok.docId), `${ok.prId}.json`)), "a successful in-flight check doesn't recreate it");
+    assert.throws(() => St.writePr(ok.docId, ok.prId, () => {}), St.PrRemoved);
+    ok.watcher.stopAll();
 });

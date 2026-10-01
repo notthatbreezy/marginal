@@ -168,7 +168,12 @@ export function readPr(docId, prId) {
     return { ...emptyPrState(), ...readJson(prFile(docId, prId), {}) };
 }
 
+/** A write for a PR that's no longer on the doc (removed while GitHub was answering, say): refused, so its state
+ * file isn't brought back as an orphan. */
+export class PrRemoved extends Error {}
+
 export function writePr(docId, prId, mutate) {
+    if (!readIndex(docId).prs.some((p) => p.id === prId)) throw new PrRemoved(`${prId} isn't on doc ${docId} any more.`);
     const st = readPr(docId, prId);
     const r = mutate(st);
     if (st.activity.length > ACTIVITY_MAX) st.activity = st.activity.slice(-ACTIVITY_MAX);

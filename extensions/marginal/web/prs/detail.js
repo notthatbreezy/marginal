@@ -132,7 +132,7 @@ function railEl(d) {
         h(
             "section",
             { class: "pr-rail-acts" },
-            own && !own.here ? null : h("button", { class: "pr-btn", onclick: () => refresh() }, "Check now"),
+            own?.watcher && !own.here ? null : h("button", { class: "pr-btn", onclick: () => refresh() }, "Check now"), // another live session watches: retrying is its job
             h(
                 "button",
                 {
@@ -192,7 +192,7 @@ function render() {
                   h("h3", {}, d.error.kind === "cap" ? "Paused" : "Marginal can't check this PR on GitHub"),
                   h("p", {}, d.error.message),
                   d.error.kind === "cap" ? null : h("p", { class: "pr-muted" }, `It tries again ${d.error.retryAt ? `at ${clock(d.error.retryAt)}` : "soon"}, and backs off up to every 10 minutes.`),
-                  d.error.kind === "cap" ? null : d.ownership && !d.ownership.here ? h("p", { class: "pr-muted" }, "The session watching this doc's pull requests retries it.") : h("button", { class: "pr-btn", onclick: () => refresh() }, "Try again now"),
+                  d.error.kind === "cap" ? null : d.ownership?.watcher && !d.ownership.here ? h("p", { class: "pr-muted" }, "The session watching this doc's pull requests retries it.") : h("button", { class: "pr-btn", onclick: () => refresh() }, "Try again now"),
               )
             : h("div", { class: "pr-muted pr-loading" }, "Fetching it from GitHub…")
         : [
