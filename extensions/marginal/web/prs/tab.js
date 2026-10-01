@@ -124,6 +124,19 @@ async function load() {
 
 function renderList() {
     if (!host) return;
+    // The list re-renders on every update (a tick writes each PR's state): keep a URL being typed, and its focus.
+    const was = host.querySelector(".pr-add-url");
+    const keep = was && { value: was.value, focused: document.activeElement === was, start: was.selectionStart, end: was.selectionEnd };
+    const show = (node) => {
+        put(host, node);
+        const now = keep && host.querySelector(".pr-add-url");
+        if (!now) return;
+        now.value = keep.value;
+        if (keep.focused) {
+            now.focus();
+            now.setSelectionRange(keep.start, keep.end);
+        }
+    };
     const prs = data?.prs ?? [];
     const own = data?.ownership;
     const checked = prs.map((p) => p.checkedAt).filter(Boolean).sort().at(-1);
@@ -156,8 +169,7 @@ function renderList() {
               ? h("div", { class: "pr-note" }, "No session is watching these pull requests right now. ", h("button", { class: "pr-link", onclick: async () => (await api(`/prs/watch-here?doc=${encodeURIComponent(documentId)}`, { method: "POST" }), await load(), renderList()) }, "Watch from this session"))
               : null;
     if (!prs.length) {
-        put(
-            host,
+        show(
             h(
                 "div",
                 { class: "pr-wrap" },
@@ -200,8 +212,7 @@ function renderList() {
             h("td", {}, watchingEl(p)),
         );
     });
-    put(
-        host,
+    show(
         h(
             "div",
             { class: "pr-wrap" },

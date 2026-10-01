@@ -87,6 +87,9 @@ try {
     await p.waitForTimeout(400);
     check("P2 a non-PR URL is refused with a reason", /pull request URL looks like/.test(await p.locator("#toast").innerText()), await p.locator("#toast").innerText());
 
+    // a URL being typed survives the list re-rendering under it (every update re-renders)
+    await input.fill("https://github.com/acme/rel");
+    await input.focus();
     // a PR registered with stacksOn (the same register the pr action uses) appears live, under its base
     const docId = d.info.docId;
     const top = await p.evaluate(() => [...document.querySelectorAll(".pr-list tbody tr")].find((r) => r.querySelector(".pr-num")?.textContent === "#43")?.dataset.pr);
@@ -96,6 +99,8 @@ try {
     await p.waitForFunction(() => [...document.querySelectorAll(".pr-list tbody tr .pr-num")].some((n) => n.textContent === "#44"), null, { timeout: 8000 }).catch(() => {});
     const r44 = (await rows()).find((x) => x.num === "#44");
     check("P2 a stacked PR registered meanwhile appears live, under its base", r44?.depth === 3, JSON.stringify(await rows()));
+    eq("P2 what you were typing in the URL box survives the re-render, still focused", await p.evaluate(() => { const i = document.querySelector(".pr-add-url"); return [i.value, document.activeElement === i]; }), ["https://github.com/acme/rel", true]);
+    await input.fill("");
     eq("P2 the index holds exactly the PRs added (4 + pasted + stacked)", (await rows()).length, 6);
 
     // ---- live: the scripted review reaches #41 and Copilot handles it, with no reload
