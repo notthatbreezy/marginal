@@ -145,10 +145,21 @@ export const emptyPrState = () => ({
     checkedAt: null,
     fetchedAt: null,
     seen: [], // ids of every comment-like item already accounted for (batched, or there before watching began)
-    baselined: false, // the first fetch marks what's already there as seen
+    baselined: false, // the first complete fetch marks what's already there as seen
+    pending: [], // new comments from others not yet in a batch: {id, unit, at, author, kind}
+    lastArrivalAt: null,
     batches: [], // the outbox: see outbox.mjs
+    batchSeq: 0,
+    handled: [], // item ids in a finished batch
+    heads: [], // head commits seen: [{sha, at}]
     facts: {}, // threadId -> {observed:[…], reported:[…]}
     activity: [], // newest last
+    stopped: null, // "merged" | "closed": watching stopped by itself
+    partial: null, // a first big fetch still counting: what's been seen so far
+    login: null, // the gh account that reads this PR
+    checksAt: null,
+    nextAt: null, // when the next network check is due (cadence, backoff, rate limits)
+    retryAt: null,
     error: null, // {kind, message, at, retryAt}
     backoffMs: 0,
 });
