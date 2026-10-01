@@ -112,6 +112,7 @@ test("a submitted review is one batch at once; a lone reply waits for 90 quiet s
     assert.equal(b1.state, "admitted");
     assert.equal(b1.itemIds.length, 3);
     assert.deepEqual(b1.units.sort(), [`review:${s.world.model.reviews[0].id}`, `thread:${t1}`, `thread:${t2}`].sort());
+    assert.match(s.st().activity.find((a) => a.kind === "batch").text, /for Copilot \(up to Assess\)\./, "the step's label, not its key");
     // more comments while that batch is out wait for the next one
     s.world.reply(t1, "reviewer", "Also this.");
     await s.advance(3 * MIN);

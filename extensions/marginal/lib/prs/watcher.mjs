@@ -11,7 +11,7 @@
 // New comments from anyone but you wait in `pending`. What happens to them depends on the PR's handling level:
 // Do nothing (shown only), Read (a line in the chat, no agent turn), or a batch for Copilot through the outbox.
 import { repeatNote } from "./message.mjs";
-import { needsAgent } from "./model.mjs";
+import { needsAgent, STEP_LABEL } from "./model.mjs";
 import { complete as completeBatch, expire, markSeen, outstanding, prepare, admit } from "./outbox.mjs";
 import { diffSnapshots, itemsOf, normalize } from "./snapshot.mjs";
 import { log, readIndex, readPr, writePr } from "./state.mjs";
@@ -353,7 +353,7 @@ export function createWatcher({
                     b.text = composed.text;
                     b.display = composed.displayPrompt;
                     s.pending = s.pending.filter((p) => !included.has(p.unit));
-                    log(s, `Batch ${b.id}: ${plural(items.length, "comment")} in ${plural(included.size, "thread")} for Copilot (up to ${level}).${s.pending.length ? ` ${s.pending.length} more wait for the next batch.` : ""}`, { kind: "batch", batchId: b.id });
+                    log(s, `Batch ${b.id}: ${plural(items.length, "comment")} in ${plural(included.size, "thread")} for Copilot (up to ${STEP_LABEL[level] ?? level}).${s.pending.length ? ` ${s.pending.length} more wait for the next batch.` : ""}`, { kind: "batch", batchId: b.id });
                 });
             }
         }
