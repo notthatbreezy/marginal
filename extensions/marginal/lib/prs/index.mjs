@@ -71,7 +71,7 @@ export function createPrService({ getSession, getSessionId, transcript = null, g
         return { here: !!sid && !!l?.live && l.sessionId === sid, watcher: l?.live ? l.sessionId : null };
     }
 
-    /** A doc made from a PR has that PR on its list, without anyone registering it. */
+    /** A doc made from a PR has that PR on its list (and watched), without anyone registering it. */
     function ensureDocPr(docId) {
         const doc = store.hasDoc(docId) ? store.getDoc(docId) : null;
         const url = doc?.pullRequest?.url;
@@ -82,7 +82,10 @@ export function createPrService({ getSession, getSessionId, transcript = null, g
         } catch {
             return;
         }
-        if (!readIndex(docId).prs.some((p) => p.host === key.host && p.owner.toLowerCase() === key.owner.toLowerCase() && p.repo.toLowerCase() === key.repo.toLowerCase() && p.number === key.number)) addPr(docId, { url, addedBy: "doc" });
+        if (readIndex(docId).prs.some((p) => p.host === key.host && p.owner.toLowerCase() === key.owner.toLowerCase() && p.repo.toLowerCase() === key.repo.toLowerCase() && p.number === key.number)) return;
+        const r = addPr(docId, { url, addedBy: "doc" });
+        writePr(docId, r.entry.id, (st) => log(st, "Listed because this doc was made from it; watching: on, handling: Read.", { kind: "added" }));
+        own(docId);
     }
 
     /** The logins that count as you on a host (cached by the client); none if gh can't say. */

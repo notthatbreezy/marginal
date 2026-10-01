@@ -1,8 +1,8 @@
 # Marginal
 
-**Code-linked docs and a live Command center for GitHub Copilot.**
+**Code-linked docs, a live Command center and pull request follow-up for GitHub Copilot.**
 
-Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions). Copilot draws structured, reviewable explanations of your code as RFC-style **docs**: prose with sequence and flow diagrams, call-stack diffs, database schema views and verified code peeks. You can comment on any paragraph, diagram or line range in the margin, and the feedback goes straight back to the agent. When Copilot implements a multi-step plan, a doc's **Command** tab becomes a live mission wall: the plan's phases, a territory map of the repository that lights up as files change, and what the orchestrator and its helper agents are doing right now.
+Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions). Copilot draws structured, reviewable explanations of your code as RFC-style **docs**: prose with sequence and flow diagrams, call-stack diffs, database schema views and verified code peeks. You can comment on any paragraph, diagram or line range in the margin, and the feedback goes straight back to the agent. When Copilot implements a multi-step plan, a doc's **Command** tab becomes a live mission wall: the plan's phases, a territory map of the repository that lights up as files change, and what the orchestrator and its helper agents are doing right now. Once the work is in pull requests, the **Pull requests** tab tracks getting them finished: Marginal watches their review threads on GitHub itself and, if you ask it to, hands new comments to Copilot.
 
 > **Status: alpha.** It depends on the Copilot SDK's canvas extension surface, which is marked **experimental** and may change between Copilot releases.
 
@@ -58,6 +58,20 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 |---|---|
 | ![Walkthrough](docs/images/walkthrough.png) | ![Guided tour](docs/images/guided-tour.png) |
 
+### Pull requests
+
+![The Pull requests tab: a stack of PRs with their state, review decision, checks, open threads and what Marginal does with new comments](docs/images/pull-requests.png)
+
+- **A doc's PRs in one list:** a doc made from a PR has it already; Copilot adds the others (such as each layer of a stack, shown indented under the PR it builds on), or paste a PR's URL. github.com and GitHub Enterprise both work, through `gh` and the accounts it's logged in to.
+- **Where each one stands:** draft, open, merged or closed; the review decision; checks passed, failed and pending (hover for the failing ones); unresolved threads out of all of them, and how many comments are new since you last looked.
+- **Threads the way GitHub shows them:** click a PR for its review threads (Unresolved, All, or the Conversation): each with its file and line, the diff around it with the commented lines marked, and the conversation, suggested changes included. **Ask in chat** on a thread asks Copilot about exactly that thread.
+- **Watched by Marginal, not by an agent:** while the session runs, Marginal checks each PR every minute (a free conditional request when nothing changed) and catches up after a restart. No agent turn is spent asking "anything new?".
+- **You choose what happens with new comments**, per PR: **Do nothing** (just show them), or **Handle** them up to a step: *Read* (a note in the chat), *Assess* (Copilot triages each thread), *Remediate* (fixes and commits locally), *Local review* (reviewer agents check the fix), or *Push & resolve* (pushes, replies and resolves). Each step includes the ones before it, so nothing is pushed without a fix. Copilot gets one message per batch with everything in it, and does the work with its own tools; each thread shows what happened since, as seen on GitHub.
+
+**From a reviewer's comment to a resolved thread.** A review lands; Marginal sends the batch to Copilot, which fixes one thread, declines the other, pushes, replies and resolves; the PR's threads show each step.
+
+![A review arrives, Copilot handles the batch, and the threads show it replied with the fix and resolved them](docs/images/demo-pull-requests.webp)
+
 ## Install
 
 Requirements: the GitHub Copilot app with canvas extensions, and `git` on your `PATH`. There is nothing to build and there are no npm dependencies; the Copilot runtime supplies `@github/copilot-sdk`.
@@ -91,8 +105,9 @@ Ask Copilot things like:
 - "Sketch how checkout calls the payment service on the Marginal scratchpad."
 - "Organize the Diff tab into file groups."
 - "Start a Marginal doc for this issue and put the plan in it."
+- "Track the PRs for this stack in Marginal."
 
-The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses` for file groups, `command`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens` (file groups). The same actions work without an open panel through the `marginal` tool, and `export` writes a doc (or one heading's part) to a Markdown file, diagrams included as text, for handing to people or helper agents.
+The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses` for file groups, `command`, `prs`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens` (file groups). The same actions work without an open panel through the `marginal` tool, and `export` writes a doc (or one heading's part) to a Markdown file, diagrams included as text, for handing to people or helper agents.
 
 **Command center.** Open a doc that has a repository target and switch to the **Command** tab.
 
@@ -103,6 +118,8 @@ The orchestrator moves each phase through its stages as the work goes; everythin
 
 The protocol is described in [docs/command-center.md](docs/command-center.md).
 
+**Pull requests.** A doc made from a PR (`create {pullRequestUrl}`) lists it on the **Pull requests** tab; ask Copilot to add the others, or paste a URL there. Click a PR to see its threads and choose what Marginal does with new review comments. Marginal reaches GitHub through `gh`, so `gh` must be logged in to the PR's host (`gh auth login`, or `--hostname` for GitHub Enterprise). See [docs/pull-requests.md](docs/pull-requests.md).
+
 ## How it works
 
 - The plugin (`plugin.json`) ships one canvas extension, `extensions/marginal/`. Its `extension.mjs` joins the Copilot session with `joinSession()` and declares the canvas and its actions with `createCanvas()`. Each panel is served by a local HTTP server bound to `127.0.0.1`; every request needs a random per-panel token.
@@ -111,6 +128,7 @@ The protocol is described in [docs/command-center.md](docs/command-center.md).
 - Progress comes from the orchestrator's session: its intent and helper-agent events, plus two read-only runtime calls for its todo list and its tasks, debounced and sent to the panel at most once a second.
 - **Checkpoint snapshots:** when a phase completes without a commit, the worktree's current contents are captured as a hidden commit under `refs/marginal/checkpoints/<doc>/…` in your repository. This uses a temporary index; your branch, HEAD, index and files are never touched. The refs are removed when the doc is deleted.
 - Only one Copilot session drives a doc's Command state at a time. That session holds a lease, claimed when it sets the plan. Other sessions can read the state but can't change it.
+- **Pull requests** are watched by the Marginal process of the session holding the doc's lease (the same lease), only while that session runs. It runs `gh api` with an account `gh` is logged in to for the PR's host: a conditional REST request each minute (free when nothing changed), and a GraphQL fetch when something did, plus a reconciliation every 10 minutes because resolving a thread doesn't change the PR. What it saw is kept beside the doc in `prs/`; no tokens are stored.
 - The browser UI is plain ES modules (`extensions/marginal/web/`) with no framework and no build step.
 
 ## Develop
@@ -120,7 +138,7 @@ npm test                 # unit + integration tests (node:test, real git repos i
 npm run dev              # a standalone Command tab with a fake repo, worktrees and scripted edits; prints a URL
 ```
 
-`tools/devserver.mjs` also takes `--single` (every phase in one checkout), `--progress` (a scripted orchestrator's todos, intent and helpers; add `--many-helpers`, `--long`, `--reload`, `--stages` or `--bare` for other cases), `--walk` (show a walkthrough), `--revising` (a rejected walkthrough), `--canned-chat` (scripted chat replies), `--transcript` (the chat opens on a recorded conversation, with a message "from the app" and a question to answer), `--not-owner` (read-only chat) and `--empty` (no plan yet). `tools/demos/record.mjs` records the README's images and demos headlessly, and `tools/demos/drag-test.mjs` drags the chat around real pages at several screen sizes. After changing the extension, reload extensions in the Copilot app. See [CONTRIBUTING.md](CONTRIBUTING.md).
+`tools/devserver.mjs` also takes `--single` (every phase in one checkout), `--progress` (a scripted orchestrator's todos, intent and helpers; add `--many-helpers`, `--long`, `--reload`, `--stages` or `--bare` for other cases), `--walk` (show a walkthrough), `--revising` (a rejected walkthrough), `--canned-chat` (scripted chat replies), `--transcript` (the chat opens on a recorded conversation, with a message "from the app" and a question to answer), `--not-owner` (read-only chat), `--empty` (no plan yet) and `--prs` (the Pull requests tab on a fake GitHub, with a scripted reviewer and a canned Copilot that handles the batch). `tools/demos/record.mjs` records the README's images and demos headlessly, `tools/demos/drag-test.mjs` drags the chat around real pages at several screen sizes, and `tools/demos/prs-ui-test.mjs --detail` checks the Pull requests tab end to end. After changing the extension, reload extensions in the Copilot app. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits and license
 

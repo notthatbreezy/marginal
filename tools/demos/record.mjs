@@ -1,6 +1,7 @@
 // Records the README demo animations headlessly (nothing takes focus) into docs/images/demo-*.webp.
 //   npm i --no-save playwright-core sharp gifenc pngjs
-//   node tools/demos/record.mjs [docs-comment] [docs-inspect] [command] [stills] [readme] [--gif] [--sheet] [--out=dir]
+//   node tools/demos/record.mjs [docs-comment] [docs-inspect] [command] [prs] [stills] [readme] [--gif] [--sheet] [--out=dir]
+//   prs: the Pull requests tab on tools/devserver.mjs --prs (pull-requests.png and demo-pull-requests.webp)
 //   readme: the README's stills (doc.png, command-center.png, walkthrough.png, guided-tour.png)
 // Doc demos run a private server over a COPY of your Marginal data (MARGINAL_DATA_DIR in a temp dir) with a canned
 // chat, so nothing reaches a real Copilot session. They use DEMO_DOC, which must exist in your data and whose repo
@@ -335,10 +336,59 @@ async function command() {
     }
 }
 
+// ---------------------------------------------------------------- Pull requests: devserver --prs (a fake GitHub)
+async function prs() {
+    process.env.PR_REVIEW_MS = "9000"; // the scripted review lands 9 s in
+    const dev = await devserver(["--single", "--prs"]);
+    const firstRow = () => lastPage.evaluate(() => document.querySelector(".pr-list tbody tr")?.innerText ?? "");
+    try {
+        const page = await newPage(`${dev.info.url}&tab=prs`, ".pr-list tbody tr");
+        await page.waitForFunction(() => document.querySelectorAll(".pr-list .pr-pill.st-open").length >= 2, null, { timeout: 15_000 });
+        const rec = await createRecorder(page, { width: W, height: H });
+        await rec.caption("A doc's pull requests: state, review, checks, open threads, and what Marginal does with new comments");
+        await rec.frame(3200);
+        await rec.caption("A review lands on #41. Marginal sees it and sends the batch to Copilot");
+        await rec.watch(async () => /queued for Copilot|Copilot is on/.test(await firstRow()), { max: 30_000, frameMs: 250 });
+        await rec.frame(2600);
+        await page.addStyleTag({ content: "#demo-cursor,#demo-caption{display:none!important}" });
+        const big = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+        await big.addInitScript(() => addEventListener("DOMContentLoaded", () => (document.documentElement.dataset.colorMode = "light")));
+        await big.goto(`${dev.info.url}&tab=prs`);
+        await big.waitForSelector(".pr-list tbody tr");
+        await big.waitForTimeout(1200);
+        await big.mouse.move(2, 896);
+        await big.screenshot({ path: join(out, "pull-requests.png") });
+        await big.close();
+        await page.addStyleTag({ content: "#demo-cursor,#demo-caption{display:block!important}" });
+        await rec.caption("Copilot fixes one thread, declines the other, pushes, replies and resolves, with its own tools");
+        await rec.watch(async () => /last batch done/.test(await firstRow()), { max: 45_000, frameMs: 300 });
+        await rec.watch(async () => /1 unresolved \/ 10/.test(await firstRow()), { max: 20_000, frameMs: 300 });
+        await rec.frame(2600);
+        await rec.caption("Click a PR for its threads, the way GitHub shows them");
+        await rec.click(page.locator(".pr-list tbody tr").first(), { settle: 900 });
+        await rec.frame(2400);
+        await rec.caption("Each thread shows what happened to it: the batch, the reply with the fix, resolved");
+        await rec.click(page.locator(".pr-seg", { hasText: "All" }), { settle: 500 });
+        await page.evaluate(() => {
+            const a = [...document.querySelectorAll(".pr-thread")].find((x) => /copilot-pull-request-reviewer/.test(x.innerText));
+            a?.scrollIntoView({ block: "start" });
+            document.querySelector("#main").scrollTop -= 12;
+        });
+        await rec.frame(3600);
+        await rec.caption("");
+        await rec.frame(300);
+        await finish(rec, "pull-requests");
+        await page.close();
+    } finally {
+        dev.kill();
+    }
+}
+
 try {
     if (want("docs-comment")) await docsComment();
     if (want("docs-inspect")) await docsInspect();
     if (want("command")) await command();
+    if (want("prs")) await prs();
     if (want("stills")) await stills();
     if (want("readme")) await readme();
 } catch (e) {

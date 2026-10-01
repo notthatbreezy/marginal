@@ -83,6 +83,13 @@ export function startCommandTour(o = {}) {
             },
             { id: "walk", target: ".cc .walk-reopen", placement: "bottom", title: "Walkthroughs", body: () => p("When the orchestrator explains a change, it opens as a walkthrough beside the map: one stop per idea, with the diff, and the map zooming to each stop's files. This button lists them all: reopen one, or see which you've reviewed.") },
             {
+                id: "prs",
+                target: '#tabs [data-tab="prs"]',
+                placement: "bottom",
+                title: "When it's in pull requests",
+                body: () => p("The ", h("b", {}, "Pull requests"), " tab takes over once the work is up for review: each PR's state, checks and review threads, watched by Marginal itself. For each one you choose what happens with new review comments, from just showing them up to Copilot fixing, pushing and resolving them."),
+            },
+            {
                 id: "done",
                 title: "That's the tour",
                 body: () => [

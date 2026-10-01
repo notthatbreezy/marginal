@@ -11,10 +11,12 @@ Thanks for helping. Marginal is small on purpose: no build step, no npm dependen
 | `extensions/marginal/extension.mjs` | Joins the Copilot session, declares the `marginal` canvas and its actions. |
 | `extensions/marginal/lib/` | Node side: git access (`git.mjs`), doc storage (`store.mjs`), block schemas (`blocks.mjs`), the loopback server (`server.mjs`), side chat (`chat.mjs`), agent guidance (`instructions.mjs`). |
 | `extensions/marginal/lib/command/` | Command center: plan model and validation, lease, poller, event log, snapshots, walkthroughs. |
+| `extensions/marginal/lib/prs/` | Pull requests: PR identity (`identity.mjs`), the `gh` client with account fallback (`github.mjs`), snapshots and their diff, per-doc storage, the watcher and its outbox, the batch message, the service and the `pr` action. |
 | `extensions/marginal/web/` | The panel UI (`app.js`, shared helpers in `core.js`, `stepper.js`, `selection.js`, `guide.js`). |
 | `extensions/marginal/web/command/` | The Command tab (map, fronts, timeline, views, monitors, walkthrough, tour). |
+| `extensions/marginal/web/prs/` | The Pull requests tab (the list, one PR's detail view, thread cards). |
 | `test/` | `node:test` suites and a smoke test. They create throwaway git repos and set `MARGINAL_DATA_DIR` to a temp dir. |
-| `tools/` | `devserver.mjs` (standalone Command tab with a fake repo), `scope-css.mjs`, and `demos/` (the README animations). |
+| `tools/` | `devserver.mjs` (standalone Command tab with a fake repo), `scope-css.mjs`, and `demos/` (the README animations, a fake GitHub for the Pull requests tab, UI tests). |
 
 ## Workflow
 
@@ -22,12 +24,15 @@ Thanks for helping. Marginal is small on purpose: no build step, no npm dependen
 2. Edit, then reload extensions in the Copilot app. The panel URL and token change on every reload.
 3. `npm test` before sending a change. It needs Node 20+ and `git`.
 4. For Command-tab UI work, `npm run dev` prints a URL for a fully simulated mission wall (`--walk`, `--revising`, `--not-owner` and `--empty` show other states).
+5. For the Pull requests tab, `node tools/devserver.mjs --single --prs` serves a stack of PRs on a fake GitHub (`tools/demos/fake-github.mjs`, which answers the same `gh` command lines Marginal runs), with a scripted reviewer and a canned Copilot that handles its batch; open the URL with `&tab=prs`. `node tools/demos/prs-ui-test.mjs --detail` checks the tab end to end in headless Edge.
 
 ## Conventions
 
 - Validate external input once, at the boundary, and return structured issues rather than throwing deep inside.
 - Command actions are atomic: on any issue, nothing is written.
 - Git calls go through `extensions/marginal/lib/command/gitx.mjs` (`--no-optional-locks`, at most four concurrent processes). Never change a user's HEAD, index or working tree.
+- GitHub calls go through `extensions/marginal/lib/prs/github.mjs` (one injectable `exec` for tests). Marginal only reads GitHub; agents write with their own tools. Text from reviewers goes to an agent fenced as evidence, never as instructions.
+- Test fixtures from GitHub come from the public sandbox only; never commit responses from private or internal repositories.
 - UI automation for screenshots must be headless and must never take window focus.
 - Keep colours to theme tokens (`--bg`, `--fg`, `--blue`, …) and `color-mix()` so light and dark themes both work.
 

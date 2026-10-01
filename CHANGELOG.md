@@ -4,6 +4,14 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **The Pull requests tab.** A doc's PRs (on github.com or GitHub Enterprise) in one list: state, review decision, checks, unresolved / total threads, what's new since you looked, and stacks shown under the PR they build on. Click one for its review threads the way GitHub shows them (the diff around each comment, the conversation, suggested changes), with **Ask in chat** on any thread. A doc made from a PR lists it; Copilot adds others with the new `pr` action; you can paste a URL.
+- **Marginal watches the PRs itself**, while the session runs: a free conditional request each minute, a full fetch when something changed, and a reconciliation every 10 minutes. No agent turn is spent checking for comments. It uses the accounts `gh` is logged in to, trying the host's others when one can't see a repository.
+- **You choose what happens with new review comments**, per PR: Do nothing, or Handle them up to Read (a note in the chat), Assess, Remediate, Local review, or Push & resolve. Each step includes the ones before it. Copilot gets one self-contained message per batch, with reviewers' text fenced as evidence, and works with its own tools; each thread shows what then happened on GitHub.
+- `create {pullRequestUrl}` accepts GitHub Enterprise URLs.
+- Instructions topic `prs`; `docs/pull-requests.md`; the Command center tour points to the new tab.
+
 ### Fixed
 
 - Comment, Copy and Edit for a paragraph or list item inside a callout: moving the pointer to their icons crossed the callout's padding and switched them to the whole callout. They now stay on the item while the pointer heads for them, including when the icons stand taller than a short item and reach over its neighbour. The callout as a whole is still one hover away, on its title or edges.
