@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-02
+
 ### Added
 
 - **The Pull requests tab.** A doc's PRs (on github.com or GitHub Enterprise) in one list: state, review decision, checks, unresolved / total threads, what's new since you looked, and stacks shown under the PR they build on. Click one for its review threads the way GitHub shows them (the diff around each comment, the conversation, suggested changes), with **Ask in chat** on any thread. A doc made from a PR lists it; Copilot adds others with the new `pr` action; you can paste a URL.
