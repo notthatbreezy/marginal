@@ -1,7 +1,8 @@
 // Prose editing in docs: paragraphs, headings, list items and quotes are edited in place, as they look (not as
 // Markdown), and saved back as Markdown for exactly the lines they came from. Diagrams, code and tables aren't prose.
 //   Shift+Enter saves · Esc cancels · Ctrl/⌘+B bold · Ctrl/⌘+I italic · Ctrl/⌘+K link
-import { $, h } from "./core.js";
+import { $, h, markdown } from "./core.js";
+import { scanReferences, frameReferences } from "./references.js";
 import { shortcut } from "./settings.js";
 
 const icon = (d, w = 15) => `<svg viewBox="0 0 16 16" width="${w}" height="${w}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -43,22 +44,33 @@ export function hrefOf(a) {
     return a.getAttribute("href") ?? "";
 }
 function collect(node, marks, out) {
-    for (const n of node.childNodes) {
+    for (let i = 0; i < node.childNodes.length; i++) {
+        const n = node.childNodes[i];
         if (n.nodeType === Node.TEXT_NODE) {
-            const t = n.data.replace(/\u200b/g, "").replace(/\u00a0/g, " ").replace(/[\t\n\r ]+/g, " ");
-            if (t) out.push({ t, ...marks });
+            let text = n.data;
+            while (node.childNodes[i + 1]?.nodeType === Node.TEXT_NODE) text += node.childNodes[++i].data;
+            for (const part of scanReferences(text)) {
+                if (part.type === "session") out.push({ t: part.source, ...marks, source: true });
+                else {
+                    const t = part.text.replace(/\u200b/g, "").replace(/\u00a0/g, " ").replace(/[\t\n\r ]+/g, " ");
+                    if (t) out.push({ t, ...marks });
+                }
+            }
             continue;
         }
         if (n.nodeType !== Node.ELEMENT_NODE) continue;
         const tag = n.tagName;
         if (tag === "UL" || tag === "OL" || n.getAttribute("contenteditable") === "false") continue; // nested lists keep their own lines
-        if (tag === "BR") out.push({ br: true });
+        if (n.hasAttribute("data-ref-source")) out.push({ t: n.textContent, ...marks, source: true });
+        else if (tag === "BR") out.push({ br: true });
         else if (tag === "STRONG" || tag === "B") collect(n, { ...marks, b: true }, out);
         else if (tag === "EM" || tag === "I") collect(n, { ...marks, i: true }, out);
         else if (tag === "DEL" || tag === "S" || tag === "STRIKE") collect(n, { ...marks, s: true }, out);
         else if (tag === "CODE") {
             const t = n.textContent.replace(/\u200b/g, "");
-            if (t) out.push({ t, ...marks, code: true });
+            // Preserve a wrapped code run's exact delimiters/container prefixes only while its displayed text is unchanged.
+            if (n.hasAttribute("data-inline-source") && n.textContent === n.dataset.inlineText) out.push({ t: n.dataset.inlineSource, ...marks, source: true });
+            else if (t) out.push({ t, ...marks, code: true });
         } else if (tag === "SPAN" && n.classList.contains("ed-li")) {
             // A list line typed into a paragraph ("- " or "1. " at the start of a line).
             if (out.length && !out.at(-1).br) out.push({ br: true });
@@ -135,8 +147,9 @@ function para(runs) {
     }
     return out;
 }
-export function inlineMd(node) {
-    const runs = collect(node, {}, []);
+function inlineWithSources(node, sources) {
+    // Opaque tokens are established before either run merging or paragraph whitespace normalization.
+    const runs = collect(node, {}, []).map((run) => run.source || run.code && !run.t.includes("`") ? { ...run, t: `\u0002${sources.push(run.t) - 1}\u0002` } : run);
     const paras = [[]];
     for (const r of runs) {
         if (r.br) paras.push([]);
@@ -150,6 +163,11 @@ export function inlineMd(node) {
         }
     }
     return paras.map((p) => (p.li && para(p).trim() ? (p.li === "ol" ? "1. " : "- ") : "") + para(p)).join(BR);
+}
+const restoreSources = (text, sources) => text.replace(/\u0002(\d+)\u0002/g, (source, i) => sources[Number(i)] ?? source);
+export function inlineMd(node) {
+    const sources = [];
+    return restoreSources(inlineWithSources(node, sources), sources);
 }
 const LIST_LINE = /^([-*+]|\d+[.)]) /;
 /** Paragraph parts → Markdown: list lines next to each other form one list (numbered ones count up). */
@@ -176,22 +194,29 @@ const parts = (s) =>
 
 /** The unit's new Markdown for its source lines ("" deletes them). `lines` are its original source lines. */
 export function unitMarkdown(el, kind, lines) {
-    if (kind === "p") return joinParts(parts(inlineMd(el)));
+    const sources = [];
+    return restoreSources(unitParts(el, kind, lines, sources), sources);
+}
+function unitParts(el, kind, lines, sources) {
+    if (kind === "p") return joinParts(parts(inlineWithSources(el, sources)));
     if (kind === "h") {
-        const text = parts(inlineMd(el)).join(" ");
+        const text = parts(inlineWithSources(el, sources)).join(" ");
         return text ? `${"#".repeat(Number(el.tagName[1]))} ${text}` : "";
     }
     if (kind === "quote") {
-        const paras = [...el.children].flatMap((p) => parts(inlineMd(p)));
+        const paras = [...el.children].flatMap((p) => parts(inlineWithSources(p, sources)));
         return paras.map((p) => `> ${p}`).join("\n>\n");
     }
     // List item: its own text (first line plus continuation lines) is rewritten; nested items below keep their lines.
     const m = LIST_MARK.exec(lines[0]) ?? ["", "", "-"];
     const indent = m[1];
+    const frame = frameReferences(lines.join("\n"));
     let tail = 1;
-    while (tail < lines.length && lines[tail].trim() && !LIST_MARK.test(lines[tail])) tail++;
-    const rest = lines.slice(tail);
-    const items = parts(inlineMd(el));
+    while (tail < frame.lines.length && frame.lines[tail].trim() && !LIST_MARK.test(frame.lines[tail])) tail++;
+    const tailLine = frame.lineAt(tail);
+    const rest = lines.slice(tailLine);
+    const ending = rest.length && lines[tailLine - 1].endsWith("\r") ? "\r" : "";
+    const items = parts(inlineWithSources(el, sources));
     if (items.length > 1 && rest.some((l) => LIST_MARK.test(l))) throw new Error("An item with nested items can't be split in two; add the new item after its nested ones instead.");
     if (!items.length) {
         if (rest.some((l) => LIST_MARK.test(l))) throw new Error("An item with nested items can't be emptied; delete the nested items first.");
@@ -199,7 +224,7 @@ export function unitMarkdown(el, kind, lines) {
     }
     const num = /^(\d+)([.)])$/.exec(m[2]);
     const marker = (k) => (num ? `${Number(num[1]) + k}${num[2]}` : m[2]);
-    return [...items.map((t, k) => `${indent}${marker(k)} ${t}`), ...rest].join("\n");
+    return [...items.map((t, k) => `${indent}${marker(k)} ${t}${ending}`), ...rest].join("\n");
 }
 
 // ---------------- the editor ----------------
@@ -244,11 +269,36 @@ export function createProseEditor(o) {
             [u.from, u.to] = u.el.dataset.l.split("-").map(Number);
             const src = o.sourceOf(u.blockId);
             if (src === null) return o.toast("That text can't be edited here.");
-            u.lines = src.replace(/\r\n/g, "\n").split("\n").slice(u.from, u.to + 1);
-            u.before = u.lines.join("\n");
+            const rawLines = src.split("\n").slice(u.from, u.to + 1);
+            u.source = rawLines.join("\n");
+            // The store joins opaque replacement units with LF; retain this unit's authored CR at that seam.
+            u.ending = rawLines.at(-1).endsWith("\r") ? "\r" : "";
+            u.lines = rawLines;
+            u.before = src.replace(/\r\n/g, "\n").split("\n").slice(u.from, u.to + 1).join("\n");
             u.html = u.el.innerHTML;
-            u.snapshot = u.el.cloneNode(true);
         }
+        const sourceFrames = new Map(), replacements = [], codeSources = [];
+        for (const u of list) {
+            if (!sourceFrames.has(u.blockId)) sourceFrames.set(u.blockId, h("div", { html: markdown(o.sourceOf(u.blockId), true, "source") }));
+            const sourceUnit = sourceFrames.get(u.blockId).querySelector(`[data-l="${u.from}-${u.to}"]`);
+            const shown = [...u.el.querySelectorAll(".session-ref, [data-ref-source]")];
+            const raw = [...(sourceUnit?.querySelectorAll("[data-ref-source]") ?? [])];
+            if (shown.length !== raw.length) return o.toast("That reference source can't be safely matched. Cancel and reopen the doc.");
+            shown.forEach((pill, i) => { if (!pill.hasAttribute("data-ref-source")) replacements.push([pill, raw[i].cloneNode(true)]); });
+            const shownCode = [...u.el.querySelectorAll("code")], rawCode = [...(sourceUnit?.querySelectorAll("code") ?? [])];
+            if (shownCode.length !== rawCode.length) return o.toast("That reference source can't be safely matched. Cancel and reopen the doc.");
+            if (rawCode.some((code) => code.hasAttribute("data-inline-source"))) {
+                const literals = scanReferences(u.source).filter((part) => part.type === "literal" && part.kind === "inline");
+                if (literals.length !== rawCode.length) return o.toast("That reference source can't be safely matched. Cancel and reopen the doc.");
+                rawCode.forEach((code, i) => { if (code.hasAttribute("data-inline-source")) codeSources.push([shownCode[i], literals[i].text]); });
+            }
+        }
+        for (const [pill, raw] of replacements) if (pill.isConnected) pill.replaceWith(raw);
+        for (const [code, source] of codeSources) {
+            code.dataset.inlineSource = source;
+            code.dataset.inlineText = code.textContent;
+        }
+        for (const u of list) u.snapshot = u.el.cloneNode(true);
         // Document order, so the first unit (caret) and the runs below follow the page.
         list.sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
         units = list;
@@ -588,7 +638,7 @@ export function createProseEditor(o) {
     }
     function inputRules(u, data) {
         const at = caretText();
-        if (!at || at.node.parentElement?.closest("code")) return;
+        if (!at || at.node.parentElement?.closest("code, [data-ref-source]")) return;
         const { node, off } = at;
         const before = node.data.slice(0, off).replace(/\u00a0/g, " ");
         let m;
@@ -685,7 +735,7 @@ export function createProseEditor(o) {
                 .map((u) => {
                     const after = unitMarkdown(u.el, u.kind, u.lines);
                     const unchanged = after === unitMarkdown(u.snapshot, u.kind, u.lines);
-                    return unchanged ? null : { blockId: u.blockId, from: u.from, to: u.to, before: u.before, after };
+                    return unchanged ? null : { blockId: u.blockId, from: u.from, to: u.to, before: u.before, after: after && !after.endsWith("\r") ? after + u.ending : after };
                 })
                 .filter(Boolean);
         } catch (err) {

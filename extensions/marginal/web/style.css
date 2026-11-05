@@ -7020,3 +7020,73 @@ del.sg-del {
     overflow: auto;
     font-size: 12.5px;
 }
+
+/* Home keeps its controls mounted while only result/status regions refresh. */
+.pages-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    align-items: end;
+    margin-bottom: 12px;
+}
+.pages-controls label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+.pages-controls label:first-child { flex: 1 1 240px; }
+.pages-controls input,
+.pages-controls select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    padding: 7px 8px;
+    background: var(--surface);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font: inherit;
+}
+.pages-controls :focus-visible,
+.page-open:focus-visible,
+.page-archive:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+#pages-status { margin: 12px 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+#pages-status button { margin-left: 8px; }
+#pages-results[data-previous="true"] { opacity: 0.7; }
+.home .page-open {
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    padding: 0;
+    min-width: 0;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+.page-open .t,
+.page-open .m { display: block; overflow-wrap: anywhere; }
+.page-archive { flex: none; }
+.session-ref {
+    display: inline;
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--fg) 5%, var(--bg));
+    color: var(--fg);
+    font-size: 0.93em;
+    box-decoration-break: clone;
+    overflow-wrap: anywhere;
+}
+.session-ref-icon { color: var(--muted); font-size: 0.85em; }
+[data-ref-source] { white-space: pre-wrap; }
+@media (max-width: 560px) {
+    .pages-controls label { flex: 1 1 130px; }
+    .home .card { flex-wrap: wrap; gap: 8px; }
+    .home .page-open { flex-basis: 100%; }
+}

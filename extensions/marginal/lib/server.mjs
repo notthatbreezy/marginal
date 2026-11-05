@@ -329,7 +329,10 @@ export async function startServer({ chat, transcript = null, prs = null, instanc
             return;
         }
 
-        if (parts[1] === "catalog" && method === "GET") return send(res, 200, store.list());
+        if (parts[1] === "catalog" && method === "GET") {
+            const query = Object.fromEntries([...url.searchParams].filter(([key]) => key !== "t" && key !== "instance"));
+            return send(res, 200, store.list(query));
+        }
         if (parts[1] === "settings" && method === "GET") return send(res, 200, readSettings());
         if (parts[1] === "settings" && method === "POST") {
             const next = writeSettings(await readBody(req));
@@ -516,6 +519,8 @@ export async function startServer({ chat, transcript = null, prs = null, instanc
                 const { title } = await readBody(req);
                 return send(res, 200, await store.rename(doc.id, title));
             }
+            if (sub === "archive" && method === "POST") return send(res, 200, await store.archive(doc.id));
+            if (sub === "unarchive" && method === "POST") return send(res, 200, await store.unarchive(doc.id));
             if (sub === "delete" && method === "POST") return send(res, 200, await store.remove(doc.id));
             if (sub === "prose" && method === "POST") {
                 const { edits } = await readBody(req);

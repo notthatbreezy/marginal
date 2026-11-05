@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { atomicWriteJson, paths } from "./paths.mjs";
 
-export const THEMES = ["auto", "light", "dark", "win3", "win95", "vista", "future", "arcade"];
+export const THEMES = ["auto", "light", "dark", "win3", "win95", "vista", "future", "arcade", "solarized-light", "solarized-dark"];
 export const SHORTCUTS = ["jump", "stepKeys", "tourKey", "markdown", "chat"];
 export const INTERRUPT = { doc: false, command: true }; // the orchestrator is often mid-turn for a long time
 export const COMMAND = { worktrees: false };

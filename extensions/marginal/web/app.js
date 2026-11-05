@@ -1,5 +1,5 @@
 // Marginal canvas renderer. Vanilla JS, no dependencies.
-import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, highlight, langOf, svc, bus } from "./core.js";
+import { TOKEN, INSTANCE, $, h, s, esc, put, api, toast, slugify, inline, markdown, referencePlain, highlight, langOf, svc, bus } from "./core.js";
 import { defaultBox, dragBox, fitBox, resizeBox } from "./chat-geometry.js";
 import { activeSelection, createSelection, flashBar, withModifier, multibar } from "./selection.js";
 import { createToc } from "./toc.js";
@@ -7,6 +7,7 @@ import { createTables } from "./tables.js";
 import { createProseEditor, editableKind } from "./edit.js";
 import { loadSettings, onSettings, settings, settingsChanged, shortcut } from "./settings.js";
 import { captureGone, decorate as decorateSuggestion } from "./suggest.js";
+import { createPages } from "./pages.js";
 
 const INITIAL_TAB = new URLSearchParams(location.search).get("tab");
 const INITIAL_PR = new URLSearchParams(location.search).get("pr"); // with tab=prs: open that PR
@@ -24,6 +25,7 @@ const state = {
     catalog: [],
 };
 const sourceCache = new Map();
+const pages = createPages({ open: (id) => showDoc(id) });
 let toc = null; // Contents card + Ctrl/⌘-J jump palette (created at boot, below)
 let tables = null; // table width modes + column resizing (created at boot, below)
 let prose = null; // in-place prose editing (created at boot, below)
@@ -515,7 +517,7 @@ const renderers = {
         return h("div", { class: "quote" }, h("div", { class: "who" }, [b.role ?? "quote", b.attribution].filter(Boolean).join(" · ")), h("div", { class: "qt" }, b.text));
     },
     image(b) {
-        return h("figure", { class: "img", style: "margin:0" }, h("img", { src: b.url, alt: b.alt, loading: "lazy" }), b.caption ? h("figcaption", { class: "caption" }, b.caption) : null);
+        return h("figure", { class: "img", style: "margin:0" }, h("img", { src: b.url, alt: b.alt, loading: "eager" }), b.caption ? h("figcaption", { class: "caption", html: inline(b.caption) }) : null);
     },
     sequence: renderSequence,
     flow_diagram: renderFlow,
@@ -1115,31 +1117,15 @@ function renderHome() {
     setHeader();
     toc?.rebuild();
     setActivity([]);
-    const main = $("#main");
-    const pad = state.catalog.find((d) => d.kind === "scratchpad");
-    const others = state.catalog.filter((d) => d.kind !== "scratchpad");
-    const card = (d) =>
-        h(
-            "div",
-            { class: "card", onclick: () => showDoc(d.documentId) },
-            h("div", { class: "grow" }, h("div", { class: "t" }, d.title), h("div", { class: "m" }, [d.repository, d.pullRequest ? `PR ${d.pullRequest.url.split("/").pop()}` : null, `${d.blocks} blocks`, `updated ${new Date(d.updatedAt).toLocaleString()}`].filter(Boolean).join(" · "))),
-            d.activity?.length ? h("span", { class: "badge live" }, "live") : null,
-        );
-    main.replaceChildren(
-        h(
-            "div",
-            { class: "doc home" },
-            pad ? [h("h2", {}, "Scratchpad"), card(pad)] : null,
-            h("h2", {}, "Docs"),
-            others.length ? others.map(card) : h("div", { class: "empty" }, "No docs yet. Ask Copilot to ", h("code", {}, "explain my branch in Marginal"), "."),
-        ),
-    );
+    command.unmount();
+    prsTab.unmount();
+    pages.mount($("#main"));
 }
 
 function renderBoard() {
     const doc = state.preview?.doc ?? state.doc;
     const main = $("#main");
-    const container = h("div", { class: "doc" });
+    const container = h("div", { class: "doc", "data-print-title": doc.title });
     if (!doc.content.length)
         container.append(
             h(
@@ -1389,6 +1375,7 @@ async function loadDoc(lastEdit) {
 }
 
 function showDoc(documentId) {
+    if (documentId) pages.deactivate();
     clearPicks();
     state.preview = null; // a suggestion belongs to the doc it was made on
     state.documentId = documentId;
@@ -1408,7 +1395,6 @@ const finishEditingFirst = () => {
 };
 $("#home").onclick = async () => {
     if (finishEditingFirst()) return;
-    state.catalog = await api("/catalog");
     showDoc(null);
 };
 for (const btn of document.querySelectorAll("#tabs button"))
@@ -1453,6 +1439,7 @@ function connect() {
                 state.preview = null;
                 state.catalog = await api("/catalog").catch(() => state.catalog);
                 state.documentId = ev.documentId;
+                if (ev.documentId) pages.deactivate();
                 state.viewVersion = null;
                 // ?tab= deep-links the first render (e.g. headless screenshots of the Command tab).
                 state.tab = first && ["command", "prs", "diff", "commits", "history"].includes(INITIAL_TAB) ? INITIAL_TAB : "board";
@@ -1485,8 +1472,7 @@ function connect() {
             state.catalog = await api("/catalog");
             showDoc(null);
         } else if (ev.type === "catalog" && !state.documentId) {
-            state.catalog = await api("/catalog");
-            renderHome();
+            pages.refresh();
         }
     };
     es.onerror = () => {
@@ -2038,7 +2024,7 @@ function itemEl(it, reuse) {
         return h(
             "div",
             { class: `chat-u src-${it.source}`, "data-id": it.id },
-            h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss?.title ?? null }, it.text),
+            h("div", { class: `chat-msg me${discuss ? " discuss" : ""}`, title: discuss?.title ?? null, html: referencePlain(it.text) }),
             note || it.delivery === "steering" ? h("div", { class: "chat-meta" }, [note, it.delivery === "steering" ? "sent while it was working" : null].filter(Boolean).join(" · ")) : null,
         );
     }

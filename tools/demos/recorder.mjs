@@ -140,7 +140,8 @@ export async function createRecorder(page, { width, height } = {}) {
         },
         /** GIF: one global palette, and each frame after the first keeps only the pixels that changed. */
         async saveGif(file, { maxColors = 255 } = {}) {
-            const { GIFEncoder, quantize, applyPalette } = await import("gifenc");
+            const gifenc = await import("gifenc");
+            const { GIFEncoder, quantize, applyPalette } = gifenc.default ?? gifenc;
             const decoded = frames.map((f) => PNG.sync.read(f.png));
             const w = decoded[0].width;
             const h = decoded[0].height;

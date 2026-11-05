@@ -39,6 +39,37 @@
     --purple-muted: rgba(171, 125, 248, 0.16);
     color-scheme: dark;
 }
+/* Solarized keeps the ordinary layout and derives all fills from semantic tokens. */
+:root[data-standalone][data-theme="solarized-light"] {
+    --bg: #fdf6e3;
+    --fg: #657b83;
+    --surface: #eee8d5;
+    --muted: #586e75;
+    --border: #93a1a1;
+    color-scheme: light;
+}
+:root[data-standalone][data-theme="solarized-dark"] {
+    --bg: #002b36;
+    --fg: #839496;
+    --surface: #073642;
+    --muted: #93a1a1;
+    --border: #586e75;
+    color-scheme: dark;
+}
+:root[data-standalone][data-theme="solarized-light"],
+:root[data-standalone][data-theme="solarized-dark"] {
+    --focus: #268bd2;
+    --blue: #268bd2;
+    --green: #859900;
+    --red: #dc322f;
+    --yellow: #b58900;
+    --purple: #6c71c4;
+    --blue-muted: color-mix(in srgb, var(--blue) 16%, transparent);
+    --green-muted: color-mix(in srgb, var(--green) 16%, transparent);
+    --red-muted: color-mix(in srgb, var(--red) 16%, transparent);
+    --yellow-muted: color-mix(in srgb, var(--yellow) 16%, transparent);
+    --purple-muted: color-mix(in srgb, var(--purple) 16%, transparent);
+}
 /* Theme switches crossfade (view transitions), briefly. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
