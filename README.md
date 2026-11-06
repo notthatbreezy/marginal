@@ -12,18 +12,21 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 
 ### Docs
 
+- **Manage pages:** Home has Active, Archived and All views, a search bar, Updated/Created sorting in either direction, and optional From/Through date filters using your local calendar days. Search matches every query word in current titles and authored content, including code, diagram labels and notes; relevance favors exact phrases and title matches. It excludes chat, history and fetched repository code. Archive hides a page from Active while keeping it editable, with its dates and attached work intact; Unarchive brings it back. The scratchpad stays separate and always available.
 - **Blocks the agent can draw:** Markdown, sections, callouts, code, `code_peek` (verified slices of real files at pinned commits), sequence diagrams, flow diagrams, call-stack diffs, database schema views ("data lenses": which code reads and writes which tables and fields), trace quotes and images. Blocks are validated at write time, so every file reference resolves.
 - **Inspect diagrams:** click any step of a sequence diagram, flow diagram or call-stack diff (or its **Inspect** button) and every step opens in a side panel with its explanation, code and notes. When there's room the doc moves over, so the whole diagram stays visible; on a narrow window the panel covers the doc and the diagram scrolls sideways instead. The two stay in sync: click the diagram to jump to a step, scroll the steps (or press ↑/↓) and the diagram highlights where you are. Step text has the same margin controls as the doc. Ask "can you show an example of this interface?" and Copilot adds it to that step as **notes and examples**, which appear in place.
 - **Comment in the margin:** hover a paragraph, list item, diagram or code range to get margin controls for *Comment* and *Copy*. Ctrl/Cmd-click or Shift-click selects several at once. Code views support GitHub-style gutter line selection.
 - **Edit prose yourself:** the pencil under Comment and Copy (or **Edit** in the top bar for a Ctrl/Shift-click selection) makes paragraphs, headings, list items and quotes editable in place. Bold, italic and links (URLs, `#headings`, or a file path such as `src/app.ts#L10-L20` for a code link) sit in the margin; Markdown converts as you type (`` `code` ``, `**bold**`, `*italic*`, and `- ` or `1. ` at the start of a line for lists). **Shift+Enter** saves and **Esc** cancels. Diagrams, code and tables stay Copilot's. Saves are refused, never merged, if Copilot changed the same text meanwhile; History marks your versions, and Copilot is told what you changed.
 - **Chat:** one chat with your Copilot session on every tab and doc, like the Copilot app's own: it shows the whole conversation, including what you type in the app's main chat, with replies streaming in and what Copilot did folded into one line between them. Press **Ctrl/⌘+I** (or the chat button in the header) to open or close it, **Enter** to send and **Shift+Enter** for a new line; it reopens where you left it, at the size you gave it. Drag its bar to move it anywhere on screen. When Copilot asks you something, or has a plan for you to approve, you answer right there. Comment on a paragraph, a diagram or a line range and the next message is about that; when Copilot changes the doc while answering, the page stays where you're reading and the changes are listed under its reply.
+- **Session references:** recognized Copilot session references in prose and chat appear as subtle, static pills identifying a separate session. Code examples keep their literal tags. Opening the referenced session is deferred.
 - **Discuss or Edit:** a switch under the chat input (remembered for each doc) says whether Copilot may change the doc while it answers. In **Discuss** it answers only; the canvas refuses its doc changes, and any edit it would make waits under the reply as a suggestion you can **Preview** in the doc (marked like tracked changes), **Apply** or **Dismiss**. Ctrl/⌘+Shift+Enter sends one message in the other mode.
 - **Table width:** tables that don't fit the reading column go wide on their own. The width button in a table's margin switches between *Text width*, *Wide* and *Full width*, and you can drag column borders (double-click one to reset). Your choices are remembered per table.
 - **Find your way around:** a **Contents** card (top left) shows the doc's outline as a tree: sections, and the diagrams, code and headings inside them. Choose how many levels to show (1, 2, 3 or All), fold or unfold any group with its ▸ (Alt-click for everything inside), and the list scrolls within a card no taller than about 60% of the window. Minimize it to a pill or close it, and reopen it from the header. Press **Ctrl/⌘-J** to jump anywhere by typing part of a name.
 - **Diff, Commits and History tabs** for the change the doc explains. Copilot can organize the Diff tab into **file groups**, collapsible sections such as "Data model", "API" and "Tests & config" in reading order, so a large change reads by concern instead of alphabetically.
 - **Scratchpad:** an always-present doc for quick sketches that aren't tied to a branch.
-- **Settings** (the gear in the header): turn optional keyboard shortcuts off one by one, and, in a browser window, pick a theme: System, Light, Dark, Windows 3.0, Windows 95, Vista, a retro-future HUD, or 16-bit retrowave, each with its effects on or off. Settings are shared by every panel and window. Under **When Copilot is busy**, choose whether the Command chat and the doc chat interrupt Copilot's current turn (it reads the message at its next step) or wait until it finishes; **Ctrl/⌘+Enter** sends one message the other way. Under **Command center**, **Show worktrees** lists the checkouts being watched when there are several.
-- **Open in your browser:** the globe in the header opens the current doc and tab in your default browser, with room to spread out. The window stays live while the Copilot session that opened it is running, and it follows your OS light/dark setting.
+- **Settings** (the gear in the header): turn optional keyboard shortcuts off one by one, and, in a browser window, pick a theme: System, Light, Dark, Solarized Light, Solarized Dark, Windows 3.0, Windows 95, Vista, a retro-future HUD, or 16-bit retrowave. Retro themes have optional effects. Settings are shared by every panel and window; embedded panels keep the Copilot host's theme. Under **When Copilot is busy**, choose whether the Command chat and the doc chat interrupt Copilot's current turn (it reads the message at its next step) or wait until it finishes; **Ctrl/⌘+Enter** sends one message the other way. Under **Command center**, **Show worktrees** lists the checkouts being watched when there are several.
+- **Open in your browser:** the globe in the header opens the current doc and tab in your default browser, with room to spread out. The window stays live while the Copilot session that opened it is running, and uses your selected browser theme or the OS light/dark setting.
+- **Print a doc:** open the browser's **Doc** tab, finish editing and let sources/images load, then use browser **Print / Save as PDF**. The complete rendition, including folded sections, flows across sheets with paper colors and app controls hidden. Current Chromium-based browsers add centered **X/Y** page footers; leave room in the bottom margin and turn off browser **Headers and footers** to omit its date/URL and extra numbering. Dense diagrams scale intact; use the browser's landscape/scale options when needed for readability.
 
 **Select, comment, chat.** Ctrl-click several paragraphs, comment on them together, and read the streamed reply without losing your place. Close the chat with Ctrl+I to keep reading and reopen it where it was; code links open the exact lines.
 
@@ -36,6 +39,20 @@ Marginal is a canvas extension for the [GitHub Copilot app](https://docs.github.
 | Inspecting a sequence diagram | Inspecting a call-stack diff |
 |---|---|
 | ![Inspecting a sequence diagram](docs/images/inspect-sequence.png) | ![Inspecting a call-stack diff](docs/images/inspect-call-stack.png) |
+
+**Find a page, keep Active focused.** Search titles and authored content, sort the matches by relevance or date, and narrow them with a date range. Archive pages you want to keep without keeping them in Active. See [Finding, organizing and printing pages](docs/pages.md).
+
+![Searching pages, sorting the results and filtering by update date](docs/images/demo-pages-search.gif)
+
+![Archiving a page, finding it in Archived and restoring it to Active](docs/images/demo-pages-archive.gif)
+
+**Solarized in the browser, complete printouts on paper.** Choose Solarized Light or Dark in Settings; the embedded canvas keeps Copilot's theme. Browser Doc printing includes the complete rendition across numbered sheets.
+
+| Solarized Light | Solarized Dark |
+|---|---|
+| ![A Doc in Solarized Light](docs/images/solarized-light.png) | ![The same Doc in Solarized Dark](docs/images/solarized-dark.png) |
+
+![Actual browser PDF output with current/total page numbers](docs/images/print-pages.png)
 
 ### Command center
 
@@ -106,6 +123,7 @@ Ask Copilot things like:
 - "Organize the Diff tab into file groups."
 - "Start a Marginal doc for this issue and put the plan in it."
 - "Track the PRs for this stack in Marginal."
+- "Find Marginal pages mentioning updating VSCode, newest update first."
 
 The agent calls the canvas's `instructions` action first (topics: `authoring`, `scratchpad`, `blocks`, `file-lenses` for file groups, `command`, `prs`), then draws with actions such as `create`, `edit`, `read_file`, `diff` and `lens` (file groups). The same actions work without an open panel through the `marginal` tool, and `export` writes a doc (or one heading's part) to a Markdown file, diagrams included as text, for handing to people or helper agents.
 
@@ -138,7 +156,9 @@ npm test                 # unit + integration tests (node:test, real git repos i
 npm run dev              # a standalone Command tab with a fake repo, worktrees and scripted edits; prints a URL
 ```
 
-`tools/devserver.mjs` also takes `--single` (every phase in one checkout), `--progress` (a scripted orchestrator's todos, intent and helpers; add `--many-helpers`, `--long`, `--reload`, `--stages` or `--bare` for other cases), `--walk` (show a walkthrough), `--revising` (a rejected walkthrough), `--canned-chat` (scripted chat replies), `--transcript` (the chat opens on a recorded conversation, with a message "from the app" and a question to answer), `--not-owner` (read-only chat), `--empty` (no plan yet) and `--prs` (the Pull requests tab on a fake GitHub, with a scripted reviewer and a canned Copilot that handles the batch). `tools/demos/record.mjs` records the README's images and demos headlessly, `tools/demos/drag-test.mjs` drags the chat around real pages at several screen sizes, and `tools/demos/prs-ui-test.mjs --detail` checks the Pull requests tab end to end. After changing the extension, reload extensions in the Copilot app. See [CONTRIBUTING.md](CONTRIBUTING.md).
+`tools/devserver.mjs` also takes `--single` (every phase in one checkout), `--progress` (a scripted orchestrator's todos, intent and helpers; add `--many-helpers`, `--long`, `--reload`, `--stages` or `--bare` for other cases), `--walk` (show a walkthrough), `--revising` (a rejected walkthrough), `--canned-chat` (scripted chat replies), `--transcript` (the chat opens on a recorded conversation, with a message "from the app" and a question to answer), `--not-owner` (read-only chat), `--empty` (no plan yet) and `--prs` (the Pull requests tab on a fake GitHub, with a scripted reviewer and a canned Copilot that handles the batch). `tools/demos/record.mjs` records the README's existing images and demos headlessly, `tools/demos/drag-test.mjs` drags the chat around real pages at several screen sizes, and `tools/demos/prs-ui-test.mjs --detail` checks the Pull requests tab end to end.
+
+`tools/demos/record-pages.mjs` records the page-management GIFs, themes, references and actual print output with isolated fictional data. `tools/demos/pages-ui-test.mjs` checks page management, references and themes, and `tools/demos/print-ui-test.mjs` checks actual multipage PDFs. All run headlessly. After changing the extension, reload extensions in the Copilot app. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits and license
 

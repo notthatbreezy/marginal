@@ -39,6 +39,8 @@ The reconciliation is there because resolving a thread doesn't change the PR (se
 
 Other sessions that open the doc see the same list and threads, read-only, with a note saying which session is watching.
 
+Archiving the page preserves its PR registrations, settings and watchers. Watching continues under the same session/lease rules; use the PR's watching control to pause it. See [Archive and restore](pages.md#archive-and-restore).
+
 ## When new comments arrive
 
 New comments from anyone but you (review bots such as Copilot code review included) are handled per PR:

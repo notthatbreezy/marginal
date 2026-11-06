@@ -53,6 +53,8 @@ The RPC reads are debounced (the runtime signals task changes in bursts) and the
 
 ## Ownership
 
+Archiving a page changes its Home status while preserving its Command state, lease and running work. Use the usual Command controls to manage that work. See [Archive and restore](pages.md#archive-and-restore).
+
 - `command_plan {op:"set"}` explicitly claims the doc's Command lease for the calling session. Opening a panel never claims it.
 - The owner process heartbeats every 10 s. The lease goes stale after 30 s without a heartbeat, and only then can another session take over. A live owner calling `set` again just renews the lease.
 - Mutations from any other session return `not_owner`, and the hint names the owner. Reads work from any session.

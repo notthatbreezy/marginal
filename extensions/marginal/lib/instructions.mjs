@@ -2,6 +2,9 @@
 // Portions adapted from devdotfast/whiteboard (MIT, (c) 2026 dev.fast); see THIRD-PARTY-NOTICES.txt.
 
 const common = `All calls are invoke_canvas_action on an open "marginal" canvas instance. documentId defaults to whatever that panel is showing.
+Pages: list {query?, status?: "active"|"archived"|"all", sort?: "relevance"|"updated"|"created", direction?: "asc"|"desc", dateField?: "updated"|"created", from?, until?}. Active is the default; the scratchpad is always first and independent of filters. Search requires every literal whitespace-separated word in current titles/authored content, favoring phrases and title matches; history, chat, Command/PR state, IDs and fetched source are excluded. Prose session references contribute their readable label; code examples stay literal.
+Nonempty queries default to relevance, otherwise Updated newest first. Explicit relevance requires query text and accepts no direction; date sorts default to descending. Date bounds require dateField and canonical UTC instants (YYYY-MM-DDTHH:mm:ss.sssZ): from is inclusive, until exclusive.
+archive {documentId} / unarchive {documentId} organize visibility while preserving content, creation/Updated dates, editing and attached work. The scratchpad cannot be archived. Agent mutations are refused while Discuss is active; explicit user controls remain available. restore {documentId, version} restores content while retaining the page's current archive state.
 Sources: {file, side?: "head"|"base" (default head), startLine, endLine?, pins?}. file is repository-relative with forward slashes. Every range is verified against the pinned commit before saving, so read the code first (read_file / diff) and cite verified line numbers.
 Markdown links to code: [label](review-source:head/src/file.ts#L10-L24) — use base/ for old code. External links must be https://.`;
 

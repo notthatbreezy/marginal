@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, isAbsolute, join } from "node:path";
 
 import { assignIds, BLOCK_TYPES, checkBlock, CONTAINER_TYPES, flowEdgeSchema, frameSchema, locate, parseBlock, parseUnit, sourcesOf, stepSchema, flowNodeSchema, topBlockOf, UNIT_TYPES, walkBlocks } from "./blocks.mjs";
+import { parseArchiveState, parseCatalogQuery, queryPages } from "./catalog.mjs";
 import { InputError } from "./errors.mjs";
 import { describeCommit, diffFiles, getRepository, readFileAt } from "./git.mjs";
 import { atomicWriteJson, paths } from "./paths.mjs";
@@ -21,7 +22,7 @@ function dirOf(id) {
 }
 
 function emit(key, event) {
-    for (const k of [key, "*"]) for (const fn of listeners.get(k) ?? []) {
+    for (const k of new Set([key, "*"])) for (const fn of listeners.get(k) ?? []) {
         try {
             fn(event);
         } catch {}
@@ -63,11 +64,23 @@ function loadAll() {
     }
 }
 
-function persist(doc, reason) {
-    doc.updatedAt = new Date().toISOString();
+function parsed(result) {
+    if (result.ok) return result.value;
+    const error = new InputError(result.issues.map((issue) => issue.message).join(" "));
+    error.issues = result.issues;
+    throw error;
+}
+
+function archiveState(doc) {
+    return parsed(parseArchiveState(doc));
+}
+
+function persist(doc, reason, { preserveUpdatedAt = false, savedAt = new Date().toISOString() } = {}) {
+    archiveState(doc);
+    if (!preserveUpdatedAt) doc.updatedAt = savedAt;
     const dir = dirOf(doc.id);
     mkdirSync(join(dir, "versions"), { recursive: true });
-    atomicWriteJson(join(dir, "versions", `${String(doc.version).padStart(6, "0")}.json`), { ...doc, reason });
+    atomicWriteJson(join(dir, "versions", `${String(doc.version).padStart(6, "0")}.json`), { ...doc, reason, savedAt });
     atomicWriteJson(join(dir, "current.json"), doc);
     docs.set(doc.id, doc);
     emit(doc.id, { type: "version", documentId: doc.id, version: doc.version, lastEdit: doc.lastEdit, reason });
@@ -87,6 +100,7 @@ export function hasDoc(id) {
 }
 
 export function summary(doc) {
+    const archive = archiveState(doc);
     let repositoryName;
     if (doc.target) {
         try {
@@ -102,6 +116,7 @@ export function summary(doc) {
         version: doc.version,
         createdAt: doc.createdAt,
         updatedAt: doc.updatedAt,
+        archivedAt: archive.kind === "archived" ? archive.archivedAt : null,
         blocks,
         repository: repositoryName,
         target: doc.target,
@@ -110,9 +125,11 @@ export function summary(doc) {
     };
 }
 
-export function list() {
+export function list(rawQuery = {}) {
+    const query = parsed(parseCatalogQuery(rawQuery));
     loadAll();
-    return [...docs.values()].sort((a, b) => (a.kind === "scratchpad" ? -1 : b.kind === "scratchpad" ? 1 : b.updatedAt.localeCompare(a.updatedAt))).map(summary);
+    const ordinary = [...docs.values()].filter((doc) => doc.kind !== "scratchpad").map((doc) => ({ doc, archive: archiveState(doc) }));
+    return [summary(getDoc(SCRATCHPAD_ID)), ...queryPages(ordinary, query).map(summary)];
 }
 
 function slug(title) {
@@ -1022,27 +1039,38 @@ export function editProse(docId, edits) {
         }
         const changed = [];
         for (const [blockId, { hit, list }] of byBlock) {
-            const lines = hit.node.markdown.replace(/\r\n/g, "\n").split("\n");
+            /** @type {(string | null)[]} */
+            const lines = hit.node.markdown.split("\n");
+            const logicalLines = hit.node.markdown.replace(/\r\n/g, "\n").split("\n");
+            const current = (from, to) => logicalLines.slice(from, to + 1).join("\n");
             // Copilot may have changed other lines meanwhile (a patch above shifts line numbers): follow the text if it
             // only moved, i.e. it occurs exactly once elsewhere. Text that itself changed is still refused below.
             for (const e of list) {
                 const want = e.before.replace(/\r\n/g, "\n");
-                if (e.to < lines.length && lines.slice(e.from, e.to + 1).join("\n") === want) continue;
+                if (e.to < lines.length && current(e.from, e.to) === want) continue;
                 const len = e.to - e.from + 1;
                 const at = [];
-                for (let k = 0; k + len <= lines.length && at.length < 2; k++) if (lines.slice(k, k + len).join("\n") === want) at.push(k);
+                for (let k = 0; k + len <= lines.length && at.length < 2; k++) if (current(k, k + len - 1) === want) at.push(k);
                 if (at.length === 1) Object.assign(e, { from: at[0], to: at[0] + len - 1 });
             }
             list.sort((x, y) => y.from - x.from);
             for (let k = 1; k < list.length; k++) if (list[k].to >= list[k - 1].from) throw new InputError("Two edits overlap in the same block.");
             for (const e of list) {
-                if (e.to >= lines.length || lines.slice(e.from, e.to + 1).join("\n") !== e.before.replace(/\r\n/g, "\n"))
+                if (e.to >= lines.length || current(e.from, e.to) !== e.before.replace(/\r\n/g, "\n"))
                     throw new InputError(`Copilot changed this text (${blockId}) while you were editing, so your edit wasn't saved. Copy your text, cancel, and edit the new version.`);
-                const repl = e.after.replace(/\r\n/g, "\n");
-                lines.splice(e.from, e.to - e.from + 1, ...(repl.trim() ? repl.split("\n") : []));
+                // Replacement units are already serialized by the editor; keep their source opaque.
+                lines.splice(e.from, e.to - e.from + 1, e.after.trim() ? e.after : null);
             }
-            const markdown = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-            if (!markdown) throw new InputError("A text block can't be left empty; delete the words but keep something, or ask Copilot to remove it.");
+            // Only a deleted unit's seam needs cleanup, never whitespace inside a replacement or elsewhere.
+            for (let at = lines.indexOf(null); at !== -1; at = lines.indexOf(null)) {
+                let from = at, to = at + 1;
+                while (from > 0 && lines[from - 1]?.trim() === "") from--;
+                while (to < lines.length && (lines[to] === null || lines[to]?.trim() === "")) to++;
+                const gap = lines.slice(from, to).find((line) => line !== null);
+                lines.splice(from, to - from, ...(from > 0 && to < lines.length && gap !== undefined ? [gap] : []));
+            }
+            const markdown = lines.join("\n");
+            if (!markdown.trim()) throw new InputError("A text block can't be left empty; delete the words but keep something, or ask Copilot to remove it.");
             const parsed = parseBlock({ ...hit.node, markdown }, blockId);
             parsed.id = hit.node.id;
             hit.list[hit.index] = parsed;
@@ -1096,13 +1124,33 @@ export function setTarget(docId, target, pullRequest) {
 export function restore(docId, version) {
     return withLock(docId, async () => {
         const doc = getDoc(docId);
+        archiveState(doc);
         const old = getVersion(docId, version);
-        const next = { ...structuredClone(old), version: doc.version + 1, nextId: doc.nextId, lastEdit: null };
+        const next = { ...structuredClone(old), id: doc.id, kind: doc.kind, createdAt: doc.createdAt, version: doc.version + 1, nextId: doc.nextId, lastEdit: null };
+        if (Object.hasOwn(doc, "archivedAt")) next.archivedAt = doc.archivedAt;
+        else delete next.archivedAt;
         delete next.reason;
+        delete next.savedAt;
         persist(next, `restore:${version}`);
         return summary(next);
     });
 }
+
+function setArchived(docId, desired) {
+    return withLock(docId, async () => {
+        const current = getDoc(docId);
+        if (current.kind === "scratchpad") throw new InputError("The scratchpad cannot be archived or unarchived.");
+        const state = archiveState(current);
+        if ((state.kind === "archived") === desired) return summary(current);
+        const savedAt = new Date().toISOString();
+        const next = { ...structuredClone(current), archivedAt: desired ? savedAt : null, version: current.version + 1, lastEdit: null };
+        persist(next, desired ? "archive" : "unarchive", { preserveUpdatedAt: true, savedAt });
+        return summary(next);
+    });
+}
+
+export const archive = (docId) => setArchived(docId, true);
+export const unarchive = (docId) => setArchived(docId, false);
 
 /** Async hooks run before a document's directory is deleted (e.g. Command stops pollers and watchers). */
 export const beforeRemove = [];
@@ -1132,7 +1180,7 @@ export function history(docId) {
         .sort()
         .map((f) => {
             const v = JSON.parse(readFileSync(join(dir, f), "utf8"));
-            return { version: v.version, at: v.updatedAt, reason: v.reason, title: v.title, lastEdit: v.lastEdit };
+            return { version: v.version, at: v.savedAt ?? v.updatedAt, reason: v.reason, title: v.title, lastEdit: v.lastEdit };
         });
 }
 

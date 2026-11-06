@@ -184,6 +184,12 @@
 .sw-dark {
     background: linear-gradient(#161b22 0 7px, #0d1117 7px);
 }
+.sw-solarized-light {
+    background: linear-gradient(#268bd2 0 4px, #eee8d5 4px 9px, #fdf6e3 9px);
+}
+.sw-solarized-dark {
+    background: linear-gradient(#268bd2 0 4px, #073642 4px 9px, #002b36 9px);
+}
 .sw-win3 {
     background: linear-gradient(#000080 0 7px, #ffffff 7px 22px, #c0c0c0 22px);
     box-shadow: inset 0 0 0 1px #000;

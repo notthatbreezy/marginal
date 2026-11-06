@@ -131,3 +131,22 @@ test("interrupt settings default per chat and survive partial updates", async ()
     writeSettings({ theme: "dark" });
     assert.deepEqual(readSettings().interrupt, { doc: true, command: true });
 });
+
+test("Solarized backend ids preserve field-wise settings defaults and partial merges", async () => {
+    const { THEMES, parseSettings, writeSettings, readSettings } = await import("../extensions/marginal/lib/settings.mjs");
+    const themes = ["auto", "light", "dark", "win3", "win95", "vista", "future", "arcade", "solarized-light", "solarized-dark"];
+    assert.deepEqual(THEMES, themes);
+    for (const theme of themes) assert.equal(parseSettings({ theme }).theme, theme);
+    for (const theme of ["unknown", null, 0, {}, ["dark"]]) assert.equal(parseSettings({ theme }).theme, "auto");
+    writeSettings({ shortcuts: { jump: false }, effects: false, interrupt: { doc: true, command: false }, command: { worktrees: true } });
+    for (const theme of ["solarized-light", "solarized-dark"]) {
+        const saved = writeSettings({ theme });
+        assert.equal(saved.theme, theme);
+        assert.equal(saved.shortcuts.jump, false);
+        assert.equal(saved.effects, false);
+        assert.deepEqual(saved.interrupt, { doc: true, command: false });
+        assert.deepEqual(saved.command, { worktrees: true });
+        writeSettings({ shortcuts: { stepKeys: false } });
+        assert.equal(readSettings().theme, theme);
+    }
+});

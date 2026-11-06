@@ -49,6 +49,22 @@ node tools/demos/drag-test.mjs              # drag the chat around real pages: 5
 
 It uses Microsoft Edge by default (`DEMO_BROWSER=chrome` for Chrome). The Command demo uses `tools/devserver.mjs`'s fictional repo. The doc demos copy your Marginal data to a temp dir and use the doc named by `DEMO_DOC`, so that doc and its repository must exist locally; `DEMO_HEAD_REF` relabels its branch in the recording. Check every frame for anything private before committing.
 
+### Page-management demos and browser checks
+
+`record-pages.mjs` uses isolated fictional pages, the real Marginal server/UI and canned chat. It records the search/sort/date and archive/restore GIFs, comparable Solarized screenshots, session references and actual numbered PDF output into `docs/images/` (or `--out=directory`). Contact sheets, the original PDF and extraction evidence go into ignored `artifacts/pages-recording/`. It never copies personal Marginal data.
+
+The browser checks need `playwright-core` and Edge; PDF extraction also needs Python and PyMuPDF. These are development-only tools, installed separately from the dependency-free extension. For example, in PowerShell:
+
+```powershell
+python -m pip install --target artifacts\print-tools\python PyMuPDF
+$env:PYTHONPATH=(Resolve-Path artifacts\print-tools\python).Path
+node tools\demos\record-pages.mjs
+node tools\demos\pages-ui-test.mjs
+node tools\demos\print-ui-test.mjs --out=artifacts\print-validation\local
+```
+
+Use a fresh output directory for each PDF run. `PRINT_CASE` optionally selects a PDF case by substring; unset it for the complete run. Inspect the GIF contact sheets and screenshots before committing media. The illustrated [next-release draft](docs/release-notes.md) follows the published release style; keep the concise source changelog under **Unreleased**.
+
 ## Releasing
 
 Releases are cut by GitHub Actions, so nothing depends on a local setup. Versions are semver and live in three places that must agree: `plugin.json`, `.github/plugin/marketplace.json` (`metadata.version` and the plugin entry) and `package.json`. The tests check this.

@@ -27,6 +27,8 @@ export const THEMES = [
     { id: "auto", label: "System", note: "Follows your OS light or dark setting" },
     { id: "light", label: "Light" },
     { id: "dark", label: "Dark" },
+    { id: "solarized-light", label: "Solarized Light" },
+    { id: "solarized-dark", label: "Solarized Dark" },
     { id: "win3", label: "Windows 3.0", note: "1990" },
     { id: "win95", label: "Windows 95" },
     { id: "vista", label: "Vista", note: "Aero glass" },
@@ -141,7 +143,7 @@ function render() {
                     )
                   : null,
           ]
-        : [h("div", { class: "set-h" }, "Theme"), h("p", { class: "set-note" }, "Inside the Copilot app, Marginal uses the app's theme. Open it in your browser (the globe in the header) to choose Light, Dark, Windows 3.0, Windows 95, Vista, Retro-future or 16-bit there.")];
+        : [h("div", { class: "set-h" }, "Theme"), h("p", { class: "set-note" }, "Inside the Copilot app, Marginal uses the app's theme. Open it in your browser (the globe in the header) to choose Light, Dark, Solarized Light, Solarized Dark, Windows 3.0, Windows 95, Vista, Retro-future or 16-bit there.")];
     put(body,
         ...themes,
         h("div", { class: "set-h" }, "Keyboard shortcuts"),
@@ -181,7 +183,7 @@ function open() {
     render();
     const r = btn.getBoundingClientRect();
     pop.style.top = `${Math.round(r.bottom + 6)}px`;
-    pop.style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
+    pop.style.right = `${Math.max(8, Math.min(innerWidth - pop.offsetWidth - 8, Math.round(innerWidth - r.right)))}px`;
     pop.querySelector("button.on, .set-switch")?.focus({ preventScroll: true });
 }
 function close() {

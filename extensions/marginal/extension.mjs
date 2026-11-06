@@ -115,8 +115,21 @@ const actions = [
     },
     {
         name: "list",
-        description: "List docs (the scratchpad is always first) and registered repositories.",
-        handler: wrap(() => ({ docs: store.list(), repositories: git.listRepositories() })),
+        description: "Search and filter current authored docs by query, archive status and date range; sort by relevance, Updated or Created. Defaults to active docs; scratchpad is always first. Also lists registered repositories.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                query: { type: "string" },
+                status: { type: "string", enum: ["active", "archived", "all"] },
+                sort: { type: "string", enum: ["relevance", "updated", "created"] },
+                direction: { type: "string", enum: ["asc", "desc"] },
+                dateField: { type: "string", enum: ["updated", "created"] },
+                from: { type: "string", description: "Inclusive canonical UTC instant (YYYY-MM-DDTHH:mm:ss.sssZ); requires dateField." },
+                until: { type: "string", description: "Exclusive canonical UTC instant (YYYY-MM-DDTHH:mm:ss.sssZ); requires dateField." },
+            },
+            additionalProperties: false,
+        },
+        handler: wrap((i) => ({ docs: store.list(i), repositories: git.listRepositories() })),
     },
     {
         name: "show",
@@ -199,7 +212,7 @@ const actions = [
                 const w = String(to).length;
                 return { id: el.id, type: el.type, field, version: doc.version, lineCount: all.length, from, to, text: all.slice(from - 1, to).map((l, k) => `${String(from + k).padStart(w)}| ${l}`).join("\n") };
             }
-            if (i.full) return { documentId: doc.id, title: doc.title, version: doc.version, target: doc.target, pullRequest: doc.pullRequest, lenses: doc.lenses, content: doc.content };
+            if (i.full) return { documentId: doc.id, title: doc.title, version: doc.version, archivedAt: doc.archivedAt ?? null, target: doc.target, pullRequest: doc.pullRequest, lenses: doc.lenses, content: doc.content };
             return store.outline(doc);
         }),
     },
@@ -331,6 +344,18 @@ const actions = [
         description: "Rename a doc.",
         inputSchema: { type: "object", properties: { documentId: docId, title: { type: "string" } }, required: ["title"] },
         handler: wrap((i, ctx) => store.rename(notDiscussing(docIdFor(i, ctx)), i.title)),
+    },
+    {
+        name: "archive",
+        description: "Hide a doc from the active catalog without deleting its content or attached work. Scratchpad cannot be archived.",
+        inputSchema: { type: "object", properties: { documentId: docId } },
+        handler: wrap((i, ctx) => store.archive(notDiscussing(docIdFor(i, ctx)))),
+    },
+    {
+        name: "unarchive",
+        description: "Return an archived doc to the active catalog without restoring historical content.",
+        inputSchema: { type: "object", properties: { documentId: docId } },
+        handler: wrap((i, ctx) => store.unarchive(notDiscussing(docIdFor(i, ctx)))),
     },
     {
         name: "history",
