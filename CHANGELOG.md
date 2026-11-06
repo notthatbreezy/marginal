@@ -4,6 +4,8 @@ All notable changes to Marginal. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-06
+
 ### Added
 
 - **Page management and reading improvements.** Find pages with full authored-content search, phrase/title relevance, Updated/Created sorting and local-day date filters; archive and unarchive pages while preserving their content, dates and attached work. Copilot session references render as static separate-session pills in prose/chat, with literal code examples and editable source preserved. Browser windows gain Solarized Light and Dark themes. Browser Doc printing flows across multiple sheets, includes folded content, hides app controls and uses a paper palette with wrapped code/tables and intact scaled graphics; current Chromium-based browsers add centered X/Y page footers.
